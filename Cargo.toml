@@ -1,0 +1,16 @@
+[package]
+name = "rtrtr"
+version = "0.1.0"
+edition = "2018"
+authors = ["The NLnet Labs RPKI Team <rpki-team@nlnetlabs.nl>"]
+description = "The RPKI Data Express Mail Service"
+repository = "https://github.com/NLnetLabs/rtrtr"
+keywords = ["rpki", "routing-security", "bgp"]
+license = "BSD-3-Clause"
+readme = "README.md"
+
+[dependencies]
+clap = "2.33"
+log = "^0.4"
+rpki-rtr = { version = "^0.1", git = "https://github.com/NLnetLabs/rpki-rtr" }
+
