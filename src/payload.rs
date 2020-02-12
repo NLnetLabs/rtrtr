@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
 use rpki_rtr::pdu;
 use rpki_rtr::payload::{Action, Payload};
 use rpki_rtr::{client, server};
 use rpki_rtr::serial::Serial;
+use rpki_rtr::server::NotifySender;
 
 
 //------------ Set -----------------------------------------------------------
@@ -397,9 +399,31 @@ pub struct Stream {
 
     /// The maximum number of diffs we keep.
     max_diff_count: usize,
+
+    /// The time of last successful update.
+    last_update: SystemTime,
+
+    /// Who to tell when we have been updated.
+    notify: NotifySender,
 }
 
 impl Stream {
+    pub fn new(notify: NotifySender) -> Self {
+        Stream {
+            current: Arc::new(Set::default()),
+            diffs: Vec::new(),
+            session: {
+                SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH).unwrap()
+                .as_secs() as u16
+            },
+            timing: Default::default(),
+            max_diff_count: 10,
+            last_update: SystemTime::now(),
+            notify,
+        }
+    }
+
     pub fn replace_set(&mut self, set: Set) {
         let diff = set.diff_from(&self.current);
         self.update(set, diff);
@@ -420,6 +444,8 @@ impl Stream {
             diffs.push((serial, Arc::new(item.extend(&diff))));
         }
         self.diffs = diffs;
+        self.last_update = SystemTime::now();
+        self.notify.notify();
     }
 
     pub fn serial(&self) -> Serial {
@@ -436,6 +462,11 @@ impl Stream {
             }
         })
     }
+
+    pub fn has_expired(&self) -> bool {
+        let elapsed = self.last_update.elapsed().unwrap_or_default();
+        elapsed.as_secs() > u64::from(self.timing.expire)
+    }
 }
 
 
@@ -443,6 +474,22 @@ impl Stream {
 
 #[derive(Clone, Debug)]
 pub struct StreamHandle(Arc<RwLock<Stream>>);
+
+impl StreamHandle {
+    pub fn new(notify: NotifySender) -> Self {
+        StreamHandle(Arc::new(RwLock::new(Stream::new(notify))))
+    }
+
+    pub fn timing(&self) -> pdu::Timing {
+        self.0.read().unwrap().timing
+    }
+}
+
+impl From<Stream> for StreamHandle {
+    fn from(stream: Stream) -> StreamHandle {
+        StreamHandle(Arc::new(RwLock::new(stream)))
+    }
+}
 
 impl client::VrpStore for StreamHandle {
     type Input = StreamInput; 

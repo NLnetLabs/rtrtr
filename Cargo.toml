@@ -11,6 +11,9 @@ readme = "README.md"
 
 [dependencies]
 clap = "2.33"
-log = "^0.4"
+futures = "0.3"
+log = "0.4"
+rand = "0.7.3"
 rpki-rtr = { version = "^0.1", git = "https://github.com/NLnetLabs/rpki-rtr" }
+tokio	  = { version="0.2", features=["dns", "io-util", "macros", "rt-core", "stream", "sync", "tcp", "time"]}
 

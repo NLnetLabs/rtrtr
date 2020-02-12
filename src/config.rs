@@ -110,7 +110,7 @@ impl Config {
             Stream {
                 name: "default".into(),
                 listen,
-                sources: Source::Any {
+                source: Source::Any {
                     sources,
                     random: false,
                 }
@@ -133,8 +133,8 @@ pub struct Stream {
     ///
     pub listen: Vec<(SocketAddr, ServerProtocol)>,
 
-    /// sources.
-    pub sources: Source,
+    /// source.
+    pub source: Source,
 }
 
 
