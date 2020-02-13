@@ -2,7 +2,7 @@
 
 
 RTRTR is a companion tool to
-[Routinator][https://github.com/NLnetLabs/routinator] that collects,
+[Routinator](https://github.com/NLnetLabs/routinator) that collects,
 processes, and serves validated RPKI data from multiple sources. The
 source data can be provided in different formats and the produced data can
 be provided in different formats.
@@ -11,9 +11,9 @@ This is the very first iteration of RTRTR, however. For now, it only
 operates a simple RTR proxy: It collects validated RPKI data from
 Routinator or
 [some other RPKI relying party
-software][https://rpki.readthedocs.io/en/latest/tools.html#relying-party-software] via RTR and serves this data via RTR. This way, the data provided
+software](https://rpki.readthedocs.io/en/latest/tools.html#relying-party-software) via RTR and serves this data via RTR. This way, the data provided
 by a centralized relying party software can be distributed to RTR servers
-in multiple location, allowing routers to only connect to local servers.
+in multiple locations, allowing routers to only connect to local servers.
 
 Over time, RTRTR will gain more and more capabilities. Stay tuned!
 
