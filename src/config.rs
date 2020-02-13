@@ -78,7 +78,7 @@ impl Config {
         let listen = listen; // drop mut.
 
         let mut sources = Vec::new();
-        match matches.values_of("rtr-source") {
+        match matches.values_of("rtr-server") {
             Some(list) => {
                 for value in list {
                     match SocketAddr::from_str(value) {

@@ -1,6 +1,8 @@
+use std::io;
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
+use log::debug;
 use rpki_rtr::pdu;
 use rpki_rtr::payload::{Action, Payload};
 use rpki_rtr::{client, server};
@@ -25,14 +27,7 @@ impl Set {
         self.items.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub fn shared_iter(self: &Arc<Self>) -> SetIter {
-        SetIter::from(self.clone())
-    }
-
+    /*
     /// Removes all items in `set` from `self`.
     pub fn remove_set(&mut self, set: &Set) {
         let mut set: &[Payload] = set.items.as_ref();
@@ -49,6 +44,7 @@ impl Set {
             }
         })
     }
+    */
 
     /// Returns the diff to get from `other` to `self`.
     pub fn diff_from(&self, other: &Set) -> Diff {
@@ -135,16 +131,24 @@ pub struct SetBuilder {
 }
 
 impl SetBuilder {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
     pub fn push(&mut self, payload: Payload) {
         self.items.push(payload)
     }
 
+    /*
     pub fn push_set(&mut self, set: Set) {
         self.items.extend(&set.items)
+    }
+    */
+
+    pub fn finalize_strict(mut self) -> Option<Set> {
+        self.items.sort_unstable();
+        for pair in self.items.windows(2) {
+            if pair[0] == pair[1] {
+                return None
+            }
+        }
+        Some(Set { items: self.items })
     }
 
     pub fn finalize(mut self) -> Set {
@@ -165,7 +169,7 @@ impl From<Set> for SetBuilder {
 
 //------------ Diff ---------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Diff {
     /// The diff items.
     ///
@@ -175,12 +179,16 @@ pub struct Diff {
 }
 
 impl Diff {
-    pub fn shared_iter(self: &Arc<Self>) -> DiffIter {
-        DiffIter::from(self.clone())
+    pub fn len(&self) -> usize {
+        self.items.len()
     }
 
-    pub fn into_builder(self) -> DiffBuilder {
-        self.into()
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn shared_iter(self: &Arc<Self>) -> DiffIter {
+        DiffIter::from(self.clone())
     }
 
     pub fn extend(&self, additional: &Diff) -> Diff {
@@ -234,6 +242,7 @@ impl Diff {
         Set { items: res }
     }
 
+    /*
     pub fn apply_strict(
         &self,
         set: &Set
@@ -286,6 +295,7 @@ impl Diff {
 
         Ok(Set { items: res })
     }
+    */
 }
 
 
@@ -325,16 +335,22 @@ pub struct DiffBuilder {
 }
 
 impl DiffBuilder {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
     pub fn push(&mut self, action: Action, payload: Payload) {
         self.items.push((action, payload))
     }
 
     pub fn push_diff(&mut self, diff: &Diff) {
         self.items.extend_from_slice(&diff.items)
+    }
+
+    pub fn finalize_strict(mut self) -> Option<Diff> {
+        self.items.sort_unstable_by_key(|item| item.1);
+        for pair in self.items.windows(2) {
+            if pair[0].1 == pair[1].1 {
+                return None
+            }
+        }
+        Some(Diff { items: self.items })
     }
 
     pub fn finalize(mut self) -> Diff {
@@ -383,12 +399,19 @@ impl From<Diff> for DiffBuilder {
 
 #[derive(Clone, Debug)]
 pub struct Stream {
+    /// The name of the stream.
+    name: String,
+
     /// The current set of payload.
-    current: Arc<Set>,
+    current: Option<Arc<Set>>,
 
     /// The diffs we remember.
     ///
     /// The newest diff is at the front.
+    ///
+    /// The serial number is the one from which this diff leads to current.
+    /// This means that the current serial is whatever the first diff has
+    /// plus 1.
     diffs: Vec<(Serial, Arc<Diff>)>,
 
     /// The session number of this stream.
@@ -408,9 +431,10 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn new(notify: NotifySender) -> Self {
+    pub fn new(name: String, notify: NotifySender) -> Self {
         Stream {
-            current: Arc::new(Set::default()),
+            name,
+            current: None,
             diffs: Vec::new(),
             session: {
                 SystemTime::now()
@@ -425,48 +449,79 @@ impl Stream {
     }
 
     pub fn replace_set(&mut self, set: Set) {
-        let diff = set.diff_from(&self.current);
+        debug!(
+            "{}: Replacing data with set of {} elements.",
+            &self.name, set.len()
+        );
+        let diff = match self.current.as_ref() {
+            Some(current) => Some(set.diff_from(current)),
+            None => None,
+        };
         self.update(set, diff);
     }
 
     pub fn add_diff(&mut self, diff: Diff) {
-        let current = diff.apply(&self.current);
-        self.update(current, diff);
+        debug!(
+            "{}: Adding diff with {} elements.",
+            &self.name, diff.len()
+        );
+        let current = diff.apply(self.current.as_ref().unwrap());
+        self.update(current, Some(diff));
     }
 
-    fn update(&mut self, current: Set, diff: Diff) {
-        let diff = Arc::new(diff);
-        self.current = Arc::new(current);
-        self.diffs.truncate(self.max_diff_count.saturating_sub(1));
-        let mut diffs = Vec::with_capacity(self.diffs.len() + 1);
-        diffs.push((self.serial().add(1), diff.clone()));
-        for &(serial, ref item) in &self.diffs {
-            diffs.push((serial, Arc::new(item.extend(&diff))));
+    fn update(&mut self, current: Set, diff: Option<Diff>) {
+        self.current = Some(Arc::new(current));
+        if let Some(diff) = diff {
+            let diff = Arc::new(diff);
+            self.diffs.truncate(self.max_diff_count.saturating_sub(1));
+            let mut diffs = Vec::with_capacity(self.diffs.len() + 1);
+            diffs.push((self.serial(), diff.clone()));
+            for &(serial, ref item) in &self.diffs {
+                diffs.push((serial, Arc::new(item.extend(&diff))));
+            }
+            self.diffs = diffs;
         }
-        self.diffs = diffs;
         self.last_update = SystemTime::now();
         self.notify.notify();
     }
 
     pub fn serial(&self) -> Serial {
-        self.diffs.first().map(|item| item.0).unwrap_or(0.into())
+        self.diffs.first().map(|item| item.0.add(1)).unwrap_or(0.into())
     }
 
     pub fn get_diff(&self, serial: Serial) -> Option<Arc<Diff>> {
-        self.diffs.iter().find_map(|item| {
-            if item.0 == serial {
-                Some(item.1.clone())
-            }
-            else {
-                None
-            }
-        })
+        debug!("{}: currently at: {}", self.name, self.serial());
+        debug!("{}: looking for diff from {}", self.name, serial);
+        if serial == self.serial() {
+            debug!("{}: Same, return empty diff.", self.name);
+            Some(Arc::new(Diff::default()))
+        }
+        else {
+            self.diffs.iter().find_map(|item| {
+                if item.0 == serial {
+                    debug!(
+                        "{}: Trying {}. Found it!",
+                        self.name, item.0
+                    );
+                    Some(item.1.clone())
+                }
+                else {
+                    debug!(
+                        "{}: Trying {}. That’s not it.",
+                        self.name, item.0
+                    );
+                    None
+                }
+            })
+        }
     }
 
+    /*
     pub fn has_expired(&self) -> bool {
         let elapsed = self.last_update.elapsed().unwrap_or_default();
         elapsed.as_secs() > u64::from(self.timing.expire)
     }
+    */
 }
 
 
@@ -476,8 +531,8 @@ impl Stream {
 pub struct StreamHandle(Arc<RwLock<Stream>>);
 
 impl StreamHandle {
-    pub fn new(notify: NotifySender) -> Self {
-        StreamHandle(Arc::new(RwLock::new(Stream::new(notify))))
+    pub fn new(name: String, notify: NotifySender) -> Self {
+        StreamHandle(Arc::new(RwLock::new(Stream::new(name, notify))))
     }
 
     pub fn timing(&self) -> pdu::Timing {
@@ -511,6 +566,10 @@ impl server::VrpStore for StreamHandle {
     type FullIter = SetIter;
     type DiffIter = DiffIter;
 
+    fn ready(&self) -> bool {
+        self.0.read().unwrap().current.is_some()
+    }
+
     fn notify(&self) -> (u16, Serial) {
         let this = self.0.read().unwrap();
         (this.session, this.serial())
@@ -518,18 +577,26 @@ impl server::VrpStore for StreamHandle {
 
     fn full(&self) -> (u16, Serial, Self::FullIter) {
         let this = self.0.read().unwrap();
-        (this.session, this.serial(), this.current.clone().into())
+        match this.current.as_ref() {
+            Some(current) => {
+                (this.session, this.serial(), current.clone().into())
+            }
+            None => {
+                (this.session, this.serial(), Arc::new(Set::default()).into())
+            }
+        }
     }
 
     fn diff(
         &self, session: u16, serial: Serial
     ) -> Option<(u16, Serial, Self::DiffIter)> {
         let this = self.0.read().unwrap();
-        if session != this.session {
+        if this.current.is_none() || session != this.session {
             return None
         }
         this.get_diff(serial).map(|diff| {
-            (this.session, serial, diff.shared_iter())
+            debug!("Stream: we have a diff with {} items", diff.len());
+            (this.session, this.serial(), diff.shared_iter())
         })
     }
 
@@ -561,13 +628,41 @@ impl client::VrpInput for StreamInput {
         }
     }
 
-    fn done(self, timing: pdu::Timing) {
+    fn done(self, timing: pdu::Timing) -> Result<(), io::Error> {
         let mut stream = self.stream.0.write().unwrap();
+        stream.timing = timing;
         match self.state {
-            Ok(set) => stream.replace_set(set.finalize()),
-            Err(diff) => stream.add_diff(diff.finalize()),
+            Ok(set) => {
+                match set.finalize_strict() {
+                    Some(set) => {
+                        stream.replace_set(set);
+                        Ok(())
+                    }
+                    None => {
+                        Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "data set with duplicates"
+                        ))
+                     }
+                }
+            }
+            Err(diff) => {
+                match diff.finalize_strict() {
+                    Some(diff) => {
+                        if !diff.is_empty() {
+                            stream.add_diff(diff)
+                        }
+                        Ok(())
+                    }
+                    None => {
+                        Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "invalid diff"
+                        ))
+                     }
+                }
+            }
         }
-        stream.timing = timing
     }
 }
 
@@ -583,13 +678,12 @@ fn skip_first<T>(slice: &mut &[T]) {
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
     use rpki_rtr::payload::Ipv4Prefix;
     use super::*;
 
-    fn v4(addr: &str) -> Payload {
+    fn v4(addr: u32) -> Payload {
         Payload::V4(Ipv4Prefix {
-            prefix: FromStr::from_str(addr).unwrap(),
+            prefix: addr.into(),
             prefix_len: 32,
             max_len: 32,
             asn: 0
@@ -598,45 +692,45 @@ mod test {
 
     #[test]
     fn diff_builder_dedup() {
-        let mut builder = DiffBuilder::new();
-        builder.push(Action::Announce, v4("127.0.0.2"));
-        builder.push(Action::Withdraw, v4("127.0.0.1"));
-        builder.push(Action::Announce, v4("127.0.0.2"));
-        builder.push(Action::Announce, v4("127.0.0.3"));
+        let mut builder = DiffBuilder::default();
+        builder.push(Action::Announce, v4(2));
+        builder.push(Action::Withdraw, v4(1));
+        builder.push(Action::Announce, v4(2));
+        builder.push(Action::Announce, v4(3));
         assert_eq!(
             builder.finalize(),
             Diff { items: vec![
-                (Action::Withdraw, v4("127.0.0.1")),
-                (Action::Announce, v4("127.0.0.2")),
-                (Action::Announce, v4("127.0.0.3"))
+                (Action::Withdraw, v4(1)),
+                (Action::Announce, v4(2)),
+                (Action::Announce, v4(3))
             ]}
         );
 
-        let mut builder = DiffBuilder::new();
-        builder.push(Action::Announce, v4("127.0.0.2"));
-        builder.push(Action::Withdraw, v4("127.0.0.1"));
-        builder.push(Action::Withdraw, v4("127.0.0.2"));
-        builder.push(Action::Announce, v4("127.0.0.2"));
-        builder.push(Action::Announce, v4("127.0.0.3"));
+        let mut builder = DiffBuilder::default();
+        builder.push(Action::Announce, v4(2));
+        builder.push(Action::Withdraw, v4(1));
+        builder.push(Action::Withdraw, v4(2));
+        builder.push(Action::Announce, v4(2));
+        builder.push(Action::Announce, v4(3));
         assert_eq!(
             builder.finalize(),
             Diff { items: vec![
-                (Action::Withdraw, v4("127.0.0.1")),
-                (Action::Announce, v4("127.0.0.3"))
+                (Action::Withdraw, v4(1)),
+                (Action::Announce, v4(3))
             ]}
         );
 
-        let mut builder = DiffBuilder::new();
-        builder.push(Action::Announce, v4("127.0.0.2"));
-        builder.push(Action::Withdraw, v4("127.0.0.1"));
-        builder.push(Action::Withdraw, v4("127.0.0.3"));
-        builder.push(Action::Announce, v4("127.0.0.2"));
-        builder.push(Action::Announce, v4("127.0.0.3"));
+        let mut builder = DiffBuilder::default();
+        builder.push(Action::Announce, v4(2));
+        builder.push(Action::Withdraw, v4(1));
+        builder.push(Action::Withdraw, v4(3));
+        builder.push(Action::Announce, v4(2));
+        builder.push(Action::Announce, v4(3));
         assert_eq!(
             builder.finalize(),
             Diff { items: vec![
-                (Action::Withdraw, v4("127.0.0.1")),
-                (Action::Announce, v4("127.0.0.2"))
+                (Action::Withdraw, v4(1)),
+                (Action::Announce, v4(2))
             ]}
         );
     }

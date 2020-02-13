@@ -1,7 +1,7 @@
 //! Payload sources.
 
 use std::net::SocketAddr;
-use futures::future::{BoxFuture, FutureExt};
+use futures::future::{BoxFuture, FutureExt, pending};
 use log::warn;
 use rand::{thread_rng, Rng};
 use rpki_rtr::client::Client as RtrClient;
@@ -33,6 +33,7 @@ impl Source {
     pub async fn run(self) {
         loop {
             let _ = self.choice.run(&self.stream).await;
+            let _ = delay_for(Duration::from_secs(10)).await;
         }
     }
 }
@@ -43,6 +44,7 @@ impl Source {
 enum Choice {
     RtrTcp(RtrTcp),
     Any(Any),
+    None,
 }
 
 impl Choice {
@@ -58,7 +60,15 @@ impl Choice {
                 }
             }
             config::Source::Any { ref sources, random } => {
-                Any::new(sources, random).map(Choice::Any)
+                if sources.is_empty() {
+                    Ok(Choice::None)
+                }
+                else if sources.len() == 1 {
+                    Self::new(&sources[0])
+                }
+                else {
+                    Any::new(sources, random).map(Choice::Any)
+                }
             }
         }
     }
@@ -70,6 +80,7 @@ impl Choice {
             match *self {
                 Choice::RtrTcp(ref source) => source.run(stream).await,
                 Choice::Any(ref source) => source.run(stream).await,
+                Choice::None => pending().await,
             }
         }.boxed()
     }

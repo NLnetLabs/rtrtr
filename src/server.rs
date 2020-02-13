@@ -2,6 +2,7 @@
 use std::process;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
+use futures::future::pending;
 use log::error;
 use rpki_rtr::server::{Dispatch, DispatchRunner, Server as RtrServer};
 use tokio::net::TcpListener;
@@ -29,9 +30,12 @@ impl Server {
 
     pub async fn run(self) -> Result<(), ExitError> {
         for stream_conf in &self.config.streams {
-            let dispatch_rnr = DispatchRunner::new();
+            let mut dispatch_rnr = DispatchRunner::new();
             let dispatch = dispatch_rnr.dispatch();
-            let stream = StreamHandle::new(dispatch.get_sender());
+            let stream = StreamHandle::new(
+                stream_conf.name.clone(),
+                dispatch.get_sender()
+            );
             let source = Source::new(
                 &stream_conf.source,
                 stream.clone(),
@@ -42,8 +46,9 @@ impl Server {
                 )?
             }
             tokio::spawn(source.run());
+            tokio::spawn(async move { dispatch_rnr.run().await });
         }
-        Ok(())
+        pending().await
     }
 
     fn spawn_listener(
