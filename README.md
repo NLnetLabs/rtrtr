@@ -43,7 +43,7 @@ If you have an older version of Rust and RTRTR, you can update using
 
 ```bash
 rustup update
-cargo install  --git -f https://github.com/NLnetLabs/rtrtr.git
+cargo install -f --git https://github.com/NLnetLabs/rtrtr.git
 ```
 
 
