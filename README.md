@@ -34,7 +34,7 @@ will only fall back to the second one if the first one fails.
 apt install rsync build-essential
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-cargo install https://github.com/NLnetLabs/rtrtr.git
+cargo install  --git https://github.com/NLnetLabs/rtrtr.git
 rtrtr --rtr-listen 127.0.0.1:3323 \
   --rtr-server 127.0.0.1:3324 --rtr-server 127.0.0.1:3325
 ```
@@ -43,7 +43,7 @@ If you have an older version of Rust and RTRTR, you can update using
 
 ```bash
 rustup update
-cargo install -f https://github.com/NLnetLabs/rtrtr.git
+cargo install  --git -f https://github.com/NLnetLabs/rtrtr.git
 ```
 
 
