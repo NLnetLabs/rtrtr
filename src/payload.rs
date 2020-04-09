@@ -3,11 +3,11 @@ use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use log::debug;
+use rpki_rtr::client::{VrpInput, VrpTarget};
 use rpki_rtr::pdu;
 use rpki_rtr::payload::{Action, Payload};
-use rpki_rtr::{client, server};
 use rpki_rtr::serial::Serial;
-use rpki_rtr::server::NotifySender;
+use rpki_rtr::server::{NotifySender, VrpSource};
 
 
 //------------ Set -----------------------------------------------------------
@@ -546,7 +546,7 @@ impl From<Stream> for StreamHandle {
     }
 }
 
-impl client::VrpStore for StreamHandle {
+impl VrpTarget for StreamHandle {
     type Input = StreamInput; 
 
     fn start(&mut self, reset: bool) -> Self::Input {
@@ -562,7 +562,7 @@ impl client::VrpStore for StreamHandle {
     }
 }
 
-impl server::VrpStore for StreamHandle {
+impl VrpSource for StreamHandle {
     type FullIter = SetIter;
     type DiffIter = DiffIter;
 
@@ -614,7 +614,7 @@ pub struct StreamInput {
     state: Result<SetBuilder, DiffBuilder>,
 }
 
-impl client::VrpInput for StreamInput { 
+impl VrpInput for StreamInput { 
     fn push(&mut self, action: Action, payload: Payload) {
         match self.state {
             Ok(ref mut set) => {
