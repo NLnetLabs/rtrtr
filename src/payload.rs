@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use log::debug;
-use rpki_rtr::client::{VrpInput, VrpTarget};
+use rpki_rtr::client::{VrpUpdate, VrpTarget};
 use rpki_rtr::pdu;
 use rpki_rtr::payload::{Action, Payload};
 use rpki_rtr::serial::Serial;
@@ -614,7 +614,7 @@ pub struct StreamInput {
     state: Result<SetBuilder, DiffBuilder>,
 }
 
-impl VrpInput for StreamInput { 
+impl VrpUpdate for StreamInput { 
     fn push(&mut self, action: Action, payload: Payload) {
         match self.state {
             Ok(ref mut set) => {
