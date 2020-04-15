@@ -559,6 +559,45 @@ impl VrpTarget for StreamHandle {
             }
         }
     }
+
+    fn apply(
+        &mut self, update: StreamInput, _reset: bool, timing: Timing
+    ) -> Result<(), io::Error> {
+        let mut stream = self.0.write().unwrap();
+        stream.timing = timing;
+        match update.state {
+            Ok(set) => {
+                match set.finalize_strict() {
+                    Some(set) => {
+                        stream.replace_set(set);
+                        Ok(())
+                    }
+                    None => {
+                        Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "data set with duplicates"
+                        ))
+                     }
+                }
+            }
+            Err(diff) => {
+                match diff.finalize_strict() {
+                    Some(diff) => {
+                        if !diff.is_empty() {
+                            stream.add_diff(diff)
+                        }
+                        Ok(())
+                    }
+                    None => {
+                        Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "invalid diff"
+                        ))
+                     }
+                }
+            }
+        }
+    }
 }
 
 impl VrpSource for StreamHandle {
@@ -620,7 +659,7 @@ pub struct StreamInput {
 }
 
 impl VrpUpdate for StreamInput { 
-    fn push(&mut self, action: Action, payload: Payload) {
+    fn push_vrp(&mut self, action: Action, payload: Payload) {
         match self.state {
             Ok(ref mut set) => {
                 if let Action::Announce = action {
@@ -629,43 +668,6 @@ impl VrpUpdate for StreamInput {
             }
             Err(ref mut diff) => {
                     diff.push(action, payload)
-            }
-        }
-    }
-
-    fn done(self, timing: Timing) -> Result<(), io::Error> {
-        let mut stream = self.stream.0.write().unwrap();
-        stream.timing = timing;
-        match self.state {
-            Ok(set) => {
-                match set.finalize_strict() {
-                    Some(set) => {
-                        stream.replace_set(set);
-                        Ok(())
-                    }
-                    None => {
-                        Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "data set with duplicates"
-                        ))
-                     }
-                }
-            }
-            Err(diff) => {
-                match diff.finalize_strict() {
-                    Some(diff) => {
-                        if !diff.is_empty() {
-                            stream.add_diff(diff)
-                        }
-                        Ok(())
-                    }
-                    None => {
-                        Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "invalid diff"
-                        ))
-                     }
-                }
             }
         }
     }
