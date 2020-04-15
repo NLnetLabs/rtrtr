@@ -4,9 +4,8 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use log::debug;
 use rpki_rtr::client::{VrpUpdate, VrpTarget};
-use rpki_rtr::pdu;
-use rpki_rtr::payload::{Action, Payload};
-use rpki_rtr::serial::Serial;
+use rpki_rtr::payload::{Action, Payload, Timing};
+use rpki_rtr::state::{Serial, State};
 use rpki_rtr::server::{NotifySender, VrpSource};
 
 
@@ -418,7 +417,7 @@ pub struct Stream {
     session: u16,
 
     /// The timing paramters of this stream.
-    timing: pdu::Timing,
+    timing: Timing,
 
     /// The maximum number of diffs we keep.
     max_diff_count: usize,
@@ -535,7 +534,7 @@ impl StreamHandle {
         StreamHandle(Arc::new(RwLock::new(Stream::new(name, notify))))
     }
 
-    pub fn timing(&self) -> pdu::Timing {
+    pub fn timing(&self) -> Timing {
         self.0.read().unwrap().timing
     }
 }
@@ -547,9 +546,9 @@ impl From<Stream> for StreamHandle {
 }
 
 impl VrpTarget for StreamHandle {
-    type Input = StreamInput; 
+    type Update = StreamInput; 
 
-    fn start(&mut self, reset: bool) -> Self::Input {
+    fn start(&mut self, reset: bool) -> Self::Update {
         StreamInput {
             stream: self.clone(),
             state: if reset {
@@ -570,37 +569,43 @@ impl VrpSource for StreamHandle {
         self.0.read().unwrap().current.is_some()
     }
 
-    fn notify(&self) -> (u16, Serial) {
+    fn notify(&self) -> State {
         let this = self.0.read().unwrap();
-        (this.session, this.serial())
+        State::from_parts(this.session, this.serial())
     }
 
-    fn full(&self) -> (u16, Serial, Self::FullIter) {
+    fn full(&self) -> (State, Self::FullIter) {
         let this = self.0.read().unwrap();
         match this.current.as_ref() {
             Some(current) => {
-                (this.session, this.serial(), current.clone().into())
+                (
+                    State::from_parts(this.session, this.serial()),
+                    current.clone().into()
+                )
             }
             None => {
-                (this.session, this.serial(), Arc::new(Set::default()).into())
+                (
+                    State::from_parts(this.session, this.serial()),
+                    Arc::new(Set::default()).into()
+                )
             }
         }
     }
 
-    fn diff(
-        &self, session: u16, serial: Serial
-    ) -> Option<(u16, Serial, Self::DiffIter)> {
+    fn diff(&self, state: State) -> Option<(State, Self::DiffIter)> {
         let this = self.0.read().unwrap();
-        if this.current.is_none() || session != this.session {
+        if this.current.is_none() || state.session() != this.session {
             return None
         }
-        this.get_diff(serial).map(|diff| {
-            debug!("Stream: we have a diff with {} items", diff.len());
-            (this.session, this.serial(), diff.shared_iter())
+        this.get_diff(state.serial()).map(|diff| {
+            (
+                State::from_parts(this.session, this.serial()),
+                diff.shared_iter()
+            )
         })
     }
 
-    fn timing(&self) -> pdu::Timing {
+    fn timing(&self) -> Timing {
         self.0.read().unwrap().timing
     }
 }
@@ -628,7 +633,7 @@ impl VrpUpdate for StreamInput {
         }
     }
 
-    fn done(self, timing: pdu::Timing) -> Result<(), io::Error> {
+    fn done(self, timing: Timing) -> Result<(), io::Error> {
         let mut stream = self.stream.0.write().unwrap();
         stream.timing = timing;
         match self.state {

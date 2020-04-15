@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
 use futures::future::pending;
 use log::error;
-use rpki_rtr::server::{Dispatch, DispatchRunner, Server as RtrServer};
+use rpki_rtr::server::{NotifySender, Server as RtrServer};
 use tokio::net::TcpListener;
 use crate::config::{Config, ServerProtocol};
 use crate::payload::StreamHandle;
@@ -30,11 +30,10 @@ impl Server {
 
     pub async fn run(self) -> Result<(), ExitError> {
         for stream_conf in &self.config.streams {
-            let mut dispatch_rnr = DispatchRunner::new();
-            let dispatch = dispatch_rnr.dispatch();
+            let notify = NotifySender::new();
             let stream = StreamHandle::new(
                 stream_conf.name.clone(),
-                dispatch.get_sender()
+                notify.clone(),
             );
             let source = Source::new(
                 &stream_conf.source,
@@ -42,11 +41,10 @@ impl Server {
             )?;
             for &(addr, proto) in &stream_conf.listen {
                 self.spawn_listener(
-                    addr, proto, stream.clone(), dispatch.clone()
+                    addr, proto, stream.clone(), notify.clone()
                 )?
             }
             tokio::spawn(source.run());
-            tokio::spawn(async move { dispatch_rnr.run().await });
         }
         pending().await
     }
@@ -55,15 +53,15 @@ impl Server {
         &self,
         addr: SocketAddr, proto: ServerProtocol,
         stream: StreamHandle,
-        dispatch: Dispatch
+        notify: NotifySender,
     ) -> Result<(), ExitError> {
         match proto {
-            ServerProtocol::RtrTcp => self.spawn_rtr_tcp(addr, stream, dispatch)
+            ServerProtocol::RtrTcp => self.spawn_rtr_tcp(addr, stream, notify)
         }
     }
 
     fn spawn_rtr_tcp(
-        &self, addr: SocketAddr, stream: StreamHandle, dispatch: Dispatch,
+        &self, addr: SocketAddr, stream: StreamHandle, notify: NotifySender,
     ) -> Result<(), ExitError> {
         let listener = match StdTcpListener::bind(addr) {
             Ok(listener) => listener,
@@ -81,7 +79,7 @@ impl Server {
         };
         tokio::spawn(async move {
             let listener = listener.incoming();
-            let server = RtrServer::new(listener, dispatch, stream);
+            let server = RtrServer::new(listener, notify, stream);
             if server.run().await.is_err() {
                 error!("Fatal error listening on {}.", addr);
             }
