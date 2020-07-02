@@ -63,4 +63,4 @@ config file to use needs to be passed to RTRTR via the `-c` option:
 rtrtr -c rtrtr.conf
 ```
 
-[`etc/rtrtr.conf`]: https://github.com/NLnetLabs/rtrtr/blob/master/etc/rtrtr.conf
+[`etc/rtrtr.conf`]: https://github.com/NLnetLabs/rtrtr/blob/main/etc/rtrtr.conf
