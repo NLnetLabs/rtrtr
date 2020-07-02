@@ -1,21 +1,27 @@
-# RTRTR – The RPKI Express Mail Service
+# RTRTR – A Versatile Tool for Route Filters
+
+RTRTR is a tool that collects, processes, and distributes data for route
+filtering. It reads with data from various sources, such as validated RPKI
+data, IRR data, or local rules, allows selecting, filtering, and otherwise
+manipulating this data, and finally feed it to routers either via
+protocols such as RTR or through generated configuration files.
+
+RTRTR is currently in early development. Right now, it can read RPKI data
+via RTR from multiple servers and provide it, also via RTR, to routers.
+Over time, we will add more functionality.
 
 
-RTRTR is a companion tool to
-[Routinator](https://github.com/NLnetLabs/routinator) that collects,
-processes, and serves validated RPKI data from multiple sources. The
-source data can be provided in different formats and the produced data can
-be provided in different formats.
+## Architecture
 
-This is the very first iteration of RTRTR, however. For now, it only
-operates a simple RTR proxy: It collects validated RPKI data from
-Routinator or
-[some other RPKI relying party
-software](https://rpki.readthedocs.io/en/latest/tools.html#relying-party-software) via RTR and serves this data via RTR. This way, the data provided
-by a centralized relying party software can be distributed to RTR servers
-in multiple locations, allowing routers to only connect to local servers.
+RTRTR is a very versatile tool. It comes with a number of components for
+different purposes that can be connected to serve multiple use cases.
+There are two classes of components: _Units_ take filtering data from
+somewhere – this could other units or external sources –, and produce and
+constantly update one new set of data. _Targets_ take the data set from
+one particular unit and serve it to an external party.
 
-Over time, RTRTR will gain more and more capabilities. Stay tuned!
+Which components RTRTR will use and how they are connected is described in
+a config file. An example can be found in [`etc/rtrtr.conf`].
 
 
 ## Quick Start
@@ -24,19 +30,20 @@ If you have already installed Routinator, this should all be somewhat
 familiar.
 
 Assuming you have a newly installed Debian or Ubuntu machine, you will need
-to install the C toolchain and Rust. You can then install RTRTR and start
-it up serving RTR listening on 127.0.0.1 port 3323 and collecting data
-from two upstream RTR caches on 127.0.0.1 port 3324 and 127.0.0.1 port 3325.
-Note that RTRTR will use the first server as long as it is available and
-will only fall back to the second one if the first one fails.
+to install the C toolchain and Rust. You can then install RTRTR using
+Cargo, Rust’s build tool, directly from the repository.
 
 ```bash
 apt install rsync build-essential
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 cargo install  --git https://github.com/NLnetLabs/rtrtr.git
-rtrtr --rtr-listen 127.0.0.1:3323 \
-  --rtr-server 127.0.0.1:3324 --rtr-server 127.0.0.1:3325
+```
+
+If you want to pick up a particular branch, you can do so, too:
+
+```
+cargo install  --git https://github.com/NLnetLabs/rtrtr.git --branch foo
 ```
 
 If you have an older version of Rust and RTRTR, you can update using
@@ -46,4 +53,14 @@ rustup update
 cargo install -f --git https://github.com/NLnetLabs/rtrtr.git
 ```
 
+The `-f` option to `cargo install` overwrites an already installed RTRTR.
 
+Once RTRTR is installed, you need to create a config file that suits your
+needs. The example in [`etc/rtrtr.conf`] may be a good way to start. The
+config file to use needs to be passed to RTRTR via the `-c` option:
+
+```
+rtrtr -c rtrtr.conf
+```
+
+[`etc/rtrtr.conf`]: https://github.com/NLnetLabs/rtrtr/blob/master/etc/rtrtr.conf

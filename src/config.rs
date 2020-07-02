@@ -1,177 +1,273 @@
 //! Configuration.
 
-use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::str::FromStr;
-use clap::{App, Arg, ArgMatches};
-use log::error;
-use crate::server::ExitError;
-
+use std::{borrow, error, fmt, fs, io, ops};
+use std::path::Path;
+use std::sync::Arc;
+use serde_derive::Deserialize;
+use toml::Spanned;
+use crate::manager::{TargetSet, UnitSet};
 
 
 //------------ Config --------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Deserialize)]
 pub struct Config {
-    /// The streams we are serving.
-    pub streams: Vec<Stream>,
+    units: UnitSet,
+    
+    targets: TargetSet,
+
+    #[serde(flatten)]
+    params: Parameters,
 }
 
 impl Config {
-    pub fn config_args<'a: 'b, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        app
-        .arg(Arg::with_name("rtr-listen")
-            .short("R")
-            .long("rtr-listen")
-            .takes_value(true)
-            .value_name("ADDR")
-            .help("address to listen to with plain RTR")
-            .multiple(true)
-            .number_of_values(1)
-        )
-        .arg(Arg::with_name("rtr-server")
-            .short("r")
-            .long("rtr-server")
-            .takes_value(true)
-            .value_name("ADDR")
-            .help("address of a plain RTR server")
-            .multiple(true)
-            .number_of_values(1)
-        )
+    pub fn from_toml(slice: &[u8]) -> Result<Self, toml::de::Error> {
+        toml::de::from_slice(slice)
     }
 
-    pub fn from_arg_matches(
-        matches: &ArgMatches,
-    ) -> Result<Self, ExitError> {
-        let mut res = Self::default();
-        res.apply_arg_matches(matches)?;
-        Ok(res)
-    }
-
-    fn apply_arg_matches(
-        &mut self,
-        matches: &ArgMatches,
-    ) -> Result<(), ExitError> {
-        let mut listen = Vec::new();
-        match matches.values_of("rtr-listen") {
-            Some(list) => {
-                for value in list {
-                    match SocketAddr::from_str(value) {
-                        Ok(addr) => {
-                            listen.push((addr, ServerProtocol::RtrTcp))
-                        }
-                        Err(_) => {
-                            error!("Invalid value for rtr-listen: {}", value);
-                            return Err(ExitError)
-                        }
-                    }
-                }
-            }
-            None => {
-                listen.push((
-                    SocketAddr::V4(
-                        SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 3323)
-                    ),
-                    ServerProtocol::RtrTcp,
-                ))
-            }
-        }
-        let listen = listen; // drop mut.
-
-        let mut sources = Vec::new();
-        match matches.values_of("rtr-server") {
-            Some(list) => {
-                for value in list {
-                    match SocketAddr::from_str(value) {
-                        Ok(some) => {
-                            sources.push(Source::Server {
-                                protocol: ServerProtocol::RtrTcp,
-                                addr: some
-                            })
-                        }
-                        Err(_) => {
-                            error!("Invalid value for rtr-server: {}", value);
-                            return Err(ExitError)
-                        }
-                    }
-                }
-            }
-            None => {
-                sources.push(Source::Server {
-                    protocol: ServerProtocol::RtrTcp,
-                    addr: SocketAddr::V4(
-                        SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 3323)
-                    )
-                })
-            }
-        }
-        let sources = sources; // drop mut
-
-        self.streams = vec![
-            Stream {
-                name: "default".into(),
-                listen,
-                source: Source::Any {
-                    sources,
-                    random: false,
-                }
-            }
-        ];
-
-        Ok(())
+    pub fn into_parts(self) -> (UnitSet, TargetSet, Parameters) {
+        (self.units, self.targets, self.params)
     }
 }
 
 
-//------------ Stream --------------------------------------------------------
+//------------ Parameters ----------------------------------------------------
 
-#[derive(Clone, Debug)]
-pub struct Stream {
-    /// Name of the stream.
-    pub name: String,
-
-    /// Listen addresses and protocols.
-    ///
-    pub listen: Vec<(SocketAddr, ServerProtocol)>,
-
-    /// source.
-    pub source: Source,
-}
-
-
-//------------ ServerProtocol ------------------------------------------------
-
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
-pub enum ServerProtocol {
-    /// RTR over plain TCP.
-    RtrTcp,
+#[derive(Deserialize)]
+pub struct Parameters {
 }
 
 
 //------------ Source --------------------------------------------------------
 
+/// The source of configuration.
+///
+/// This is either a file or an interactive session.
+///
+/// File names are kept behind and arc and thus this type can be cloned
+/// cheaply.
 #[derive(Clone, Debug)]
-#[non_exhaustive]
-pub enum Source {
-    /// A server.
-    Server {
-        /// The type of server.
-        protocol: ServerProtocol,
+pub struct Source {
+    /// The optional path of a config file.
+    ///
+    /// If this in `None`, the source is an interactive session.
+    path: Option<Arc<String>>,
+}
 
-        /// The network address of the server.
-        addr: SocketAddr,
-    },
+impl<'a, T: AsRef<Path>> From<&'a T> for Source {
+    fn from(path: &'a T) -> Source {
+        Source {
+            path: Some(Arc::new(format!("{}", path.as_ref().display())))
+        }
+    }
+}
 
-    /// Any of multiple sources.
-    Any {
-        /// The list of sources.
-        sources: Vec<Source>,
 
-        /// Whether pick a random source
-        ///
-        /// If `false`, we always start with the first source, if `true`, we
-        /// pick a source at random.
-        random: bool,
+//------------ LineCol -------------------------------------------------------
+
+/// A pair of a line and column number.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LineCol {
+    pub line: usize,
+    pub col: usize
+}
+
+
+//------------ Marked --------------------------------------------------------
+
+/// A value marked with its source location.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(from = "Spanned<T>")]
+pub struct Marked<T> {
+    value: T,
+    index: usize,
+    source: Option<Source>,
+    pos: Option<LineCol>,
+}
+
+impl<T> Marked<T> {
+    /// Resolves the position for the given config file.
+    pub fn resolve_config(&mut self, config: &ConfigFile) {
+        self.source = Some(config.source.clone());
+        self.pos = Some(config.resolve_pos(self.index));
     }
 
+    /// Returns a reference to the value.
+    pub fn as_inner(&self) -> &T {
+        &self.value
+    }
+
+    /// Converts the marked value into is unmarked value.
+    pub fn into_inner(self) -> T {
+        self.value
+    }
+
+    /// Marks some other value with this value’s position.
+    pub fn mark<U>(&self, value: U) -> Marked<U> {
+        Marked {
+            value,
+            index: self.index,
+            source: self.source.clone(),
+            pos: self.pos,
+        }
+    }
+
+    /// Formats the mark for displaying.
+    pub fn format_mark(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let source = self.source.as_ref().and_then(|source|
+            source.path.as_ref().map(|path| path.as_str())
+        );
+        match (source, self.pos) {
+            (Some(source), Some(pos)) => {
+                write!(f, "{}:{}:{}", source, pos.line, pos.col)
+            }
+            (Some(source), None) => write!(f, "{}", source),
+            (None, Some(pos)) => write!(f, "{}:{}", pos.line, pos.col),
+            (None, None) => Ok(())
+        }
+    }
 }
+
+
+//--- From
+
+impl<T> From<T> for Marked<T> {
+    fn from(src: T) -> Marked<T> {
+        Marked {
+            value: src,
+            index: 0,
+            source: None, pos: None,
+        }
+    }
+}
+
+impl<T> From<Spanned<T>> for Marked<T> {
+    fn from(src: Spanned<T>) -> Marked<T> {
+        Marked {
+            index: src.start(),
+            value: src.into_inner(),
+            source: None, pos: None,
+        }
+    }
+}
+
+
+//--- Deref, AsRef, Borrow
+
+impl<T> ops::Deref for Marked<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.as_inner()
+    }
+}
+
+impl<T> AsRef<T> for Marked<T> {
+    fn as_ref(&self) -> &T {
+        self.as_inner()
+    }
+}
+
+impl<T> borrow::Borrow<T> for Marked<T> {
+    fn borrow(&self) -> &T {
+        self.as_inner()
+    }
+}
+
+
+//--- Display and Error
+
+impl<T: fmt::Display> fmt::Display for Marked<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.format_mark(f)?;
+        write!(f, ": {}", self.value)
+    }
+}
+
+impl<T: error::Error> error::Error for Marked<T> { }
+
+
+//------------ ConfigFile ----------------------------------------------------
+
+/// A config file.
+#[derive(Debug)]
+pub struct ConfigFile {
+    /// The source for this file.
+    source: Source,
+
+    /// The data of this file.
+    bytes: Vec<u8>,
+
+    /// The start indexes of lines.
+    ///
+    /// The start index of the first line is in `line_start[0]` and so on.
+    line_starts: Vec<usize>,
+}
+
+impl ConfigFile {
+    /// Load a config file from disk.
+    pub fn load(path: &impl AsRef<Path>) -> Result<Self, io::Error> {
+        fs::read(path).map(|bytes| {
+            ConfigFile {
+                source: path.into(),
+                line_starts: bytes.split(|ch| *ch == b'\n').fold(
+                    vec![0], |mut starts, slice| {
+                        starts.push(
+                            starts.last().unwrap() + slice.len()
+                        );
+                        starts
+                    }
+                ),
+                bytes,
+            }
+        })
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    fn resolve_pos(&self, pos: usize) -> LineCol {
+        let line = self.line_starts.iter().find(|&&start|
+            start < pos
+        ).map(|x| *x).unwrap_or_else(|| self.line_starts.len());
+        let line = line - 1;
+        let col = self.line_starts[line] - pos;
+        LineCol { line, col }
+    }
+}
+
+
+//------------ ConfigError --------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct ConfigError {
+    err: toml::de::Error,
+    pos: Marked<()>,
+}
+
+impl ConfigError {
+    pub fn new(err: toml::de::Error, file: &ConfigFile) -> Self {
+        ConfigError {
+            pos: Marked {
+                value: (),
+                index: 0,
+                source: Some(file.source.clone()),
+                pos: err.line_col().map(|(line, col)| {
+                    LineCol { line: line + 1, col: col + 1 }
+                })
+            },
+            err,
+        }
+    }
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pos.format_mark(f)?;
+        write!(f, ": {}", self.err)
+    }
+}
+
+impl error::Error for ConfigError { }
 

@@ -14,7 +14,10 @@ clap = "2.33"
 futures = "0.3"
 log = "0.4"
 rand = "0.7.3"
-rpki-rtr = { version = "^0.1", git = "https://github.com/NLnetLabs/rpki-rtr" }
-simple_logger = "1.5.0"
-tokio	  = { version="0.2", features=["dns", "io-util", "macros", "rt-core", "stream", "sync", "tcp", "time"]}
-
+rpki-rtr = { git = "https://github.com/NLnetLabs/rpki-rtr", branch = "stepped-client" }
+serde = "1.0"
+serde_derive = "1.0"
+slab = "0.4.2"
+simple-logging = "2.0.2"
+tokio	  = { version="0.2", features=["dns", "io-util", "macros", "rt-core", "rt-threaded", "stream", "sync", "tcp", "time"]}
+toml = "0.5.6"
