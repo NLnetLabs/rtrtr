@@ -1,9 +1,9 @@
 # RTRTR – A Versatile Tool for Route Filters
 
 RTRTR is a tool that collects, processes, and distributes data for route
-filtering. It reads with data from various sources, such as validated RPKI
+filtering. It reads data from various sources, such as validated RPKI
 data, IRR data, or local rules, allows selecting, filtering, and otherwise
-manipulating this data, and finally feed it to routers either via
+manipulating this data, and finally feeds it to routers either via
 protocols such as RTR or through generated configuration files.
 
 RTRTR is currently in early development. Right now, it can read RPKI data
