@@ -1,12 +1,13 @@
 //! The manager controlling the entire operation.
 
-use std::{error, fmt};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use log::error;
 use serde_derive::Deserialize;
 use tokio::runtime::Runtime;
 use crate::comms::{Gate, GateAgent, Link};
-use crate::config::Marked;
+use crate::config::{Config, ConfigFile, Marked};
+use crate::log::Failed;
 use crate::targets::Target;
 use crate::units::Unit;
 
@@ -17,16 +18,20 @@ use crate::units::Unit;
 pub struct Manager {
     units: HashMap<String, GateAgent>,
 
-    pending: Vec<(String, Unit, Gate)>,
+    pending: HashMap<String, Gate>,
 }
 
 
 impl Manager {
-    pub fn load<Op, R, E>(&mut self, op: Op) -> Result<R, LoadError>
-    where
-        Op: FnOnce() -> Result<(UnitSet, R), E>,
-        E: error::Error + 'static
-    {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn load(
+        &mut self, file: ConfigFile
+    ) -> Result<Config, Failed> {
+        // Prepare the thread-local used to allow serde load the links in the
+        // units and targets.
         GATES.with(|gates| {
             gates.replace(
                 Some(self.units.iter().map(|(key, value)| {
@@ -34,50 +39,59 @@ impl Manager {
                 }).collect())
             )
         });
-        let op_res = op();
-        let gates = GATES.with(|gates| gates.replace(None) ).unwrap();
-        let mut errs = LoadError::default();
-        let (mut units, res) = match op_res {
-            Ok(some) => some,
+
+        // Now load the config file.
+        let config = match Config::from_toml(file.bytes()) {
+            Ok(config) => config,
             Err(err) => {
-                errs.push(Box::new(err));
-                return Err(errs)
+                error!("{}: {}", file.path(), err);
+                return Err(Failed)
             }
         };
 
-        // All gates that don’t have a unit must appear in units or else
-        // we have unresolved links.
-        
-        for (name, load) in &gates {
-            if load.gate.is_some() {
-                if !units.units.contains_key(name) {
-                    for link in &load.links {
-                        errs.push(Box::new(UnresolvedLink {
-                            name: name.clone(),
-                            link: link.clone()
-                        }))
+        // All entries in the thread-local that have a gate are new. They must
+        // appear in config’s units or we have unresolved links.
+        let gates = GATES.with(|gates| gates.replace(None) ).unwrap();
+        let mut errs = Vec::new();
+        for (name, load) in gates {
+            if let Some(gate) = load.gate {
+                if !config.units.units.contains_key(&name) {
+                    for mut link in load.links {
+                        link.resolve_config(&file);
+                        errs.push(link.mark(
+                            format!("unresolved link to unit '{}'", name)
+                        ))
                     }
+                }
+                else {
+                    self.pending.insert(name, gate);
                 }
             }
         }
-
         if !errs.is_empty() {
-            return Err(errs)
-        }
-
-        for (name, load) in gates {
-            if let Some(gate) = load.gate {
-                let unit = units.units.remove(&name).unwrap();
-                self.pending.push((name, unit, gate))
+            for err in errs {
+                error!("{}", err);
             }
+            return Err(Failed)
         }
 
-        Ok(res)
+        Ok(config)
     }
 
-    pub fn spawn_units(&mut self, runtime: &Runtime) {
-        for (name, unit, gate) in self.pending.drain(..) {
+    /// Spawns all units and target in the config unto the given runtime.
+    ///
+    /// # Panics
+    ///
+    /// The method panics if the config hasn’t been successfully loaded via
+    /// the same manager earlier.
+    pub fn spawn(&mut self, config: &mut Config, runtime: &Runtime) {
+        for (name, unit) in config.units.units.drain() {
+            let gate = self.pending.remove(&name).unwrap();
             runtime.spawn(unit.run(name, gate));
+        }
+
+        for (name, target) in config.targets.targets.drain() {
+            runtime.spawn(target.run(name));
         }
     }
 }
@@ -103,12 +117,6 @@ pub struct TargetSet {
 impl TargetSet {
     pub fn new() -> Self {
         Default::default()
-    }
-
-    pub fn spawn_all(self, runtime: &Runtime) {
-        for (name, target) in self.targets {
-            let _ = runtime.spawn(target.run(name));
-        }
     }
 }
 
@@ -161,48 +169,4 @@ pub fn load_link(name: Marked<String>) -> Link {
         unit.agent.create_link()
     })
 }
-
-
-//------------ LoadError -----------------------------------------------------
-
-#[derive(Debug, Default)]
-pub struct LoadError {
-    errors: Vec<Box<dyn error::Error>>,
-}
-
-impl LoadError {
-    fn push(&mut self, err: Box<dyn error::Error>) {
-        self.errors.push(err)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item=&dyn error::Error> {
-        self.errors.iter().map(|err| err.as_ref())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.errors.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.errors.len()
-    }
-}
-
-
-//------------ UnresolvedLink ------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct UnresolvedLink {
-    name: String,
-    link: Marked<()>,
-}
-
-impl fmt::Display for UnresolvedLink {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.link.format_mark(f)?;
-        write!(f, "reference to undefined unit {}", self.name)
-    }
-}
-
-impl error::Error for UnresolvedLink { }
 

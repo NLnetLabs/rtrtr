@@ -113,7 +113,7 @@ impl Source {
                         Arc::new(old_diff.extend(&diff).unwrap())
                     ))
                 }
-                let mut state = data.state.clone();
+                let mut state = data.state;
                 state.inc();
                 SourceData {
                     state,

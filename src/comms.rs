@@ -354,9 +354,9 @@ impl Link {
         }
 
         let (tx, rx) = oneshot::channel();
-        if let Err(_) = self.commands.send(
+        if self.commands.send(
             GateCommand::Subscribe { suspended, response: tx }
-        ).await {
+        ).await.is_err() {
             self.unit_status = UnitStatus::Gone;
             return Err(UnitStatus::Gone)
         }
@@ -374,7 +374,7 @@ impl Link {
         self.unit_status = sub.unit_status;
         self.suspended = suspended;
         if self.unit_status == UnitStatus::Gone {
-            return Err(UnitStatus::Gone)
+            Err(UnitStatus::Gone)
         }
         else {
             Ok(())

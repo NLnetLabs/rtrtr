@@ -43,6 +43,10 @@ impl Set {
         self.items.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     /*
     /// Removes all items in `set` from `self`.
     pub fn remove_set(&mut self, set: &Set) {
