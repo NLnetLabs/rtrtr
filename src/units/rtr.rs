@@ -239,7 +239,7 @@ impl VrpUpdate for TargetUpdate {
             Some(ref mut diff) => {
                 match action {
                     Action::Announce => {
-                        self.set.insert(payload.clone())?;
+                        self.set.insert(payload)?;
                     }
                     Action::Withdraw => {
                         self.set.remove(&payload)?;

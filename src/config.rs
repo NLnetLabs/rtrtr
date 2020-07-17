@@ -3,38 +3,67 @@
 use std::{borrow, error, fmt, fs, io, ops};
 use std::path::Path;
 use std::sync::Arc;
+use clap::{App, Arg, ArgMatches};
 use serde_derive::Deserialize;
 use toml::Spanned;
-use crate::manager::{TargetSet, UnitSet};
+use crate::log::{ExitError, Failed, LogConfig};
+use crate::manager::{Manager, TargetSet, UnitSet};
 
 
 //------------ Config --------------------------------------------------------
 
 #[derive(Deserialize)]
 pub struct Config {
-    units: UnitSet,
+    pub units: UnitSet,
     
-    targets: TargetSet,
+    pub targets: TargetSet,
 
     #[serde(flatten)]
-    params: Parameters,
+    pub log: LogConfig,
 }
 
 impl Config {
+    pub fn init() -> Result<(), ExitError> {
+        LogConfig::init_logging()
+    }
+
     pub fn from_toml(slice: &[u8]) -> Result<Self, toml::de::Error> {
         toml::de::from_slice(slice)
     }
 
-    pub fn into_parts(self) -> (UnitSet, TargetSet, Parameters) {
-        (self.units, self.targets, self.params)
+    pub fn config_args<'a: 'b, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let app = app.arg(Arg::with_name("config")
+                .short("c")
+                 .long("config")
+                 .takes_value(true)
+                 .value_name("PATH")
+                 .help("Read base configuration from this file")
+        );
+        LogConfig::config_args(app)
     }
-}
 
-
-//------------ Parameters ----------------------------------------------------
-
-#[derive(Deserialize)]
-pub struct Parameters {
+    pub fn from_arg_matches(
+        matches: &ArgMatches,
+        cur_dir: &Path,
+        manager: &mut Manager,
+    ) -> Result<Self, Failed> {
+        let conf_path = cur_dir.join(matches.value_of("config").unwrap());
+        let conf = match ConfigFile::load(&conf_path) {
+            Ok(conf) => conf,
+            Err(err) => {
+                eprintln!(
+                    "Failed to read config file '{}': {}",
+                    conf_path.display(),
+                    err
+                );
+                return Err(Failed)
+            }
+        };
+        let mut res = manager.load(conf)?;
+        res.log.update_with_arg_matches(matches, cur_dir)?;
+        res.log.switch_logging(false)?;
+        Ok(res)
+    }
 }
 
 
@@ -223,6 +252,13 @@ impl ConfigFile {
         })
     }
 
+    pub fn path(&self) -> &str {
+        match self.source.path {
+            Some(ref path) => path.as_ref(),
+            None => ""
+        }
+    }
+
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -230,7 +266,7 @@ impl ConfigFile {
     fn resolve_pos(&self, pos: usize) -> LineCol {
         let line = self.line_starts.iter().find(|&&start|
             start < pos
-        ).map(|x| *x).unwrap_or_else(|| self.line_starts.len());
+        ).copied().unwrap_or_else(|| self.line_starts.len());
         let line = line - 1;
         let col = self.line_starts[line] - pos;
         LineCol { line, col }
