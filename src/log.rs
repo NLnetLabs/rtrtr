@@ -1,4 +1,4 @@
-use std::{env, fmt, io, process};
+use std::{fmt, io, process};
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -219,7 +219,7 @@ impl LogConfig {
     fn syslog_logger(
         &self
     ) -> Result<Box<dyn Log>, Failed> {
-        let process = env::current_exe().ok().and_then(|path|
+        let process = std::env::current_exe().ok().and_then(|path|
             path.file_name()
                 .and_then(std::ffi::OsStr::to_str)
                 .map(ToString::to_string)
