@@ -134,6 +134,7 @@ impl LogConfig {
     /// This helper function just changes error handling. Instead of returning
     /// the actual conversion error, it logs it as an invalid value for entry
     /// `key` and returns the standard error.
+    #[allow(dead_code)] // unused on Windows
     fn from_str_value_of<T>(
         matches: &ArgMatches,
         key: &str
