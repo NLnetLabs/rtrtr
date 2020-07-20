@@ -177,6 +177,10 @@ impl SetBuilder {
         self.items.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     /*
     pub fn push_set(&mut self, set: Set) {
         self.items.extend(&set.items)

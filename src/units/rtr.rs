@@ -205,10 +205,7 @@ impl VrpTarget for Target {
     fn start(&mut self, reset: bool) -> Self::Update {
         debug!("Unit {}: starting update (reset={})", self.name, reset);
         TargetUpdate {
-            set: {
-                let set = payload::SetBuilder::from(self.current.as_ref());
-                set
-            },
+            set: self.current.as_ref().into(),
             diff: if reset {
                 None
             }
