@@ -173,6 +173,9 @@ impl SetBuilder {
         self.items.contains(payload)
     }
 
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
 
     /*
     pub fn push_set(&mut self, set: Set) {
@@ -382,6 +385,14 @@ pub struct DiffBuilder {
 }
 
 impl DiffBuilder {
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     pub fn push(
         &mut self, payload: Payload, action: Action
     ) -> Result<(), VrpError> {
@@ -390,7 +401,15 @@ impl DiffBuilder {
                 entry.insert(action);
                 Ok(())
             }
-            Entry::Occupied(_) => Err(VrpError::Corrupt),
+            Entry::Occupied(entry) => {
+                if *entry.get() == action {
+                    Err(VrpError::Corrupt)
+                }
+                else {
+                    entry.remove();
+                    Ok(())
+                }
+            }
         }
     }
 

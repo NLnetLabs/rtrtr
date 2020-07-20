@@ -47,9 +47,14 @@ impl Tcp {
     ) -> Result<(), Terminated> {
         let mut target = Target::new(name);
         loop {
+            debug!("Unit {}: Connecting ...", target.name);
             let mut client = match self.connect(target, &mut gate).await {
                 Ok(client) => client,
                 Err(res) => {
+                    debug!(
+                        "Unit {}: Connection failed. Awaiting reconnect.",
+                        res.name
+                    );
                     self.retry_wait(&mut gate).await?;
                     target = res;
                     continue;
@@ -65,14 +70,26 @@ impl Tcp {
                         update
                     }
                     Ok(Err(_)) => {
-                        // XXX Log?
+                        debug!(
+                            "Unit {}: RTR client disconnected.",
+                            client.target().name
+                        );
                         break;
                     }
-                    Err(_) => return Err(Terminated)
+                    Err(_) => {
+                        debug!(
+                            "Unit {}: RTR client terminated.",
+                            client.target().name
+                        );
+                        return Err(Terminated)
+                    }
                 };
-                self.serial = self.serial.add(1);
-                let update = update.into_update(self.serial);
-                gate.update_data(update).await;
+                if !update.is_definitely_empty() {
+                    self.serial = self.serial.add(1);
+                    let update = update.into_update(self.serial);
+                    client.target_mut().current = update.set();
+                    gate.update_data(update).await;
+                }
             }
 
             target = client.into_target();
@@ -135,7 +152,9 @@ impl Tcp {
                     self.status = status;
                     update = next_fut;
                 }
-                Either::Right((res, _)) => return Ok(res)
+                Either::Right((res, _)) => {
+                    return Ok(res)
+                }
             }
         }
     }
@@ -186,7 +205,10 @@ impl VrpTarget for Target {
     fn start(&mut self, reset: bool) -> Self::Update {
         debug!("Unit {}: starting update (reset={})", self.name, reset);
         TargetUpdate {
-            set: self.current.as_ref().into(),
+            set: {
+                let set = payload::SetBuilder::from(self.current.as_ref());
+                set
+            },
             diff: if reset {
                 None
             }
@@ -220,6 +242,15 @@ struct TargetUpdate {
 }
 
 impl TargetUpdate {
+    fn is_definitely_empty(&self) -> bool {
+        if let Some(diff) = self.diff.as_ref() {
+            diff.is_empty()
+        }
+        else {
+            false
+        }
+    }
+
     fn into_update(self, serial: Serial) -> payload::Update {
         payload::Update::new(
             serial,

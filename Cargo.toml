@@ -30,3 +30,6 @@ daemonize       = "0.4.1"
 libc            = "0.2.68"
 syslog          = "5.0.0"
 
+[profile.release]
+panic = "abort"
+
