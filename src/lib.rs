@@ -1,3 +1,4 @@
+#![allow(clippy::unknown_clippy_lints)]
 
 pub mod comms;
 pub mod config;
