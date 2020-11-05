@@ -30,10 +30,7 @@ impl Collection {
             }
         }
         new_sources.push(
-            RegisteredSource {
-                name: name.into(),
-                source
-            }
+            RegisteredSource { name, source }
         );
         *sources = new_sources.into()
     }
@@ -271,14 +268,16 @@ pub enum OutputFormat {
 
 impl OutputFormat {
     /// Returns whether the format supports non-numerical metrics.
+    #[allow(clippy::match_like_matches_macro)]
     pub fn allows_text(self) -> bool {
         match self {
             OutputFormat::Prometheus => false,
-            OutputFormat::Plain => false,
+            OutputFormat::Plain => true,
         }
     }
 
     /// Returns whether this output format supports this metric type.
+    #[allow(clippy::match_like_matches_macro)]
     pub fn supports_type(self, metric: MetricType) -> bool {
         match (self, metric) {
             (OutputFormat::Prometheus, MetricType::Text) => false,
