@@ -100,6 +100,10 @@ impl Source {
                     Some(diff) => diff,
                     None => Arc::new(update.set().diff_from(current)),
                 };
+                if diff.is_empty() {
+                    // If there is no change in data, don’t update.
+                    return
+                }
                 let mut diffs = Vec::with_capacity(
                     cmp::min(data.diffs.len() + 1, self.diff_num)
                 );
