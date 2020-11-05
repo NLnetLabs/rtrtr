@@ -18,12 +18,14 @@ Over time, we will add more functionality.
 RTRTR is a very versatile tool. It comes with a number of components for
 different purposes that can be connected to serve multiple use cases.
 There are two classes of components: _Units_ take filtering data from
-somewhere – this could other units or external sources –, and produce and
+somewhere – this could be other units or external sources –, and produce and
 constantly update one new set of data. _Targets_ take the data set from
 one particular unit and serve it to an external party.
 
 Which components RTRTR will use and how they are connected is described in
-a config file. An example can be found in [`etc/rtrtr.conf`].
+a config file. An example can be found in [`etc/rtrtr.conf`]. For the
+moment, this example file also serves as a manual for the available
+components and their configuration.
 
 
 ## Quick Start
