@@ -1,9 +1,12 @@
 /// Units that combine the updates from other units.
 
+use std::sync::Arc;
 use futures::future::{select_all, FutureExt};
 use rand::{thread_rng, Rng};
 use serde_derive::Deserialize;
-use crate::comms::{Gate, Link, Terminated, UnitStatus};
+use crate::metrics;
+use crate::comms::{Gate, GateMetrics, Link, Terminated, UnitStatus};
+use crate::manager::Component;
 use crate::payload;
 
 
@@ -21,12 +24,14 @@ pub struct Any {
 
 impl Any {
     pub async fn run(
-        mut self, _name: String, mut gate: Gate
+        mut self, mut component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
         if self.sources.is_empty() {
             gate.update_status(UnitStatus::Gone).await;
             return Err(Terminated)
         }
+        let metrics = Arc::new(AnyMetrics::new(&gate));
+        component.register_metrics(metrics.clone());
 
         let mut gate = [gate];
 
@@ -47,8 +52,11 @@ impl Any {
                 ).await.0
             };
             match res {
-                Ok(Some(update)) => gate[0].update_data(update).await,
-                Ok(None) => { }
+                Ok(Some(update)) => {
+                    gate[0].update_data(update).await
+                }
+                Ok(None) => {
+                }
                 Err(()) => {
                     self.sources[curr_idx].suspend().await;
                     curr_idx = self.pick(Some(curr_idx));
@@ -98,6 +106,28 @@ impl<'a> AnySource<'a> {
                 Ok(None)
             }
         }
+    }
+}
+
+
+//------------ AnyMetrics ----------------------------------------------------
+
+#[derive(Debug, Default)]
+struct AnyMetrics {
+    gate: Arc<GateMetrics>,
+}
+
+impl AnyMetrics {
+    fn new(gate: &Gate) -> Self {
+        AnyMetrics {
+            gate: gate.metrics(),
+        }
+    }
+}
+
+impl metrics::Source for AnyMetrics {
+    fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
+        self.gate.append(unit_name, target);
     }
 }
 

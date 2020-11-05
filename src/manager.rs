@@ -2,14 +2,45 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 use log::error;
 use serde_derive::Deserialize;
 use tokio::runtime::Runtime;
+use crate::metrics;
 use crate::comms::{Gate, GateAgent, Link};
 use crate::config::{Config, ConfigFile, Marked};
 use crate::log::Failed;
 use crate::targets::Target;
 use crate::units::Unit;
+
+
+//------------ Component -----------------------------------------------------
+
+/// A component.
+///
+/// Upon being started, every component receives one of these. It can use it
+/// to communicate with the manager.
+#[derive(Debug)]
+pub struct Component {
+    name: Arc<str>,
+    metrics: metrics::Collection,
+}
+
+impl Component {
+    fn new(name: String, metrics: metrics::Collection) -> Self {
+        Component { name: name.into(), metrics }
+    }
+
+    /// Returns the name of the component.
+    pub fn name(&self) -> &Arc<str> {
+        &self.name
+    }
+
+    /// Register a metrics source.
+    pub fn register_metrics(&mut self, source: Arc<dyn metrics::Source>) {
+        self.metrics.register(self.name.clone(), Arc::downgrade(&source));
+    }
+}
 
 
 //------------ Manager -------------------------------------------------------
@@ -19,6 +50,8 @@ pub struct Manager {
     units: HashMap<String, GateAgent>,
 
     pending: HashMap<String, Gate>,
+
+    metrics: metrics::Collection,
 }
 
 
@@ -78,7 +111,7 @@ impl Manager {
         Ok(config)
     }
 
-    /// Spawns all units and target in the config unto the given runtime.
+    /// Spawns all units and targets in the config unto the given runtime.
     ///
     /// # Panics
     ///
@@ -87,12 +120,17 @@ impl Manager {
     pub fn spawn(&mut self, config: &mut Config, runtime: &Runtime) {
         for (name, unit) in config.units.units.drain() {
             let gate = self.pending.remove(&name).unwrap();
-            runtime.spawn(unit.run(name, gate));
+            let controller = Component::new(name, self.metrics.clone());
+            runtime.spawn(unit.run(controller, gate));
         }
 
         for (name, target) in config.targets.targets.drain() {
             runtime.spawn(target.run(name));
         }
+    }
+
+    pub fn metrics(&self) -> metrics::Collection {
+        self.metrics.clone()
     }
 }
 

@@ -25,6 +25,7 @@ mod rtr;
 
 use serde_derive::Deserialize;
 use crate::comms::Gate;
+use crate::manager::Component;
 
 /// The fundamental entity for data processing.
 #[derive(Debug, Deserialize)]
@@ -38,10 +39,12 @@ pub enum Unit {
 }
 
 impl Unit {
-    pub async fn run(self, name: String, gate: Gate) {
+    pub async fn run(
+        self, component: Component, gate: Gate
+    )  {
         let _ = match self {
-            Unit::Any(unit) => unit.run(name, gate).await,
-            Unit::RtrTcp(unit) => unit.run(name, gate).await,
+            Unit::Any(unit) => unit.run(component, gate).await,
+            Unit::RtrTcp(unit) => unit.run(component, gate).await,
         };
     }
 }

@@ -8,11 +8,19 @@
 //! sends its updates. The opposite end is called a `Link` and is held by
 //! other units or targets.
 
+use std::fmt;
+use std::sync::atomic;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicUsize};
+use chrono::{DateTime, Utc};
+use crossbeam_utils::atomic::AtomicCell;
 use slab::Slab;
 use serde_derive::Deserialize;
 use tokio::sync::{mpsc, oneshot};
-use crate::{manager, payload};
+use crate::{manager, metrics, payload};
 use crate::config::Marked;
+use crate::metrics::{Metric, MetricType, MetricUnit};
+
 
 
 //------------ Configuration -------------------------------------------------
@@ -39,7 +47,7 @@ const COMMAND_QUEUE_LEN: usize = 16;
 /// gate becomes active again.
 ///
 /// In order for the gate to maintain its own state, the unit needs to
-/// regularly run the `process` method. It return, the unit will receive an
+/// regularly run the `process` method. In return, the unit will receive an
 /// update to the gate’s state as soon as it becomes available.
 ///
 /// Sending of updates happens via the `update_data` and `update_status`
@@ -57,6 +65,9 @@ pub struct Gate {
 
     /// The current unit status.
     unit_status: UnitStatus,
+
+    /// The gate metrics.
+    metrics: Arc<GateMetrics>,
 }
 
 
@@ -71,10 +82,16 @@ impl Gate {
             commands: rx,
             updates: Slab::new(),
             suspended: 0,
-            unit_status: UnitStatus::Healthy,
+            unit_status: UnitStatus::default(),
+            metrics: Default::default(),
         };
         let agent = GateAgent { commands: tx };
         (gate, agent)
+    }
+
+    /// Returns the metrics.
+    pub fn metrics(&self) -> Arc<GateMetrics> {
+        self.metrics.clone()
     }
 
     /// Runs the gate’s internal machine.
@@ -127,7 +144,8 @@ impl Gate {
             }
             item.sender = None
         }
-        self.updates.retain(|_, item| item.sender.is_some())
+        self.updates.retain(|_, item| item.sender.is_some());
+        self.metrics.update(&update);
     }
 
     /// Updates the unit status.
@@ -146,7 +164,8 @@ impl Gate {
             }
             item.sender = None
         }
-        self.updates.retain(|_, item| item.sender.is_some())
+        self.updates.retain(|_, item| item.sender.is_some());
+        self.metrics.update_status(update);
     }
 
     /// Returns the current gate status.
@@ -203,6 +222,91 @@ impl GateAgent {
     /// Creates a new link to the gate.
     pub fn create_link(&mut self) -> Link {
         Link::new(self.commands.clone())
+    }
+}
+
+
+//------------ GateMetrics ---------------------------------------------------
+
+/// Metrics about the updates distributed via the gate.
+#[derive(Debug, Default)]
+pub struct GateMetrics {
+    status: AtomicCell<UnitStatus>,
+    serial: AtomicU32,
+    count: AtomicUsize,
+    update: AtomicCell<Option<DateTime<Utc>>>,
+}
+
+impl GateMetrics {
+    fn update(&self, update: &payload::Update) {
+        self.serial.store(update.serial().into(), atomic::Ordering::Relaxed);
+        self.count.store(update.set().len(), atomic::Ordering::Relaxed);
+        self.update.store(Some(Utc::now()));
+    }
+
+    fn update_status(&self, status: UnitStatus) {
+        self.status.store(status)
+    }
+}
+
+impl GateMetrics {
+    const STATUS_METRIC: Metric = Metric::new(
+        "gate_status", "the operational status of the unit",
+        MetricType::Text, MetricUnit::Info
+    );
+    const SERIAL_METRIC: Metric = Metric::new(
+        "serial", "the serial number of the unit’s updates",
+        MetricType::Counter, MetricUnit::Info
+    );
+    const COUNT_METRIC: Metric = Metric::new(
+        "vrps", "the number of VRPs in the last update",
+        MetricType::Gauge, MetricUnit::Total
+    );
+    const UPDATE_METRIC: Metric = Metric::new(
+        "last_update", "the date and time of the last update",
+        MetricType::Text, MetricUnit::Info
+    );
+    const UPDATE_AGO_METRIC: Metric = Metric::new(
+        "since_last_update", "the number of seconds since the last update",
+        MetricType::Gauge, MetricUnit::Second
+    );
+}
+
+impl metrics::Source for GateMetrics {
+    fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
+        target.append_simple(
+            &Self::STATUS_METRIC, Some(unit_name), self.status.load()
+        );
+        target.append_simple(
+            &Self::SERIAL_METRIC, Some(unit_name), 
+            self.serial.load(atomic::Ordering::Relaxed)
+        );
+        target.append_simple(
+            &Self::COUNT_METRIC, Some(unit_name),
+            self.count.load(atomic::Ordering::Relaxed)
+        );
+        match self.update.load() {
+            Some(update) => {
+                target.append_simple(
+                    &Self::UPDATE_METRIC, Some(unit_name),
+                    update
+                );
+                let ago = Utc::now().signed_duration_since(update);
+                let ago = (ago.num_milliseconds() as f64) / 1000.;
+                target.append_simple(
+                    &Self::UPDATE_AGO_METRIC, Some(unit_name), ago
+                );
+            }
+            None => {
+                target.append_simple(
+                    &Self::UPDATE_METRIC, Some(unit_name),
+                    "N/A"
+                );
+                target.append_simple(
+                    &Self::UPDATE_AGO_METRIC, Some(unit_name), -1
+                );
+            }
+        }
     }
 }
 
@@ -447,10 +551,26 @@ pub enum UnitStatus {
     Gone,
 }
 
+impl Default for UnitStatus {
+    fn default() -> Self {
+        UnitStatus::Healthy
+    }
+}
+
+impl fmt::Display for UnitStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            UnitStatus::Healthy => "healthy",
+            UnitStatus::Stalled => "stalled",
+            UnitStatus::Gone => "gone",
+        })
+    }
+}
+
 
 //------------ Terminated ----------------------------------------------------
 
-/// A unit has been terminated.
+/// An error signalling that a unit has been terminated.
 ///
 /// In response to this error, a unit’s run function should return.
 #[derive(Clone, Copy, Debug)]

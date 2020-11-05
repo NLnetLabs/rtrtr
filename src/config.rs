@@ -6,6 +6,7 @@ use std::sync::Arc;
 use clap::{App, Arg, ArgMatches};
 use serde_derive::Deserialize;
 use toml::Spanned;
+use crate::http;
 use crate::log::{ExitError, Failed, LogConfig};
 use crate::manager::{Manager, TargetSet, UnitSet};
 
@@ -20,6 +21,9 @@ pub struct Config {
 
     #[serde(flatten)]
     pub log: LogConfig,
+
+    #[serde(flatten)]
+    pub http: http::Server,
 }
 
 impl Config {

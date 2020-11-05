@@ -12,7 +12,9 @@ use rpki_rtr::state::{Serial, State};
 use serde_derive::Deserialize;
 use tokio::net::TcpStream;
 use tokio::time::{timeout_at, Instant};
-use crate::comms::{Gate, GateStatus, Terminated};
+use crate::metrics;
+use crate::comms::{Gate, GateMetrics, GateStatus, Terminated};
+use crate::manager::Component;
 use crate::payload;
 
 
@@ -43,9 +45,11 @@ impl Tcp {
     }
 
     pub async fn run(
-        mut self, name: String, mut gate: Gate
+        mut self, mut component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
-        let mut target = Target::new(name);
+        let mut target = Target::new(component.name().clone());
+        let metrics = Arc::new(RtrMetrics::new(&gate));
+        component.register_metrics(metrics.clone());
         loop {
             let mut client = match self.connect(target, &mut gate).await {
                 Ok(client) => client,
@@ -167,11 +171,11 @@ struct Target {
 
     state: Option<State>,
 
-    name: String,
+    name: Arc<str>,
 }
 
 impl Target {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: Arc<str>) -> Self {
         Target {
             current: Default::default(),
             state: None,
@@ -256,6 +260,28 @@ impl VrpUpdate for TargetUpdate {
                 }
             }
         }
+    }
+}
+
+
+//------------ RtrMetrics ----------------------------------------------------
+
+#[derive(Debug, Default)]
+struct RtrMetrics {
+    gate: Arc<GateMetrics>,
+}
+
+impl RtrMetrics {
+    fn new(gate: &Gate) -> Self {
+        RtrMetrics {
+            gate: gate.metrics(),
+        }
+    }
+}
+
+impl metrics::Source for RtrMetrics {
+    fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
+        self.gate.append(unit_name, target);
     }
 }
 
