@@ -1,9 +1,10 @@
 /// RTR servers as a target.
 
 use std::cmp;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
+use arc_swap::ArcSwap;
 use log::{debug, error};
 use serde_derive::Deserialize;
 use rpki_rtr::payload::Timing;
@@ -73,17 +74,18 @@ impl Tcp {
 
 }
 
+
 //------------ Source --------------------------------------------------------
 
 #[derive(Clone, Default)]
 struct Source {
-    data: Arc<Mutex<Arc<SourceData>>>,
+    data: ArcSwap<SourceData>,
     diff_num: usize,
 }
 
 impl Source {
     fn update(&self, update: payload::Update) {
-        let data = self.data.lock().unwrap().clone();
+        let data = self.data.load();
 
         let new_data = match data.current.as_ref() {
             None => {
@@ -129,7 +131,7 @@ impl Source {
             }
         };
 
-        *self.data.lock().unwrap() = Arc::new(new_data);
+        self.data.store(new_data.into());
     }
 }
 
@@ -138,15 +140,15 @@ impl VrpSource for Source {
     type DiffIter = payload::DiffIter;
 
     fn ready(&self) -> bool {
-        self.data.lock().unwrap().current.is_some()
+        self.data.load().current.is_some()
     }
 
     fn notify(&self) -> State {
-        self.data.lock().unwrap().state
+        self.data.load().state
     }
 
     fn full(&self) -> (State, Self::FullIter) {
-        let this = self.data.lock().unwrap();
+        let this = self.data.load();
         match this.current.as_ref() {
             Some(current) => (this.state, current.clone().into()),
             None => (this.state, Arc::new(payload::Set::default()).into())
@@ -154,7 +156,7 @@ impl VrpSource for Source {
     }
 
     fn diff(&self, state: State) -> Option<(State, Self::DiffIter)> {
-        let this = self.data.lock().unwrap();
+        let this = self.data.load();
         if this.current.is_none() || state.session() != this.state.session() {
             return None
         }
@@ -165,7 +167,7 @@ impl VrpSource for Source {
     }
 
     fn timing(&self) -> Timing {
-        self.data.lock().unwrap().timing
+        self.data.load().timing
     }
 }
 

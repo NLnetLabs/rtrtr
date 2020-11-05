@@ -84,13 +84,13 @@ pub struct Source {
     /// The optional path of a config file.
     ///
     /// If this in `None`, the source is an interactive session.
-    path: Option<Arc<String>>,
+    path: Option<Arc<str>>,
 }
 
 impl<'a, T: AsRef<Path>> From<&'a T> for Source {
     fn from(path: &'a T) -> Source {
         Source {
-            path: Some(Arc::new(format!("{}", path.as_ref().display())))
+            path: Some(format!("{}", path.as_ref().display()).into())
         }
     }
 }
@@ -148,7 +148,7 @@ impl<T> Marked<T> {
     /// Formats the mark for displaying.
     pub fn format_mark(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let source = self.source.as_ref().and_then(|source|
-            source.path.as_ref().map(|path| path.as_str())
+            source.path.as_ref()
         );
         match (source, self.pos) {
             (Some(source), Some(pos)) => {

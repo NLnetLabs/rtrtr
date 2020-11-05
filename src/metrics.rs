@@ -1,8 +1,9 @@
 //! Metrics.
 
 use std::{fmt, iter};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 use std::fmt::Write;
+use arc_swap::ArcSwap;
 use clap::{crate_name, crate_version};
 
 
@@ -15,14 +16,12 @@ const PROMETHEUS_PREFIX: &str = "rtrtr";
 
 #[derive(Clone, Default)]
 pub struct Collection {
-    sources: Arc<Mutex<Arc<Vec<RegisteredSource>>>>,
+    sources: ArcSwap<Vec<RegisteredSource>>,
 }
 
 impl Collection {
     pub fn register(&self, name: Arc<str>, source: Weak<dyn Source>) {
-        let mut sources = self.sources.lock().unwrap();
-
-        let old_sources = sources.clone();
+        let old_sources = self.sources.load();
         let mut new_sources = Vec::new();
         for item in old_sources.iter() {
             if item.source.strong_count() > 0 {
@@ -32,11 +31,11 @@ impl Collection {
         new_sources.push(
             RegisteredSource { name, source }
         );
-        *sources = new_sources.into()
+        self.sources.store(new_sources.into())
     }
 
     pub fn assemble(&self, format: OutputFormat) -> String {
-        let sources = self.sources.lock().unwrap().clone();
+        let sources = self.sources.load();
         let mut target = Target::new(format);
         for item in sources.iter() {
             if let Some(source) = item.source.upgrade() {
@@ -50,7 +49,7 @@ impl Collection {
 
 impl fmt::Debug for Collection {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let len = self.sources.lock().unwrap().len();
+        let len = self.sources.load().len();
         write!(f, "Collection({} sources)", len)
     }
 }
