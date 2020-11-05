@@ -19,7 +19,7 @@ hyper           = "0.13.4"
 log             = "0.4"
 log-reroute     = "0.1.5"
 rand            = "0.7.3"
-rpki-rtr = { git = "https://github.com/NLnetLabs/rpki-rtr", branch = "stepped-client" }
+rpki-rtr	= "0.2.0"
 serde           = "1.0"
 serde_derive    = "1.0"
 slab            = "0.4.2"
