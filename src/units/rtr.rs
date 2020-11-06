@@ -13,7 +13,7 @@ use serde_derive::Deserialize;
 use tokio::net::TcpStream;
 use tokio::time::{timeout_at, Instant};
 use crate::metrics;
-use crate::comms::{Gate, GateMetrics, GateStatus, Terminated};
+use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
 use crate::manager::Component;
 use crate::payload;
 
@@ -50,15 +50,20 @@ impl Tcp {
         let mut target = Target::new(component.name().clone());
         let metrics = Arc::new(RtrMetrics::new(&gate));
         component.register_metrics(metrics.clone());
+        gate.update_status(UnitStatus::Stalled).await;
         loop {
             debug!("Unit {}: Connecting ...", target.name);
             let mut client = match self.connect(target, &mut gate).await {
-                Ok(client) => client,
+                Ok(client) => {
+                    gate.update_status(UnitStatus::Healthy).await;
+                    client
+                }
                 Err(res) => {
                     debug!(
                         "Unit {}: Connection failed. Awaiting reconnect.",
                         res.name
                     );
+                    gate.update_status(UnitStatus::Stalled).await;
                     self.retry_wait(&mut gate).await?;
                     target = res;
                     continue;
@@ -97,6 +102,7 @@ impl Tcp {
             }
 
             target = client.into_target();
+            gate.update_status(UnitStatus::Stalled).await;
             self.retry_wait(&mut gate).await?;
         }
     }
@@ -208,13 +214,16 @@ impl VrpTarget for Target {
 
     fn start(&mut self, reset: bool) -> Self::Update {
         debug!("Unit {}: starting update (reset={})", self.name, reset);
-        TargetUpdate {
-            set: self.current.as_ref().into(),
-            diff: if reset {
-                None
+        if reset {
+            TargetUpdate {
+                set: Default::default(),
+                diff: None
             }
-            else {
-                Some(Default::default())
+        }
+        else {
+            TargetUpdate {
+                set: self.current.as_ref().into(),
+                diff: Some(Default::default())
             }
         }
     }

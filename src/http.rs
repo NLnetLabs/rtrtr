@@ -1,4 +1,11 @@
 /// The HTTP server.
+///
+/// Because with HTTP you can select what information you want per request,
+/// we only have one HTTP server for the entire instance. HTTP targets will
+/// provide their data via a specific base path within that server.
+///
+/// Server configuration happens via the [`Server`] struct that normally is
+/// part of the [`Config`](crate::config::Config).
 
 use std::io;
 use std::convert::Infallible;
@@ -22,13 +29,25 @@ use crate::metrics;
 
 //------------ Server --------------------------------------------------------
 
+/// The configuration for the HTTP server.
 #[derive(Clone, Deserialize)]
 pub struct Server {
+    /// The socket addresses to listen on.
     #[serde(rename = "http-listen")]
     listen: Vec<SocketAddr>,
 }
 
 impl Server {
+    /// Runs the server.
+    ///
+    /// The method will start a new server listening on the sockets provided
+    /// via the configuration and spawns it onto the given `runtime`.
+    ///
+    /// The server will use `metrics` to produce information on its metrics
+    /// related endpoints.
+    ///
+    /// (In a future version, this function will also take an object
+    /// reflecting additionally configured endpoints.)
     pub fn run(
         &self,
         metrics: metrics::Collection,
@@ -54,6 +73,10 @@ impl Server {
         Ok(())
     }
  
+    /// Runs a single HTTP listener.
+    ///
+    /// Currently, this async function only resolves if the underlying
+    /// listener encounters an error.
     async fn single_listener(
         listener: StdListener,
         metrics: metrics::Collection,
@@ -81,6 +104,7 @@ impl Server {
         }
     }
 
+    /// Handles a single HTTP request.
     async fn handle_request(
         req: Request<Body>,
         metrics: &metrics::Collection
@@ -95,6 +119,7 @@ impl Server {
         })
     }
 
+    /// Produces the response for a call to the `/metrics` endpoint.
     fn metrics(metrics: &metrics::Collection) -> Response<Body> {
         Response::builder()
         .header("Content-Type", "text/plain; version=0.0.4")
@@ -104,6 +129,7 @@ impl Server {
         .unwrap()
     }
 
+    /// Produces the response for a call to the `/status` endpoint.
     fn status(metrics: &metrics::Collection) -> Response<Body> {
         Response::builder()
         .header("Content-Type", "text/plain")
@@ -113,6 +139,7 @@ impl Server {
         .unwrap()
     }
 
+    /// Produces the response for a Method Not Allowed error.
     fn method_not_allowed() -> Response<Body> {
         Response::builder()
         .status(StatusCode::METHOD_NOT_ALLOWED)
@@ -121,6 +148,7 @@ impl Server {
         .unwrap()
     }
 
+    /// Produces the response for a Not Found error.
     fn not_found() -> Response<Body> {
         Response::builder()
         .status(StatusCode::NOT_FOUND)
@@ -133,6 +161,7 @@ impl Server {
 
 //------------ Wrapped sockets -----------------------------------------------
 
+/// A TCP listener wrapped for use with Hyper.
 struct HttpAccept {
     sock: TcpListener,
 }
@@ -156,6 +185,7 @@ impl Accept for HttpAccept {
 }
 
 
+/// A TCP stream wrapped for use with Hyper.
 struct HttpStream {
     sock: TcpStream,
 }

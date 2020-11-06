@@ -1,3 +1,11 @@
+//! Logging.
+//!
+//! This module provides facilities to set up logging based on a configuration
+//! via [`LogConfig`].
+//!
+//! The module also provides two error types [`Failed`] and [`ExitError`] that
+//! indicate that error information has been logged and a consumer can just
+//! return quietly.
 use std::{fmt, io, process};
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
@@ -9,23 +17,33 @@ use serde_derive::Deserialize;
 
 //------------ LogConfig -----------------------------------------------------
 
+/// Logging configuration.
 #[derive(Deserialize)]
 pub struct LogConfig {
+    /// Where to log to?
     #[serde(default)]
     pub log_target: LogTarget,
 
+    /// If logging to a file, use this file.
+    ///
+    /// This isn’t part of `log_target` for deserialization reasons.
     #[serde(default)]
     pub log_file: PathBuf,
 
+    /// The syslog facility when logging to syslog.
+    ///
+    /// This isn’t part of `log_target` for deserialization reasons.
     #[cfg(unix)]
     #[serde(default)]
     pub log_facility: LogFacility,
 
+    /// The minimum log level to actually log.
     #[serde(default)]
     pub log_level: LogFilter,
 }
 
 impl LogConfig {
+    /// Configures a clap app with the options for logging.
     pub fn config_args<'a: 'b, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app
         .arg(Arg::with_name("verbose")
@@ -59,6 +77,9 @@ impl LogConfig {
         )
     }
 
+    /// Update the logging configuration from command line arguments.
+    ///
+    /// This should be called after the configuration file has been loaded.
     pub fn update_with_arg_matches(
         &mut self,
         matches: &ArgMatches,
@@ -307,8 +328,6 @@ pub enum LogTarget {
     Default,
 
     /// Syslog.
-    ///
-    /// The argument is the syslog facility to use.
     #[cfg(unix)]
     #[serde(rename = "syslog")]
     Syslog,
@@ -431,9 +450,11 @@ pub struct Failed;
 
 //------------ ExitError -----------------------------------------------------
 
+/// An error happened that should cause the process to exit.
 pub struct ExitError;
 
 impl ExitError {
+    /// Exits the process.
     pub fn exit(self) -> ! {
         process::exit(1)
     }

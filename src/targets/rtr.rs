@@ -79,7 +79,7 @@ impl Tcp {
 
 #[derive(Clone, Default)]
 struct Source {
-    data: ArcSwap<SourceData>,
+    data: Arc<ArcSwap<SourceData>>,
     diff_num: usize,
 }
 

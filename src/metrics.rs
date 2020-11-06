@@ -1,7 +1,9 @@
-//! Metrics.
+//! Maintaining and outputting metrics.
+//!
+//! 
 
-use std::{fmt, iter};
-use std::sync::{Arc, Weak};
+use std::fmt;
+use std::sync::{Arc, Mutex, Weak};
 use std::fmt::Write;
 use arc_swap::ArcSwap;
 use clap::{crate_name, crate_version};
@@ -9,6 +11,7 @@ use clap::{crate_name, crate_version};
 
 //------------ Module Configuration ------------------------------------------
 
+/// The application prefix to use in the names of Prometheus metrics.
 const PROMETHEUS_PREFIX: &str = "rtrtr";
 
 
@@ -16,11 +19,13 @@ const PROMETHEUS_PREFIX: &str = "rtrtr";
 
 #[derive(Clone, Default)]
 pub struct Collection {
-    sources: ArcSwap<Vec<RegisteredSource>>,
+    sources: Arc<ArcSwap<Vec<RegisteredSource>>>,
+    register: Arc<Mutex<()>>,
 }
 
 impl Collection {
     pub fn register(&self, name: Arc<str>, source: Weak<dyn Source>) {
+        let lock = self.register.lock().unwrap();
         let old_sources = self.sources.load();
         let mut new_sources = Vec::new();
         for item in old_sources.iter() {
@@ -31,7 +36,8 @@ impl Collection {
         new_sources.push(
             RegisteredSource { name, source }
         );
-        self.sources.store(new_sources.into())
+        self.sources.store(new_sources.into());
+        drop(lock);
     }
 
     pub fn assemble(&self, format: OutputFormat) -> String {
@@ -148,20 +154,10 @@ impl Target {
     ) {
         match self.format {
             OutputFormat::Prometheus => {
-                match unit_name {
-                    Some(unit) => {
-                        write!(&mut self.target,
-                            "{}_{}_{}_{}",
-                            PROMETHEUS_PREFIX, unit, metric.name, metric.unit
-                        ).unwrap();
-                    }
-                    None => {
-                        write!(&mut self.target,
-                            "{}_{}_{}",
-                            PROMETHEUS_PREFIX, metric.name, metric.unit
-                        ).unwrap();
-                    }
-                }
+                write!(&mut self.target,
+                    "{}_{}_{}",
+                    PROMETHEUS_PREFIX, metric.name, metric.unit
+                ).unwrap();
             }
             OutputFormat::Plain => {
                 match unit_name {
@@ -194,7 +190,14 @@ impl<'a> Records<'a> {
     pub fn value(&mut self, value: impl fmt::Display) {
         match self.target.format {
             OutputFormat::Prometheus => {
-                self.target.append_metric_name(self.metric, self.unit_name);
+                self.target.append_metric_name(
+                    self.metric, self.unit_name
+                );
+                if let Some(unit_name) = self.unit_name {
+                    write!(&mut self.target.target,
+                        "{{component=\"{}\"}}", unit_name
+                    ).unwrap();
+                }
                 writeln!(&mut self.target.target, " {}", value).unwrap()
             }
             OutputFormat::Plain => {
@@ -213,11 +216,14 @@ impl<'a> Records<'a> {
             OutputFormat::Prometheus => {
                 self.target.append_metric_name(self.metric, self.unit_name);
                 self.target.target.push('{');
-                for ((name, value), comma) in
-                    labels.iter().zip(
-                        iter::once(false).chain(iter::repeat(true))
-                    )
-                {
+                let mut comma = false;
+                if let Some(unit_name) = self.unit_name {
+                    write!(&mut self.target.target,
+                        "component=\"{}\"", unit_name
+                    ).unwrap();
+                    comma = true;
+                }
+                for (name, value) in labels {
                     if comma {
                         write!(&mut self.target.target,
                             ", {}=\"{}\"", name, value
@@ -227,6 +233,7 @@ impl<'a> Records<'a> {
                         write!(&mut self.target.target,
                             "{}=\"{}\"", name, value
                         ).unwrap();
+                        comma = true;
                     }
                 }
                 writeln!(&mut self.target.target, "}} {}", value).unwrap()

@@ -1,12 +1,17 @@
-//! Communication between units.
+//! Communication between components.
 //!
 //! The main purpose of communication is for a unit to announce updates to
-//! its data set and operational state to all other units who are interested.
-//! It also takes care of managing these communication lines.
+//! its data set and operational state to all other components that are
+//! interested. It also takes care of managing these communication lines.
 //!
-//! There are two types here: Each unit has a single `Gate` to which it
-//! sends its updates. The opposite end is called a `Link` and is held by
-//! other units or targets.
+//! There are two three main types here: Each unit has a single [`Gate`] to
+//! which it hands its updates. The opposite end is called a [`Link`] and
+//! by any interested component. A [`GateAgent`] is a reference to a gate
+//! that can be used to create new links.
+//!
+//! The type [`GateMetrics`] can be used by units to provide some obvious
+//! metrics such as the number of payload units in the data set or the time
+//! of last update based on the updates sent to the gate.
 
 use std::fmt;
 use std::sync::atomic;
@@ -20,7 +25,6 @@ use tokio::sync::{mpsc, oneshot};
 use crate::{manager, metrics, payload};
 use crate::config::Marked;
 use crate::metrics::{Metric, MetricType, MetricUnit};
-
 
 
 //------------ Configuration -------------------------------------------------
@@ -43,15 +47,16 @@ const COMMAND_QUEUE_LEN: usize = 16;
 /// A gate may be active or dormant. It is active if there is at least one
 /// party interested in receiving data updates. Otherwise it is dormant.
 /// Obviously, there is no need for a unit with a dormant gate to produce
-/// any updates. It is in fact encouraged to suspend its operation until its
-/// gate becomes active again.
+/// any updates. Units are, in fact, encouraged to suspend their operation
+/// until their gate becomes active again.
 ///
 /// In order for the gate to maintain its own state, the unit needs to
-/// regularly run the `process` method. In return, the unit will receive an
-/// update to the gate’s state as soon as it becomes available.
+/// regularly run the [`process`](Self::process) method. In return,
+/// the unit will receive an update to the gate’s state as soon as it
+/// becomes available.
 ///
-/// Sending of updates happens via the `update_data` and `update_status`
-/// methods.
+/// Sending of updates happens via the [`update_data`](Self::update_data) and
+/// [`update_status`](Self::update_status) methods.
 #[derive(Debug)]
 pub struct Gate {
     /// Receiver for commands sent in by the links.
@@ -75,7 +80,8 @@ impl Gate {
     /// Creates a new gate.
     ///
     /// The function returns a gate and a gate agent that allows creating new
-    /// links.
+    /// links. Typically, you would pass the gate to a subsequently created
+    /// unit and keep the agent around for future use.
     pub fn new() -> (Gate, GateAgent) {
         let (tx, rx) = mpsc::channel(COMMAND_QUEUE_LEN);
         let gate = Gate {
@@ -89,7 +95,7 @@ impl Gate {
         (gate, agent)
     }
 
-    /// Returns the metrics.
+    /// Returns a reference to the gate metrics.
     pub fn metrics(&self) -> Arc<GateMetrics> {
         self.metrics.clone()
     }
@@ -102,6 +108,8 @@ impl Gate {
     /// method is called again.
     ///
     /// The method will resolve into an error if the unit should terminate.
+    /// This is the case if all links and gate agents refering to the gate
+    /// have been dropped.
     pub async fn process(&mut self) -> Result<GateStatus, Terminated> {
         let status = self.get_gate_status();
         loop {
@@ -128,7 +136,8 @@ impl Gate {
 
     /// Updates the data set of the unit.
     ///
-    /// This method will send out the update to all active links.
+    /// This method will send out the update to all active links. It will
+    /// also update the gate metrics based on the update.
     pub async fn update_data(&mut self, update: payload::Update) {
         for (_, item) in &mut self.updates {
             if item.suspended {
@@ -210,9 +219,12 @@ impl Gate {
 
 //------------ GateAgent -----------------------------------------------------
 
-/// A reprensentative of a gate allowing to create new links to it.
+/// A reprensentative of a gate allowing creation of new links for it.
 ///
-/// Yes, this is a bit of a mixed analogy.
+/// The agent can be cloned and passed along. The method
+/// [`create_link`](Self::create_link) can be used to create a new link.
+///
+/// Yes, the name is a bit of a mixed analogy.
 #[derive(Clone, Debug)]
 pub struct GateAgent {
     commands: mpsc::Sender<GateCommand>,
@@ -229,21 +241,40 @@ impl GateAgent {
 //------------ GateMetrics ---------------------------------------------------
 
 /// Metrics about the updates distributed via the gate.
+///
+/// This type is a [`metrics::Source`](crate::metrics::Source) that provides a
+/// number of metrics for a unit that can be derived from the updates sent by
+/// the unit and thus are common to all units.
+///
+/// Gates provide access to values of this type via the [`Gate::metrics`]
+/// method. They will be stored behind an arc and can be kept and passed
+/// around freely.
 #[derive(Debug, Default)]
 pub struct GateMetrics {
+    /// The current unit status.
     status: AtomicCell<UnitStatus>,
+
+    /// The serial number of the last update.
     serial: AtomicU32,
+
+    /// The number of payload items in the last update.
     count: AtomicUsize,
+
+    /// The date and time of the last update.
+    ///
+    /// If there has never been an update, this will be `None`.
     update: AtomicCell<Option<DateTime<Utc>>>,
 }
 
 impl GateMetrics {
+    /// Updates the metrics to match the given update.
     fn update(&self, update: &payload::Update) {
         self.serial.store(update.serial().into(), atomic::Ordering::Relaxed);
         self.count.store(update.set().len(), atomic::Ordering::Relaxed);
         self.update.store(Some(Utc::now()));
     }
 
+    /// Updates the metrics to match the given unit status.
     fn update_status(&self, status: UnitStatus) {
         self.status.store(status)
     }
@@ -255,7 +286,7 @@ impl GateMetrics {
         MetricType::Text, MetricUnit::Info
     );
     const SERIAL_METRIC: Metric = Metric::new(
-        "serial", "the serial number of the unit’s updates",
+        "serial", "the serial number of the unit's updates",
         MetricType::Counter, MetricUnit::Info
     );
     const COUNT_METRIC: Metric = Metric::new(
@@ -273,6 +304,10 @@ impl GateMetrics {
 }
 
 impl metrics::Source for GateMetrics {
+    /// Appends the current gate metrics to a target.
+    ///
+    /// The name of the unit these metrics are associated with is given via
+    /// `unit_name`.
     fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
         target.append_simple(
             &Self::STATUS_METRIC, Some(unit_name), self.status.load()
@@ -316,9 +351,16 @@ impl metrics::Source for GateMetrics {
 /// A link to another unit.
 ///
 /// The link allows tracking of updates of that other unit. This happens via
-/// the `query` method. A link’s owner can signal that they are currently not
-/// interested in receiving updates via the `suspend` method. This suspension
-/// will automatically be lifted the next time `query` is called.
+/// the [`query`](Self::query) method. A link’s owner can signal that they
+/// are currently not interested in receiving updates via the
+/// [`suspend`](Self::suspend) method. This suspension will automatically be
+/// lifted the next time `query` is called.
+///
+/// Links can be created from the name of the unit they should be linking to
+/// via [manager::load_link](crate::manager::load_link). This function is
+/// also called implicitly through the impls for `Deserialize` and `From`.
+/// Note, however, that the function only adds the link to a list of links
+/// to be properly connected by the manager later. 
 #[derive(Debug, Deserialize)]
 #[serde(from = "String")]
 pub struct Link {
@@ -326,6 +368,8 @@ pub struct Link {
     commands: mpsc::Sender<GateCommand>,
 
     /// The connection to the unit.
+    ///
+    /// If this is `None`, the link has not been connected yet.
     connection: Option<LinkConnection>,
 
     /// The current unit status.
@@ -361,7 +405,7 @@ impl Link {
     /// future can be dropped safely at any time.
     ///
     /// The future either resolves into a payload update or the connected
-    /// units new status as the error variant.  The current status is also
+    /// unit’s new status as the error variant.  The current status is also
     /// available via the `get_status` method.
     ///
     /// If the link is currently suspended, calling this method will lift the
@@ -386,7 +430,7 @@ impl Link {
     /// Query a suspended link.
     ///
     /// When a link is suspended, it still received updates to the unit’s
-    /// status. These updates can also be queried for explicitely via this
+    /// status. These updates can also be queried for explicitly via this
     /// method.
     ///
     /// Much like `query`, the future returned by this method can safely be
@@ -579,7 +623,7 @@ pub struct Terminated;
 
 //------------ GateCommand ---------------------------------------------------
 
-/// A command send by a link to a gate.
+/// A command sent by a link to a gate.
 #[derive(Debug)]
 enum GateCommand {
     /// Change the suspension state of a link.
@@ -624,6 +668,7 @@ struct UpdateSender {
 
 //------------ UpdateReceiver ------------------------------------------------
 
+/// The link side of receiving updates.
 type UpdateReceiver = mpsc::Receiver<Result<payload::Update, UnitStatus>>;
 
 

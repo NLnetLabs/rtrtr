@@ -1,4 +1,4 @@
-//! The manager controlling the entire operation.
+//! Controlling the entire operation.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -16,17 +16,21 @@ use crate::units::Unit;
 
 //------------ Component -----------------------------------------------------
 
-/// A component.
+/// Facilities available to all components.
 ///
-/// Upon being started, every component receives one of these. It can use it
-/// to communicate with the manager.
+/// Upon being started, every component receives one of these. It provides
+/// access to information and services available to all components.
 #[derive(Debug)]
 pub struct Component {
+    /// The component’s name.
     name: Arc<str>,
+
+    /// A reference to the metrics collection.
     metrics: metrics::Collection,
 }
 
 impl Component {
+    /// Creates a new component from its, well, components.
     fn new(name: String, metrics: metrics::Collection) -> Self {
         Component { name: name.into(), metrics }
     }
@@ -45,21 +49,36 @@ impl Component {
 
 //------------ Manager -------------------------------------------------------
 
+/// A manager for components and auxiliary services.
 #[derive(Default)]
 pub struct Manager {
+    /// The currently active units represented by agents to their gates..
     units: HashMap<String, GateAgent>,
 
+    /// Gates for newly loaded, not yet spawned units.
     pending: HashMap<String, Gate>,
 
+    /// The metrics collection maintained by this managers.
     metrics: metrics::Collection,
 }
 
 
 impl Manager {
+    /// Creates a new manager.
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Loads the given config file.
+    ///
+    /// Parses the given file as a TOML config file. All links to units
+    /// referenced in the configuration are pre-connected.
+    ///
+    /// If there are any errors in the config file, they are logged as errors
+    /// and a generic error is returned.
+    ///
+    /// If the method succeeds, you need to spawn all units and targets via
+    /// the [`spawn`](Self::spawn) method.
     pub fn load(
         &mut self, file: ConfigFile
     ) -> Result<Config, Failed> {
@@ -129,6 +148,7 @@ impl Manager {
         }
     }
 
+    /// Returns a new reference to the manager’s metrics collection.
     pub fn metrics(&self) -> metrics::Collection {
         self.metrics.clone()
     }
@@ -137,6 +157,7 @@ impl Manager {
 
 //------------ UnitSet -------------------------------------------------------
 
+/// A set of units to be started.
 #[derive(Deserialize)]
 #[serde(transparent)]
 pub struct UnitSet {
@@ -146,6 +167,7 @@ pub struct UnitSet {
 
 //------------ TargetSet -----------------------------------------------------
 
+/// A set of targets to be started.
 #[derive(Default, Deserialize)]
 #[serde(transparent)]
 pub struct TargetSet {
@@ -158,12 +180,23 @@ impl TargetSet {
     }
 }
 
-
 //------------ LoadUnit ------------------------------------------------------
 
+/// A unit referenced during loading.
 struct LoadUnit {
+    /// The gate of the unit.
+    ///
+    /// This is some only if the unit is newly created and has not yet been
+    /// spawned onto a runtime.
     gate: Option<Gate>,
+
+    /// A gate agent for the unit.
     agent: GateAgent,
+
+    /// A list of location of links in the config.
+    ///
+    /// This is only used for generating errors if non-existing units are
+    /// referenced in the config file.
     links: Vec<Marked<()>>,
 }
 
@@ -189,12 +222,20 @@ impl From<GateAgent> for LoadUnit {
 }
 
 
+//------------ Loading Links -------------------------------------------------
+
 thread_local!(
     static GATES: RefCell<Option<HashMap<String, LoadUnit>>> =
         RefCell::new(None)
 );
 
 
+/// Loads a link with the given name.
+///
+/// # Panics
+///
+/// This funtion panics if it is called outside of a run of
+/// [`Manager::load`].
 pub fn load_link(name: Marked<String>) -> Link {
     GATES.with(|gates| {
         let mut gates = gates.borrow_mut();
