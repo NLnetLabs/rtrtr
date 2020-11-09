@@ -138,7 +138,13 @@ impl Manager {
     /// the same manager earlier.
     pub fn spawn(&mut self, config: &mut Config, runtime: &Runtime) {
         for (name, unit) in config.units.units.drain() {
-            let gate = self.pending.remove(&name).unwrap();
+            let gate = match self.pending.remove(&name) {
+                Some(gate) => gate,
+                None => {
+                    error!("Unit {} is unused and will not be started.", name);
+                    continue
+                }
+            };
             let controller = Component::new(name, self.metrics.clone());
             runtime.spawn(unit.run(controller, gate));
         }
