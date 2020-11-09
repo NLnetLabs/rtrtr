@@ -2,13 +2,13 @@
 //!
 //! We call the data we manage ‘payload,’ even if this isn’t quite accurate.
 //! The data is maintained in payload sets – a collection of all the data
-//! currently assumed valid – via the type `Set`. These sets are modified
+//! currently assumed valid – via the type [`Set`]. These sets are modified
 //! by adding, removing, and updating indivual items. An atomic update to
-//! a set is called a `payload::Diff`. It contains all information to
-//! change a given set into a new set.
+//! a set is called a [`Diff`]. It contains all information to change a
+//! given set into a new set.
 //!
-//! Whenever the payload set maintained by a unit changes, it sends out a
-//! `payload::Update`. This update contains the new payload set and a serial
+//! Whenever the payload set maintained by a unit changes, it sends out an
+//! [`Update`]. This update contains the new payload set and a serial
 //! number. This serial number is increased by one from update to update.
 //!
 //! The update optionally contains a payload diff with the changes from the
@@ -114,6 +114,7 @@ impl From<SetBuilder> for Set {
 
 //------------ SetIter ------------------------------------------------
 
+/// An iterator over the content of an arc of a set.
 pub struct SetIter {
     set: Arc<Set>,
     pos: usize,
@@ -145,12 +146,17 @@ impl Iterator for SetIter {
 
 //------------ SetBuilder ---------------------------------------------
 
+/// A builder for a payload set.
 #[derive(Clone, Debug, Default)]
 pub struct SetBuilder {
     items: HashSet<Payload>,
 }
 
 impl SetBuilder {
+    /// Inserts a new element into the set.
+    ///
+    /// The method fails with an appropriate error if there already is an
+    /// element with the given payload in the set.
     pub fn insert(&mut self, payload: Payload) -> Result<(), VrpError> {
         if self.items.insert(payload) {
             Ok(())
@@ -160,6 +166,9 @@ impl SetBuilder {
         }
     }
 
+    /// Removes an existing element from the set.
+    ///
+    /// The method fails with an appropriate error if there is no such item.
     pub fn remove(&mut self, payload: &Payload) -> Result<(), VrpError> {
         if self.items.remove(payload) {
             Ok(())
@@ -169,14 +178,17 @@ impl SetBuilder {
         }
     }
 
+    /// Returns whether the set contains the given element.
     pub fn contains(&self, payload: &Payload) -> bool {
         self.items.contains(payload)
     }
 
+    /// Returns the number of elements currently in the set.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Returns whether the set is currently empty.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -197,6 +209,7 @@ impl SetBuilder {
     }
     */
 
+    /// Converts the builder into an imutable set.
     pub fn finalize(self) -> Set {
         let mut res = Set { items: self.items.into_iter().collect() };
         res.items.sort_unstable();
@@ -223,6 +236,7 @@ impl<'a> From<&'a Set> for SetBuilder {
 
 //------------ Diff ---------------------------------------------------
 
+/// The differences between two payload sets.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Diff {
     /// The diff items.
@@ -233,25 +247,40 @@ pub struct Diff {
 }
 
 impl Diff {
+    /// Returns the number of changes in this diff.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Returns whether this diff is empty and does not contain any changes.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
+    /// Returns an iterator over a shared diff.
     pub fn shared_iter(self: &Arc<Self>) -> DiffIter {
         DiffIter::from(self.clone())
     }
 
+    /// Returns a new diff by extending this diff with additional changes.
+    ///
+    /// This will result in an error if the diffs cannot be added to each
+    /// other.
     pub fn extend(&self, additional: &Diff) -> Result<Diff, VrpError> {
         let mut builder = DiffBuilder::default();
         builder.push_diff(self)?;
         builder.push_diff(additional)?;
         Ok(builder.finalize())
     }
-        
+
+    /// Applies the diff to a set returning a new set.
+    ///
+    /// The method assumes that the diff can be applied cleanly to the given
+    /// set.
+    ///
+    /// # Todo
+    ///
+    /// This should probably return an error if the diff cannot be applied.
     pub fn apply(&self, set: &Set) -> Set {
         let mut res = Vec::new();
         let mut diff = self.items.as_slice();
@@ -355,6 +384,7 @@ impl Diff {
 
 //------------ DiffIter -----------------------------------------------
 
+/// An iterator over a shared diff.
 pub struct DiffIter {
     diff: Arc<Diff>,
     pos: usize,
@@ -383,20 +413,27 @@ impl Iterator for DiffIter {
 
 //------------ DiffBuilder --------------------------------------------
 
+/// A builder for a diff.
 #[derive(Clone, Debug, Default)]
 pub struct DiffBuilder {
     items: HashMap<Payload, Action>,
 }
 
 impl DiffBuilder {
+    /// Returns the number of changes in the diff.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Returns whether the diff is empty and contains no changes.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
+    /// Adds a change to the diff.
+    ///
+    /// The method fails if there already is an action for the given payload
+    /// element.
     pub fn push(
         &mut self, payload: Payload, action: Action
     ) -> Result<(), VrpError> {
@@ -417,6 +454,11 @@ impl DiffBuilder {
         }
     }
 
+    /// Adds another diff to this diff.
+    ///
+    /// Each change in `diff` is added individually. The method will therefore
+    /// fail if for any change in `diff` the payload was already present in
+    /// `self`.
     pub fn push_diff(
         &mut self, diff: &Diff
     ) -> Result<(), VrpError> {
@@ -438,6 +480,7 @@ impl DiffBuilder {
     }
     */
 
+    /// Converts the builder into an imutable diff.
     pub fn finalize(self) -> Diff {
         let mut res = Diff {
             items: self.items.into_iter().collect()

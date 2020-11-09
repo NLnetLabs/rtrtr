@@ -26,6 +26,7 @@ pub struct Tcp {
 }
 
 impl Tcp {
+    /// Runs the target.
     pub async fn run(mut self, name: String) -> Result<(), ExitError> {
         let mut notify = NotifySender::new();
         let target = Source::default();
@@ -45,6 +46,7 @@ impl Tcp {
         }
     }
 
+    /// Spawns a single listener onto the current runtime.
     fn spawn_listener(
         &self, addr: SocketAddr, target: Source, notify: NotifySender,
     ) -> Result<(), ExitError> {

@@ -1,4 +1,4 @@
-/// Units that combine the updates from other units.
+//! Units that combine the updates from other units.
 
 use std::sync::Arc;
 use crossbeam_utils::atomic::AtomicCell;

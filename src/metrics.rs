@@ -1,6 +1,24 @@
 //! Maintaining and outputting metrics.
 //!
-//! 
+//! Metrics are operational data maintained by components that allow users to
+//! understand what their instance of RTRTR is doing. Because they are updated
+//! by components and printed by other components in different threads,
+//! management is a bit tricky.
+//!
+//! Typically, all metrics of a component are kept in a single object that is
+//! shared between that component and everything that could possibly output
+//! metrics. We use atomic data types (such as `std::sync::atomic::AtomicU32`)
+//! the keep and allow updating the actual values and keep the value behind an
+//! arc for easy sharing.
+//!
+//! When a component is started, it registers its metrics object with a
+//! metrics [`Collection`] it receives via its
+//! [`Component`][crate::manager::Component].
+//!
+//! The object needs to implement the [`Source`] trait by appending all its
+//! data to a [`Target`]. To make that task easier, the [`Metric`] type is
+//! used to define all the properties of an individual metric. Values of this
+//! type can be created as constants.
 
 use std::fmt;
 use std::sync::{Arc, Mutex, Weak};
@@ -17,13 +35,35 @@ const PROMETHEUS_PREFIX: &str = "rtrtr";
 
 //------------ Collection ----------------------------------------------------
 
+/// A collection of metrics sources.
+///
+/// This type provides a shared collection. I.e., if a value is cloned, both
+/// clones will reference the same collection. Both will see newly
+/// added sources.
+///
+/// Such new sources can be registered with the [`register`][Self::register]
+/// method. A string with all the current values of all known sources can be
+/// obtained via the [`assemble`][Self::assemble] method.
 #[derive(Clone, Default)]
 pub struct Collection {
+    /// The currently registered sources.
     sources: Arc<ArcSwap<Vec<RegisteredSource>>>,
+
+    /// A mutex to be held during registration of a new source.
+    ///
+    /// Updating `sources` is done by taking the existing sources,
+    /// construct a new vec, and then swapping that vec into the arc. Because
+    /// of this, updates cannot be done concurrently. The mutex guarantees
+    /// that.
     register: Arc<Mutex<()>>,
 }
 
 impl Collection {
+    /// Registers a new source with the collection.
+    ///
+    /// The name of the component registering the source is passed via `name`.
+    /// The source itself is given as a weak pointer so that it gets dropped
+    /// when the owning component terminates.
     pub fn register(&self, name: Arc<str>, source: Weak<dyn Source>) {
         let lock = self.register.lock().unwrap();
         let old_sources = self.sources.load();
@@ -40,6 +80,10 @@ impl Collection {
         drop(lock);
     }
 
+    /// Assembles metrics output.
+    ///
+    /// Produces an output of all the sources in the collection in the given
+    /// format and returns it as a string.
     pub fn assemble(&self, format: OutputFormat) -> String {
         let sources = self.sources.load();
         let mut target = Target::new(format);
@@ -63,9 +107,13 @@ impl fmt::Debug for Collection {
 
 //------------ RegisteredSource ----------------------------------------------
 
+/// All information on a source registered with a collection.
 #[derive(Clone)]
 struct RegisteredSource {
+    /// The name of the component owning the source.
     name: Arc<str>,
+
+    /// A weak pointer to the source.
     source: Weak<dyn Source>,
 }
 
@@ -91,13 +139,27 @@ impl<T: Source> Source for Arc<T> {
 
 //------------ Target --------------------------------------------------------
 
+/// A target for outputting metrics.
+///
+/// A new target can be created via [`new`](Self::new), passing in the
+/// requested output format. Individual metrics are appended to the target
+/// via [`append`](Self::append) or the shortcut
+/// [`append_simple`](Self::append_simple). Finally, when all metrics are
+/// assembled, you can turn the target into a string of the output via
+/// [`into_string`](Self::into_string).
 #[derive(Clone, Debug)]
 pub struct Target {
+    /// The format of the assembled output.
     format: OutputFormat,
+
+    /// The output assembled so far.
     target: String,
 }
 
 impl Target {
+    /// Creates a new target.
+    ///
+    /// The target will produce output in the given format.
     pub fn new(format: OutputFormat) -> Self {
         let mut target = String::new();
         if matches!(format, OutputFormat::Plain) {
@@ -110,10 +172,17 @@ impl Target {
         Target { format, target }
     }
 
+    /// Converts the target into a string with the assembled output.
     pub fn into_string(self) -> String {
         self.target
     }
 
+    /// Appends metrics to the target.
+    ///
+    /// The method can append multiple metrics values at once via the closure.
+    /// All values are, however, for the same metrics described by `metric`.
+    /// If the values are for a specific component, it’s name is given via
+    /// `unit_name`. If they are global, this can be left at `None`.
     pub fn append<F: FnOnce(&mut Records)>(
         &mut self,
         metric: &Metric,
@@ -138,6 +207,12 @@ impl Target {
         values(&mut Records { target: self, metric, unit_name })
     }
 
+    /// Append a single metric value to the target.
+    ///
+    /// This is a shortcut version of [`append`](Self::append) when there is
+    /// only a single value to be append for a metric. The metric is described
+    /// by `metric`.  If the value is for a specific component, it’s name is
+    /// given via `unit_name`. If they are global, this can be left at `None`.
     pub fn append_simple(
         &mut self,
         metric: &Metric,
@@ -149,6 +224,7 @@ impl Target {
         })
     }
 
+    /// Constructs and appends the name of the given metric.
     fn append_metric_name(
         &mut self, metric: &Metric, unit_name: Option<&str>
     ) {
@@ -180,13 +256,28 @@ impl Target {
 
 //------------ Records -------------------------------------------------------
 
+/// Allows adding all values for an individual metric.
+///
+/// Values can either be simple, in which case they only consist of a value
+/// and are appended via [`value`](Self::value), or they can be labelled, in
+/// which case there are multiple values for a metric that are distinguished
+/// via a set of labels. Such values are appended via
+/// [`label_value`](Self::label_value).
 pub struct Records<'a> {
+    /// A reference to the target.
     target: &'a mut Target,
+
+    /// A reference to the properties of the metric in question.
     metric: &'a Metric,
+
+    /// An reference to the name of the component if any.
     unit_name: Option<&'a str>,
 }
 
 impl<'a> Records<'a> {
+    /// Appends a simple value to the metrics target.
+    ///
+    /// The value is simply output via the `Display` trait.
     pub fn value(&mut self, value: impl fmt::Display) {
         match self.target.format {
             OutputFormat::Prometheus => {
@@ -207,6 +298,11 @@ impl<'a> Records<'a> {
         }
     }
 
+    /// Appends a single labelled value to the metrics target.
+    ///
+    /// The labels are a slice of pairs of strings with the first element the
+    /// name of the label and the second the label value. The metrics value
+    /// is simply printed via the `Display` trait.
     pub fn label_value(
         &mut self,
         labels: &[(&str, &str)],
@@ -295,14 +391,29 @@ impl OutputFormat {
 
 //------------ Metric --------------------------------------------------------
 
+/// The properties of a metric.
 pub struct Metric {
+    /// The name of the metric.
+    ///
+    /// The final name written to the target will be composed of more than
+    /// just this name according to the rules stipulated by the output format.
     pub name: &'static str,
+
+    /// The help text for the metric.
     pub help: &'static str,
+
+    /// The type of the metric.
     pub metric_type: MetricType,
+
+    /// The unit of the metric.
     pub unit: MetricUnit,
 }
 
 impl Metric {
+    /// Constructs a new metric from all values.
+    ///
+    /// This is a const function and can be used to construct associated
+    /// constants.
     pub const fn new(
         name: &'static str, help: &'static str,
         metric_type: MetricType, unit: MetricUnit
@@ -315,12 +426,27 @@ impl Metric {
 
 //------------ MetricType ----------------------------------------------------
 
+/// The type of a metric.
 #[derive(Clone, Copy, Debug)]
 pub enum MetricType {
+    /// A monotonically increasing counter.
+    ///
+    /// Values can only increase or be reset to zero.
     Counter,
+
+    /// A value that can go up and down.
     Gauge,
+
+    /// A Prometheus-style histogram.
     Histogram,
+
+    /// A Prometheus-style summary.
     Summary,
+
+    /// A text metric.
+    ///
+    /// Metrics of this type are only output to output formats that allow
+    /// text metrics.
     Text,
 }
 
@@ -339,6 +465,9 @@ impl fmt::Display for MetricType {
 
 //------------ MetricUnit ----------------------------------------------------
 
+/// A unit of measure for a metric.
+///
+/// This determines what a value of 1 means.
 #[derive(Clone, Copy, Debug)]
 pub enum MetricUnit {
     Second,
@@ -350,7 +479,11 @@ pub enum MetricUnit {
     Ampere,
     Joule,
     Gram,
+
+    /// Use this for counting things.
     Total,
+
+    /// Use this for non-numerical metrics.
     Info,
 }
 

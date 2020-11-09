@@ -1,11 +1,11 @@
-/// The HTTP server.
-///
-/// Because with HTTP you can select what information you want per request,
-/// we only have one HTTP server for the entire instance. HTTP targets will
-/// provide their data via a specific base path within that server.
-///
-/// Server configuration happens via the [`Server`] struct that normally is
-/// part of the [`Config`](crate::config::Config).
+//! The HTTP server.
+//!
+//! Because with HTTP you can select what information you want per request,
+//! we only have one HTTP server for the entire instance. HTTP targets will
+//! provide their data via a specific base path within that server.
+//!
+//! Server configuration happens via the [`Server`] struct that normally is
+//! part of the [`Config`](crate::config::Config).
 
 use std::io;
 use std::convert::Infallible;
