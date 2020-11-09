@@ -282,11 +282,11 @@ impl GateMetrics {
 
 impl GateMetrics {
     const STATUS_METRIC: Metric = Metric::new(
-        "gate_status", "the operational status of the unit",
+        "unit_status", "the operational status of the unit",
         MetricType::Text, MetricUnit::Info
     );
     const SERIAL_METRIC: Metric = Metric::new(
-        "serial", "the serial number of the unit's updates",
+        "gate_serial", "the serial number of the unit's updates",
         MetricType::Counter, MetricUnit::Info
     );
     const COUNT_METRIC: Metric = Metric::new(
