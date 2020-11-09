@@ -29,7 +29,6 @@ tokio	        = { version="0.2", features=["dns", "io-util", "macros", "rt-core"
 toml            = "0.5.6"
 
 [target.'cfg(unix)'.dependencies]
-daemonize       = "0.4.1"
 libc            = "0.2.68"
 syslog          = "5.0.0"
 
