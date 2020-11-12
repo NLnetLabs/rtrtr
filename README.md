@@ -1,6 +1,7 @@
 # RTRTR – A Versatile Tool for Route Filters
 
 ![ci](https://github.com/NLnetLabs/rtrtr/workflows/ci/badge.svg)
+[![](https://img.shields.io/crates/v/rtrtr.svg?color=brightgreen)](https://crates.io/crates/rtrtr)
 
 RTRTR is a tool that collects, processes, and distributes data for route
 filtering. It reads data from various sources, such as validated RPKI
