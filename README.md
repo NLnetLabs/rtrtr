@@ -1,18 +1,15 @@
-# RTRTR – A Versatile Tool for Route Filters
+# RTRTR – An RPKI data proxy
 
 ![ci](https://github.com/NLnetLabs/rtrtr/workflows/ci/badge.svg)
 [![](https://img.shields.io/crates/v/rtrtr.svg?color=brightgreen)](https://crates.io/crates/rtrtr)
 
-RTRTR is a tool that collects, processes, and distributes data for route
-filtering. It reads data from various sources, such as validated RPKI
-data, IRR data, or local rules, allows selecting, filtering, and otherwise
-manipulating this data, and finally feeds it to routers either via
-protocols such as RTR or through generated configuration files.
-
 RTRTR is currently in early development. Right now, it can read RPKI data
-via RTR from multiple servers and provide it, also via RTR, to routers.
-Over time, we will add more functionality.
+from multiple RPKI Relying Party packages via RTR and provide it, also via
+RTR, to routers. The HTTP server provides a monitoring endpoint in plain
+text and Prometheus format.
 
+Over time, we will add more functionality, such as transport using RTR 
+over TLS, as well as plain and signed JSON over HTTPS.
 
 ## Architecture
 
