@@ -20,7 +20,7 @@ pub mod rtr;
 
 //------------ Target --------------------------------------------------------
 
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use crate::log::ExitError;
 
 

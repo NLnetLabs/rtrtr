@@ -9,7 +9,7 @@ use std::{borrow, error, fmt, fs, io, ops};
 use std::path::Path;
 use std::sync::Arc;
 use clap::{App, Arg, ArgMatches};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use toml::Spanned;
 use crate::http;
 use crate::log::{ExitError, Failed, LogConfig};

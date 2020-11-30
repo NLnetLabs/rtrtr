@@ -10,7 +10,7 @@ license = "BSD-3-Clause"
 readme = "README.md"
 
 [dependencies]
-arc-swap	= "0.4.7"
+arc-swap	= "1.0"
 chrono          = "0.4.11"
 clap            = "2.33"
 crossbeam-utils = "0.7.2"
@@ -20,13 +20,15 @@ hyper           = "0.13.4"
 log             = "0.4"
 log-reroute     = "0.1.5"
 rand            = "0.7.3"
+reqwest		= { version = "0.10.9", features = ["blocking"] }
 rpki-rtr	= "0.2.0"
-serde           = "1.0"
-serde_derive    = "1.0"
+serde           = { version = "1.0", features = ["derive"] }
+serde_json      = "1.0"
 slab            = "0.4.2"
 simple-logging  = "2.0.2"
 tokio	        = { version="0.2", features=["dns", "io-util", "macros", "rt-core", "rt-threaded", "stream", "sync", "tcp", "time"]}
 toml            = "0.5.6"
+url		= { version = "2.2", features = ["serde"] }
 
 [target.'cfg(unix)'.dependencies]
 libc            = "0.2.68"

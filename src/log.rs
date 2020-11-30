@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use clap::{App, Arg, ArgMatches};
 use log::{error, LevelFilter, Log};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 
 //------------ LogConfig -----------------------------------------------------

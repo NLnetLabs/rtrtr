@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize};
 use chrono::{DateTime, Utc};
 use crossbeam_utils::atomic::AtomicCell;
 use slab::Slab;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
 use crate::{manager, metrics, payload};
 use crate::config::Marked;

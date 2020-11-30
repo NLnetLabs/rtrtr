@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
 use arc_swap::ArcSwap;
 use log::{debug, error};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use rpki_rtr::payload::Timing;
 use rpki_rtr::server::{NotifySender, Server, VrpSource};
 use rpki_rtr::state::{Serial, State};

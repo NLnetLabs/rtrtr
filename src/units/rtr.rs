@@ -9,7 +9,7 @@ use log::{debug, warn};
 use rpki_rtr::client::{Client, VrpError, VrpTarget, VrpUpdate};
 use rpki_rtr::payload::{Action, Payload, Timing};
 use rpki_rtr::state::{Serial, State};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use tokio::net::TcpStream;
 use tokio::time::{timeout_at, Instant};
 use crate::metrics;

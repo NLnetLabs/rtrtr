@@ -4,7 +4,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use log::error;
-use serde_derive::Deserialize;
+use serde::Deserialize;
+use reqwest::blocking::Client as HttpClient;
 use tokio::runtime::Runtime;
 use crate::metrics;
 use crate::comms::{Gate, GateAgent, Link};
@@ -25,19 +26,31 @@ pub struct Component {
     /// The component’s name.
     name: Arc<str>,
 
+    /// An HTTP client.
+    http_client: HttpClient,
+
     /// A reference to the metrics collection.
     metrics: metrics::Collection,
 }
 
 impl Component {
     /// Creates a new component from its, well, components.
-    fn new(name: String, metrics: metrics::Collection) -> Self {
-        Component { name: name.into(), metrics }
+    fn new(
+        name: String,
+        http_client: HttpClient,
+        metrics: metrics::Collection
+    ) -> Self {
+        Component { name: name.into(), http_client, metrics,  }
     }
 
     /// Returns the name of the component.
     pub fn name(&self) -> &Arc<str> {
         &self.name
+    }
+
+    /// Returns a reference to an HTTP Client.
+    pub fn http_client(&self) -> &HttpClient {
+        &self.http_client
     }
 
     /// Register a metrics source.
@@ -57,6 +70,9 @@ pub struct Manager {
 
     /// Gates for newly loaded, not yet spawned units.
     pending: HashMap<String, Gate>,
+
+    /// An HTTP client.
+    http_client: HttpClient,
 
     /// The metrics collection maintained by this managers.
     metrics: metrics::Collection,
@@ -145,7 +161,9 @@ impl Manager {
                     continue
                 }
             };
-            let controller = Component::new(name, self.metrics.clone());
+            let controller = Component::new(
+                name, self.http_client.clone(), self.metrics.clone()
+            );
             runtime.spawn(unit.run(controller, gate));
         }
 

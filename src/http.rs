@@ -18,7 +18,7 @@ use hyper::{Body, Method, Request, Response, StatusCode};
 use hyper::server::accept::Accept;
 use hyper::service::{make_service_fn, service_fn};
 use log::error;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
