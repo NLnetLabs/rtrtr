@@ -242,7 +242,7 @@ impl Iterator for OutputStream {
         match self.state {
             StreamState::Header => {
                 self.state = StreamState::First;
-                Some(format!("{{\n  \"roas\": [\n").into_bytes())
+                Some(b"{{\n  \"roas\": [\n".to_vec())
             }
             StreamState::First => {
                 match self.iter.next() {
@@ -270,7 +270,7 @@ impl Iterator for OutputStream {
                     }
                     None => {
                         self.state = StreamState::Done;
-                        Some(format!("\n  ]\n}}").into_bytes())
+                        Some(b"\n  ]\n}}".to_vec())
                     }
                 }
             }
@@ -300,7 +300,7 @@ impl Iterator for OutputStream {
                     }
                     None => {
                         self.state = StreamState::Done;
-                        Some(format!("\n  ]\n}}").into_bytes())
+                        Some(b"\n  ]\n}}".to_vec())
                     }
                 }
             }
