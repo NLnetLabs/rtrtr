@@ -115,7 +115,7 @@ impl<'de> Deserialize<'de> for Asn {
                 match u32::from_str(&v[2..]) {
                     Ok(asn) => Ok(Asn(asn)),
                     Err(_) => {
-                        return Err(E::invalid_value(
+                        Err(E::invalid_value(
                             de::Unexpected::Str(v), &self
                         ))
                     }
