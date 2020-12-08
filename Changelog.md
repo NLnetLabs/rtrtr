@@ -7,6 +7,12 @@ Breaking Changes
 
 New
 
+* Support for JSON via HTTP and from a local file as a source, and JSON
+  via HTTP as a target. ([#5])
+
+[#5]: https://github.com/NLnetLabs/rtrtr/pull/5
+
+
 Bug Fixes
 
 Other Changes
