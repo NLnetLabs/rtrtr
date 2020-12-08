@@ -36,7 +36,7 @@ fn _main() -> Result<(), ExitError> {
         .enable_all()
         .build()
         .unwrap();
-    config.http.run(manager.metrics(), &runtime)?;
+    config.http.run(manager.metrics(), manager.http_resources(), &runtime)?;
     manager.spawn(&mut config, &runtime);
     runtime.block_on(pending())
 }

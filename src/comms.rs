@@ -19,6 +19,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize};
 use chrono::{DateTime, Utc};
 use crossbeam_utils::atomic::AtomicCell;
+use futures::pin_mut;
+use futures::future::{select, Either, Future};
 use slab::Slab;
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
@@ -134,11 +136,34 @@ impl Gate {
         }
     }
 
+    /// Runs the gate’s internal machine until a future resolves.
+    ///
+    /// Ignores any gate status changes.
+    pub async fn process_until<Fut: Future>(
+        &mut self,
+        fut: Fut
+    ) -> Result<Fut::Output, Terminated> {
+        pin_mut!(fut);
+
+        loop {
+            let process = self.process();
+            pin_mut!(process);
+            match select(process, fut).await {
+                Either::Left((Err(_), _)) => return Err(Terminated),
+                Either::Left((Ok(_), next_fut)) => {
+                    fut = next_fut;
+                }
+                Either::Right((res, _)) => return Ok(res)
+            }
+        }
+    }
+
     /// Updates the data set of the unit.
     ///
     /// This method will send out the update to all active links. It will
     /// also update the gate metrics based on the update.
     pub async fn update_data(&mut self, update: payload::Update) {
+        println!("{}", self.updates.len());
         for (_, item) in &mut self.updates {
             if item.suspended {
                 continue

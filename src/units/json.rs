@@ -2,12 +2,13 @@
 
 use std::{io, thread};
 use std::fs::File;
+use std::time::Duration;
 use log::{debug, error, warn};
 use reqwest::Url;
 use rpki_rtr::Serial;
 use serde::Deserialize;
 use tokio::sync::oneshot;
-use tokio::time::{Duration, delay_for};
+use tokio::time::{Instant, timeout_at};
 use crate::payload;
 use crate::comms::{Gate, Terminated, UnitStatus};
 use crate::formats::json::Set as JsonSet;
@@ -60,7 +61,7 @@ impl JsonRunner {
         self.gate.update_status(self.status).await;
         loop {
             self.step().await?;
-            delay_for(Duration::from_secs(self.json.refresh)).await;
+            self.wait().await?;
         }
     }
 
@@ -90,7 +91,7 @@ impl JsonRunner {
         let uri = self.json.uri.clone();
         if let Err(err) = self.step_generic(
             move || File::open(uri.path())
-        ).await {
+        ).await? {
             warn!("{}: cannot open file '{}': {}",
                 self.component.name(),
                 self.json.uri.path(),
@@ -105,7 +106,7 @@ impl JsonRunner {
             self.component.name(), self.json.uri
         );
         let request = self.component.http_client().get(self.json.uri.clone());
-        if let Err(err) = self.step_generic(move || request.send()).await {
+        if let Err(err) = self.step_generic(move || request.send()).await? {
             warn!("{}: failed to fetch from '{}': {}",
                 self.component.name(),
                 self.json.uri,
@@ -117,7 +118,7 @@ impl JsonRunner {
 
     async fn step_generic<F, R, E>(
         &mut self, op: F
-    ) -> Result<(), E>
+    ) -> Result<Result<(), E>, Terminated>
     where
         F: FnOnce() -> Result<R, E> + Send + 'static,
         R: io::Read,
@@ -138,9 +139,9 @@ impl JsonRunner {
 
         // XXX I think awaiting rx should never produce an error, so
         //     unwrapping is the right thing to do. But is it really?
-        let res = match rx.await.unwrap()? {
-            Ok(res) => res,
-            Err(err) => {
+        let res = match self.gate.process_until(rx).await?.unwrap() {
+            Ok(Ok(res)) => res,
+            Ok(Err(err)) => {
                 if self.status != UnitStatus::Stalled {
                     self.status = UnitStatus::Stalled;
                     self.gate.update_status(self.status).await
@@ -150,20 +151,37 @@ impl JsonRunner {
                     self.component.name(),
                     err
                 );
-                return Ok(())
+                return Ok(Ok(()))
             }
+            Err(err) => return Ok(Err(err))
         };
         
         self.serial = self.serial.add(1);
-        self.gate.update_data(
-            payload::Update::new(self.serial, res.into_payload().into(), None)
-        ).await;
         if self.status != UnitStatus::Healthy {
             self.status = UnitStatus::Healthy;
             self.gate.update_status(self.status).await
         }
+        self.gate.update_data(
+            payload::Update::new(self.serial, res.into_payload().into(), None)
+        ).await;
         debug!("Unit {}: successfully updated.", self.component.name());
+        Ok(Ok(()))
+    }
+
+    async fn wait(&mut self) -> Result<(), Terminated> {
+        let end = Instant::now() + Duration::from_secs(self.json.refresh);
+        while end > Instant::now() {
+            match timeout_at(end, self.gate.process()).await {
+                Ok(Ok(_status)) => {
+                    //self.status = status
+                }
+                Ok(Err(_)) => return Err(Terminated),
+                Err(_) => return Ok(()),
+            }
+        }
+
         Ok(())
     }
+
 }
 

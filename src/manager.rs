@@ -7,7 +7,7 @@ use log::error;
 use serde::Deserialize;
 use reqwest::blocking::Client as HttpClient;
 use tokio::runtime::Runtime;
-use crate::metrics;
+use crate::{http, metrics};
 use crate::comms::{Gate, GateAgent, Link};
 use crate::config::{Config, ConfigFile, Marked};
 use crate::log::Failed;
@@ -31,6 +31,9 @@ pub struct Component {
 
     /// A reference to the metrics collection.
     metrics: metrics::Collection,
+
+    /// A reference to the HTTP resources collection.
+    http_resources: http::Resources,
 }
 
 impl Component {
@@ -38,9 +41,12 @@ impl Component {
     fn new(
         name: String,
         http_client: HttpClient,
-        metrics: metrics::Collection
+        metrics: metrics::Collection,
+        http_resources: http::Resources,
     ) -> Self {
-        Component { name: name.into(), http_client, metrics,  }
+        Component {
+            name: name.into(), http_client, metrics, http_resources,
+        }
     }
 
     /// Returns the name of the component.
@@ -56,6 +62,13 @@ impl Component {
     /// Register a metrics source.
     pub fn register_metrics(&mut self, source: Arc<dyn metrics::Source>) {
         self.metrics.register(self.name.clone(), Arc::downgrade(&source));
+    }
+
+    /// Register an HTTP resources.
+    pub fn register_http_resource(
+        &mut self, process: Arc<dyn http::ProcessRequest>
+    ) {
+        self.http_resources.register(Arc::downgrade(&process))
     }
 }
 
@@ -76,6 +89,9 @@ pub struct Manager {
 
     /// The metrics collection maintained by this managers.
     metrics: metrics::Collection,
+
+    /// The HTTP resources collection maintained by this manager.
+    http_resources: http::Resources,
 }
 
 
@@ -162,19 +178,29 @@ impl Manager {
                 }
             };
             let controller = Component::new(
-                name, self.http_client.clone(), self.metrics.clone()
+                name, self.http_client.clone(), self.metrics.clone(),
+                self.http_resources.clone()
             );
             runtime.spawn(unit.run(controller, gate));
         }
 
         for (name, target) in config.targets.targets.drain() {
-            runtime.spawn(target.run(name));
+            let controller = Component::new(
+                name, self.http_client.clone(), self.metrics.clone(),
+                self.http_resources.clone()
+            );
+            runtime.spawn(target.run(controller));
         }
     }
 
     /// Returns a new reference to the manager’s metrics collection.
     pub fn metrics(&self) -> metrics::Collection {
         self.metrics.clone()
+    }
+
+    /// Returns a new reference the the HTTP resources collection.
+    pub fn http_resources(&self) -> http::Resources {
+        self.http_resources.clone()
     }
 }
 

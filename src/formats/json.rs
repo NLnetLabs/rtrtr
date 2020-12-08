@@ -4,11 +4,14 @@
 use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use rpki_rtr::payload::{Ipv4Prefix, Ipv6Prefix, Payload};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::payload;
 
+
+//============ Input =========================================================
 
 //------------ Set -----------------------------------------------------------
 
@@ -203,6 +206,109 @@ struct Metadata {
 
     #[serde(rename = "signatureDate")]
     signature_date: String,
+}
+
+
+//============ Output ========================================================
+
+//------------ OutputStream --------------------------------------------------
+
+pub struct OutputStream {
+    iter: payload::SetIter,
+    state: StreamState,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum StreamState {
+    Header,
+    First,
+    Body,
+    Done
+}
+
+impl OutputStream {
+    pub fn new(set: Arc<payload::Set>) -> Self {
+        OutputStream {
+            iter: set.into(),
+            state: StreamState::Header,
+        }
+    }
+}
+
+impl Iterator for OutputStream {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.state {
+            StreamState::Header => {
+                self.state = StreamState::First;
+                Some(format!("{{\n  \"roas\": [\n").into_bytes())
+            }
+            StreamState::First => {
+                match self.iter.next() {
+                    Some(Payload::V4(payload)) => {
+                        self.state = StreamState::Body;
+                        Some(format!(
+                            "    {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
+                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
+                            payload.asn,
+                            payload.prefix,
+                            payload.prefix_len,
+                            payload.max_len,
+                        ).into_bytes())
+                    }
+                    Some(Payload::V6(payload)) => {
+                        self.state = StreamState::Body;
+                        Some(format!(
+                            "    {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
+                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
+                            payload.asn,
+                            payload.prefix,
+                            payload.prefix_len,
+                            payload.max_len,
+                        ).into_bytes())
+                    }
+                    None => {
+                        self.state = StreamState::Done;
+                        Some(format!("\n  ]\n}}").into_bytes())
+                    }
+                }
+            }
+            StreamState::Body => {
+                match self.iter.next() {
+                    Some(Payload::V4(payload)) => {
+                        Some(format!(
+                            ",\n    \
+                            {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
+                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
+                            payload.asn,
+                            payload.prefix,
+                            payload.prefix_len,
+                            payload.max_len,
+                        ).into_bytes())
+                    }
+                    Some(Payload::V6(payload)) => {
+                        Some(format!(
+                            ",\n    \
+                            {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
+                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
+                            payload.asn,
+                            payload.prefix,
+                            payload.prefix_len,
+                            payload.max_len,
+                        ).into_bytes())
+                    }
+                    None => {
+                        self.state = StreamState::Done;
+                        Some(format!("\n  ]\n}}").into_bytes())
+                    }
+                }
+            }
+            StreamState::Done => {
+                None
+            }
+        }
+    }
 }
 
 
