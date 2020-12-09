@@ -33,29 +33,26 @@ familiar.
 
 Assuming you have a newly installed Debian or Ubuntu machine, you will need
 to install the C toolchain and Rust. You can then install RTRTR using
-Cargo, Rust’s build tool, directly from the repository.
+Cargo, Rust’s build tool.
 
 ```bash
 apt install rsync build-essential
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-cargo install  --git https://github.com/NLnetLabs/rtrtr.git
+cargo install --locked rtrtr
 ```
-
-If you want to pick up a particular branch, you can do so, too:
-
-```
-cargo install  --git https://github.com/NLnetLabs/rtrtr.git --branch foo
-```
-
 If you have an older version of Rust and RTRTR, you can update using
 
 ```bash
 rustup update
-cargo install -f --git https://github.com/NLnetLabs/rtrtr.git
+cargo install --locked --force rtrtr
 ```
+If you want to try the main branch from the repository instead of a
+release version, you can run
 
-The `-f` option to `cargo install` overwrites an already installed RTRTR.
+```bash
+cargo install --git https://github.com/NLnetLabs/rtrtr.git --branch main
+```
 
 Once RTRTR is installed, you need to create a config file that suits your
 needs. The example in [`etc/rtrtr.conf`] may be a good way to start. The
