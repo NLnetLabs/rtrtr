@@ -15,13 +15,15 @@
 //------------ Sub-modules ---------------------------------------------------
 //
 // These contain all the actual unit types grouped by shared functionality.
-pub mod rtr;
+mod http;
+mod rtr;
 
 
 //------------ Target --------------------------------------------------------
 
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use crate::log::ExitError;
+use crate::manager::Component;
 
 
 /// The component for outputting data.
@@ -30,13 +32,17 @@ use crate::log::ExitError;
 pub enum Target {
     #[serde(rename = "rtr")]
     RtrTcp(rtr::Tcp),
+
+    #[serde(rename = "http")]
+    Http(http::Target),
 }
 
 impl Target {
     /// Runs the target.
-    pub async fn run(self, name: String) -> Result<(), ExitError> {
+    pub async fn run(self, component: Component) -> Result<(), ExitError> {
         match self {
-            Target::RtrTcp(target) => target.run(name).await
+            Target::RtrTcp(target) => target.run(component).await,
+            Target::Http(target) => target.run(component).await,
         }
     }
 }

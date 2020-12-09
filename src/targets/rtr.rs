@@ -6,14 +6,15 @@ use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
 use arc_swap::ArcSwap;
 use log::{debug, error};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use rpki_rtr::payload::Timing;
 use rpki_rtr::server::{NotifySender, Server, VrpSource};
 use rpki_rtr::state::{Serial, State};
 use tokio::net::TcpListener;
-use crate::log::ExitError;
 use crate::payload;
 use crate::comms::Link;
+use crate::log::ExitError;
+use crate::manager::Component;
 
 
 //------------ Tcp -----------------------------------------------------------
@@ -27,7 +28,7 @@ pub struct Tcp {
 
 impl Tcp {
     /// Runs the target.
-    pub async fn run(mut self, name: String) -> Result<(), ExitError> {
+    pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let mut notify = NotifySender::new();
         let target = Source::default();
         for &addr in &self.listen {
@@ -38,7 +39,7 @@ impl Tcp {
             if let Ok(update) = self.unit.query().await {
                 debug!(
                     "Target {}: Got update ({} entries)",
-                    name, update.set().len()
+                    component.name(), update.set().len()
                 );
                 target.update(update);
                 notify.notify()

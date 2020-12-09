@@ -7,18 +7,20 @@
 //! Server configuration happens via the [`Server`] struct that normally is
 //! part of the [`Config`](crate::config::Config).
 
-use std::io;
+use std::{fmt, io};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdListener;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
+use arc_swap::ArcSwap;
 use futures::pin_mut;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use hyper::server::accept::Accept;
 use hyper::service::{make_service_fn, service_fn};
 use log::error;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
@@ -51,6 +53,7 @@ impl Server {
     pub fn run(
         &self,
         metrics: metrics::Collection,
+        resources: Resources,
         runtime: &Runtime,
     ) -> Result<(), ExitError> {
         let mut listeners = Vec::new();
@@ -67,7 +70,9 @@ impl Server {
         }
         for listener in listeners {
             runtime.spawn(
-                Self::single_listener(listener, metrics.clone())
+                Self::single_listener(
+                    listener, metrics.clone(), resources.clone()
+                )
             );
         }
         Ok(())
@@ -80,13 +85,18 @@ impl Server {
     async fn single_listener(
         listener: StdListener,
         metrics: metrics::Collection,
+        resources: Resources,
     ) {
         let make_service = make_service_fn(|_conn| {
             let metrics = metrics.clone();
+            let resources = resources.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |req| {
                     let metrics = metrics.clone();
-                    async move { Self::handle_request(req, &metrics).await }
+                    let resources = resources.clone();
+                    async move {
+                        Self::handle_request(req, &metrics, &resources).await
+                    }
                 }))
             }
         });
@@ -107,7 +117,8 @@ impl Server {
     /// Handles a single HTTP request.
     async fn handle_request(
         req: Request<Body>,
-        metrics: &metrics::Collection
+        metrics: &metrics::Collection,
+        resources: &Resources,
     ) -> Result<Response<Body>, Infallible> {
         if *req.method() != Method::GET {
             return Ok(Self::method_not_allowed())
@@ -115,7 +126,12 @@ impl Server {
         Ok(match req.uri().path() {
             "/metrics" => Self::metrics(metrics),
             "/status" => Self::status(metrics),
-            _ => Self::not_found()
+            _ => {
+                match resources.process_request(&req) {
+                    Some(response) => response,
+                    None => Self::not_found()
+                }
+            }
         })
     }
 
@@ -155,6 +171,122 @@ impl Server {
         .header("Content-Type", "text/plain")
         .body("Not Found".into())
         .unwrap()
+    }
+}
+
+
+//------------ Resources -----------------------------------------------------
+
+/// A collection of HTTP resources to be served by the server.
+///
+/// This type provides a shared collection. I.e., if a value is cloned, both
+/// clones will reference the same collection. Both will see newly
+/// added resources.
+///
+/// Such new resources can be registered with the [`register`][Self::register]
+/// method. An HTTP request can be processed using the
+/// [`process_request`][Self::process_request] method.
+#[derive(Clone, Default)]
+pub struct Resources {
+    /// The currently registered sources.
+    sources: Arc<ArcSwap<Vec<RegisteredResource>>>,
+
+    /// A mutex to be held during registration of a new source.
+    ///
+    /// Updating `sources` is done by taking the existing sources,
+    /// construct a new vec, and then swapping that vec into the arc. Because
+    /// of this, updates cannot be done concurrently. The mutex guarantees
+    /// that.
+    register: Arc<Mutex<()>>,
+}
+
+impl Resources {
+    /// Registers a new processor with the collection.
+    ///
+    /// The processor is given as a weak pointer so that it gets dropped
+    /// when the owning component terminates.
+    pub fn register(&self, process: Weak<dyn ProcessRequest>) {
+        let lock = self.register.lock().unwrap();
+        let old_sources = self.sources.load();
+        let mut new_sources = Vec::new();
+        for item in old_sources.iter() {
+            if item.process.strong_count() > 0 {
+                new_sources.push(item.clone())
+            }
+        }
+        new_sources.push(
+            RegisteredResource { process }
+        );
+        self.sources.store(new_sources.into());
+        drop(lock);
+    }
+
+    /// Processes an HTTP request.
+    ///
+    /// Returns some response if any of the registered processors actually
+    /// processed the particular request or `None` otherwise.
+    pub fn process_request(
+        &self, request: &Request<Body>
+    ) -> Option<Response<Body>> {
+        let sources = self.sources.load();
+        for item in sources.iter() {
+            if let Some(process) = item.process.upgrade() {
+                if let Some(response) = process.process_request(request) {
+                    return Some(response)
+                }
+            }
+        }
+        None
+    }
+}
+
+
+impl fmt::Debug for Resources {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let len = self.sources.load().len();
+        write!(f, "Resource({} processors)", len)
+    }
+}
+
+
+//------------ RegisteredResource --------------------------------------------
+
+/// All information on a resource registered with a collection.
+#[derive(Clone)]
+struct RegisteredResource {
+    /// A weak pointer to the resource’s processor.
+    process: Weak<dyn ProcessRequest>,
+}
+
+
+//------------ ProcessRequest ------------------------------------------------
+
+/// A type that can process an HTTP request.
+pub trait ProcessRequest: Send + Sync {
+    /// Processes an HTTP request.
+    ///
+    /// If the processor feels responsible for the reuqest, it should return
+    /// some response. This can be an error response. Otherwise it should
+    /// return `None`.
+    fn process_request(
+        &self, request: &Request<Body>
+    ) -> Option<Response<Body>>;
+}
+
+impl<T: ProcessRequest> ProcessRequest for Arc<T> {
+    fn process_request(
+        &self, request: &Request<Body>
+    ) -> Option<Response<Body>> {
+        AsRef::<T>::as_ref(self).process_request(request)
+    }
+}
+
+impl<F> ProcessRequest for F
+where F: Fn(&Request<Body>) -> Option<Response<Body>> + Sync + Send {
+    fn process_request(
+        &self, request: &Request<Body>
+    ) -> Option<Response<Body>> {
+        (self)(request)
     }
 }
 

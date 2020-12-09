@@ -18,12 +18,13 @@
 //------------ Sub-modules ---------------------------------------------------
 //
 // These contain all the actual unit types grouped by shared functionality.
-pub mod combine;
-pub mod rtr;
+mod combine;
+mod json;
+mod rtr;
 
 //------------ Unit ----------------------------------------------------------
 
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use crate::comms::Gate;
 use crate::manager::Component;
 
@@ -36,6 +37,9 @@ pub enum Unit {
 
     #[serde(rename = "rtr")]
     RtrTcp(rtr::Tcp),
+
+    #[serde(rename = "json")]
+    Json(json::Json),
 }
 
 impl Unit {
@@ -45,6 +49,7 @@ impl Unit {
         let _ = match self {
             Unit::Any(unit) => unit.run(component, gate).await,
             Unit::RtrTcp(unit) => unit.run(component, gate).await,
+            Unit::Json(unit) => unit.run(component, gate).await,
         };
     }
 }

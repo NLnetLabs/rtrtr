@@ -153,6 +153,11 @@ pub struct SetBuilder {
 }
 
 impl SetBuilder {
+    /// Creates a new, empty set.
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     /// Inserts a new element into the set.
     ///
     /// The method fails with an appropriate error if there already is an

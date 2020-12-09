@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use clap::{App, Arg, ArgMatches};
 use log::{error, LevelFilter, Log};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 
 //------------ LogConfig -----------------------------------------------------
@@ -213,19 +213,19 @@ impl LogConfig {
                     self.syslog_logger()?
                 }
                 else {
-                    self.stderr_logger(false)?
+                    self.stderr_logger(false)
                 }
             }
             #[cfg(not(unix))]
             LogTarget::Default => {
-                self.stderr_logger(daemon)?
+                self.stderr_logger(daemon)
             }
             #[cfg(unix)]
             LogTarget::Syslog => {
                 self.syslog_logger()?
             }
             LogTarget::Stderr => {
-                self.stderr_logger(daemon)?
+                self.stderr_logger(daemon)
             }
             LogTarget::File => {
                 self.file_logger()?
@@ -270,8 +270,8 @@ impl LogConfig {
     /// Creates a stderr logger.
     ///
     /// If we are in daemon mode, we add a timestamp to the output.
-    fn stderr_logger(&self, daemon: bool) -> Result<Box<dyn Log>, Failed> {
-        Ok(self.fern_logger(daemon).chain(io::stderr()).into_log().1)
+    fn stderr_logger(&self, daemon: bool) -> Box<dyn Log>{
+        self.fern_logger(daemon).chain(io::stderr()).into_log().1
     }
 
     /// Creates a file logger using the file provided by `path`.
