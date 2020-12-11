@@ -1,9 +1,7 @@
 # Change Log
 
 
-## Unreleased future version
-
-Breaking Changes
+## 0.1.1 ‘Death Metal Karaoke’
 
 New
 
@@ -11,11 +9,6 @@ New
   via HTTP as a target. ([#5])
 
 [#5]: https://github.com/NLnetLabs/rtrtr/pull/5
-
-
-Bug Fixes
-
-Other Changes
 
 
 ## 0.1.0 ‘Little Ball of Fur’
