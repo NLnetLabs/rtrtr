@@ -1,0 +1,38 @@
+{
+    "roas": [
+        {
+            "asn": "AS64512",
+            "prefix": "192.0.2.0/24",
+            "maxLength": 24,
+            "ta": "ta"
+        },
+        {
+            "asn": "AS4200000000",
+            "prefix": "2001:DB8::/32",
+            "maxLength": 32,
+            "ta": "ta"
+        }
+    ],
+    "metadata": {
+		"buildmachine": "rpki-client",
+		"buildtime": "2020-12-11T22:18:15Z",
+		"elapsedtime": "218",
+		"usertime": "116",
+		"systemtime": "68",
+		"roas": 56977,
+		"failedroas": 8,
+		"invalidroas": 0,
+		"certificates": 22207,
+		"failcertificates": 0,
+		"invalidcertificates": 0,
+		"tals": 5,
+		"talfiles": "/etc/tals/apnic.tal /etc/tals/arin.tal /etc/tals/ripe.tal /etc/tals/lacnic.tal /etc/tals/afrinic.tal",
+		"manifests": 22207,
+		"failedmanifests": 10,
+		"stalemanifests": 0,
+		"crls": 22197,
+		"repositories": 29,
+		"vrps": 210413,
+		"uniquevrps": 207098
+    }
+}

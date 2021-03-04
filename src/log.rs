@@ -132,6 +132,7 @@ impl LogConfig {
     ///
     /// This is the non-Unix version that does not use syslog.
     #[cfg(not(unix))]
+    #[allow(clippy::unnecessary_wraps)]
     fn apply_log_matches(
         &mut self,
         matches: &ArgMatches,
