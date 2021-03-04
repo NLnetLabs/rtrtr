@@ -199,13 +199,6 @@ impl<'de> Deserialize<'de> for Prefix {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Metadata {
-    counts: usize,
-    generated: u64,
-    valid: u64,
-    signature: String,
-
-    #[serde(rename = "signatureDate")]
-    signature_date: String,
 }
 
 
@@ -344,6 +337,9 @@ mod test {
         ).unwrap());
         check_set(serde_json::from_slice::<Set>(
             include_bytes!("../../test-data/vrps-metadata.json")
+        ).unwrap());
+        check_set(serde_json::from_slice::<Set>(
+            include_bytes!("../../test-data/vrps-metadata.rpki-client.json")
         ).unwrap());
     }
 }
