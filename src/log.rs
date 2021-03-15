@@ -50,7 +50,7 @@ impl LogConfig {
              .short("v")
              .long("verbose")
              .multiple(true)
-             .help("Log more information, twice or trice for even more")
+             .help("Log more information, twice or thrice for even more")
         )
         .arg(Arg::with_name("quiet")
              .short("q")
