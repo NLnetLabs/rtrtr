@@ -1,0 +1,17 @@
+#!/bin/sh -e
+
+RTRTR_HOME="/var/lib/rtrtr"
+RTRTR_USER="rtrtr"
+
+create_user() {
+    if id ${RTRTR_USER} > /dev/null 2>&1; then return; fi
+    adduser --system --home "${RTRTR_HOME}" --group ${RTRTR_USER}
+}
+
+case "$1" in
+configure)
+    create_user
+    ;;
+esac
+
+#DEBHELPER#
