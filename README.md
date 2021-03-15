@@ -35,7 +35,7 @@ to install the C toolchain and Rust. You can then install RTRTR using
 Cargo, Rust’s build tool.
 
 ```bash
-apt install rsync build-essential
+apt install build-essential
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 cargo install --locked rtrtr

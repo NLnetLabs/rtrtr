@@ -47,7 +47,7 @@ from one or more sources in multiple formats and dispatch it onwards. It \
 provides the means to implement multiple distribution architectures for RPKI \
 such as centralised RPKI validators that dispatch data to local caching RTR \
 servers. """
-depends = "$auto, rsync, adduser"
+depends = "$auto, adduser"
 section = "net"
 priority = "optional"
 assets = [
