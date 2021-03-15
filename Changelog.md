@@ -1,8 +1,8 @@
 # Change Log
 
-## Unreleased future version
+## 0.1.2 ‘Ten Four’
 
-Breaking Changes
+Released 2021-03-15
 
 New
 
@@ -10,14 +10,13 @@ New
   makes it compatible with the JSON produced by at least Routinator, OctoRPKI,
   and rpki-client. ([#8])
 
-Bug Fixes
-
-Other Changes
 
 [#8]: https://github.com/NLnetLabs/rtrtr/pull/8
 
 
 ## 0.1.1 ‘Death Metal Karaoke’
+
+Released 2020-12-11
 
 New
 
