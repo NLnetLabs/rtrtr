@@ -3,13 +3,23 @@
 ![ci](https://github.com/NLnetLabs/rtrtr/workflows/ci/badge.svg)
 [![](https://img.shields.io/crates/v/rtrtr.svg?color=brightgreen)](https://crates.io/crates/rtrtr)
 
-RTRTR is currently in early development. Right now, it can read RPKI data
-from multiple RPKI Relying Party packages via RTR and provide it, also via
-RTR, to routers. The HTTP server provides a monitoring endpoint in plain
-text and Prometheus format.
+RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads
+from one or more sources in multiple formats and dispatch it onwards. It 
+provides the means to implement multiple distribution architectures for
+RPKI such as centralised RPKI validators that dispatch data to local caching
+RTR servers.
 
-Over time, we will add more functionality, such as transport using RTR 
-over TLS, as well as plain and signed JSON over HTTPS.
+RTRTR can read RPKI data from multiple RPKI Relying Party packages via RTR
+and JSON and, in turn, provide an RTR service for routers to connect to. 
+The HTTP server provides the validated data set in JSON format, as well as
+a monitoring endpoint in plain text and Prometheus format.
+
+If you have feedback, we would love to hear from you. Don’t hesitate to
+[create an issue on Github](https://github.com/NLnetLabs/rtrtr/issues/new)
+or post a message on our [RPKI mailing
+list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki). You can learn more
+about RTRTR and RPKI technology by reading our documentation on
+[Read the Docs](https://rpki.readthedocs.io/).
 
 ## Architecture
 
@@ -25,7 +35,36 @@ a config file. An example can be found in [`etc/rtrtr.conf`]. For the
 moment, this example file also serves as a manual for the available
 components and their configuration.
 
-## Quick Start
+## Quick Start with Debian and Ubuntu Packages
+
+Assuming you have a machine running a recent Debian or Ubuntu distribution, you
+can install RTRTR from our [software package
+repository](https://packages.nlnetlabs.nl). To use this repository, add the line
+below that corresponds to your operating system to your `/etc/apt/sources.list`
+or `/etc/apt/sources.list.d/`
+
+```bash
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ buster main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal main
+```
+Then run the following commands
+
+```bash
+sudo apt update && apt-get install -y gnupg2
+wget -qO- https://packages.nlnetlabs.nl/aptkey.asc | sudo apt-key add -
+sudo apt update
+```
+
+You can then install RTRTR by running
+
+```bash
+sudo apt install rtrtr
+```
+
+## Quick Start with Cargo
 
 If you have already installed Routinator, this should all be somewhat
 familiar.
@@ -63,7 +102,7 @@ rtrtr -c rtrtr.conf
 
 [`etc/rtrtr.conf`]: https://github.com/NLnetLabs/rtrtr/blob/main/etc/rtrtr.conf
 
-## Using Docker
+## Quick Start with Docker
 
 To run RTRTR with Docker you will first need to create an `rtrtr.conf` file
 somewhere on your host computer and make that available to the Docker container
