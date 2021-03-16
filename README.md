@@ -64,6 +64,11 @@ You can then install RTRTR by running
 sudo apt install rtrtr
 ```
 
+You can now configure RTRTR by editing `/etc/rtrtr.conf` and start it with
+`sudo systemctl enable --now rtrtr`. You can check the status with the 
+command `sudo systemctl status rtrtr` and view the logs with 
+`sudo journalctl --unit=rtrtr`.
+
 ## Quick Start with Cargo
 
 If you have already installed Routinator, this should all be somewhat
