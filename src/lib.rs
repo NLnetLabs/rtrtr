@@ -20,6 +20,7 @@
 //! If you are trying to get started with the source code, perhaps begin with
 //! [comms] and continue with [units] before reading [manager]. This should
 //! give you a somewhat gentle introduction into the overall architecture.
+#![allow(renamed_and_removed_lints)]
 #![allow(clippy::unknown_clippy_lints)]
 
 pub mod comms;
