@@ -33,6 +33,7 @@ exchanging operational experiences we provide a `mailing list
 .. toctree::
    :maxdepth: 2
 
+   introduction
    installation
    configuration
    
