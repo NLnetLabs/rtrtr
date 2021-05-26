@@ -220,7 +220,7 @@ using Cargo, explicitly use the ``--version`` option. If needed, use the
         
 .. code-block:: text
 
-   cargo install --locked --force rtrtr --version 0.1.2-rc1
+   cargo install --locked --force rtrtr --version 0.1.1
 
 If you want to try the main branch from the repository instead of a release
 version, you can run:
