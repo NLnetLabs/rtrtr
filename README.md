@@ -1,5 +1,5 @@
-# Routinator User Manual
-The Official Routinator User Manual, published at [routinator.docs.nlnetlabs.nl](https://routinator.docs.nlnetlabs.nl)
+# RTRTR User Manual
+The Official Routinator User Manual, published at [rtrtr.docs.nlnetlabs.nl](https://rtrtr.docs.nlnetlabs.nl)
 
 
 ## Style Guide
