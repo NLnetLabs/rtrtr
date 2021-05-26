@@ -7,7 +7,7 @@ RTRTR – *main* branch
 
     |docsupdated| |discord|
 
-    .. |docsupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/routinator-manual.svg?label=docs%20updated
+    .. |docsupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/rtrtr-manual.svg?label=docs%20updated
                 :target: https://github.com/NLnetLabs/routinator-manual/commits/main
 
     .. |discord| image:: https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord
