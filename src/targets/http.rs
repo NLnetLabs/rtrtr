@@ -98,10 +98,7 @@ impl Source {
     }
 
     fn set(&self) -> Option<Arc<payload::Set>> {
-        match **self.data.load() {
-            Some(ref data) => Some(data.clone()),
-            None => None
-        }
+        (**self.data.load()).as_ref().cloned()
     }
 }
 
