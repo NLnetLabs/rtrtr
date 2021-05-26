@@ -65,14 +65,13 @@ Quick Start
        
        If you need an RTRTR unit to fetch data from a source port on the host
        you will also need to give the Docker container access to the host
-       network. For example one way to do this is with ``--net=host``:
+       network. For example one way to do this is with ``--net=host``, where
+       ``...`` represents the rest of the arguments to pass to Docker
+       and RTRTR:
 
        .. code-block:: bash
 
           docker run --net=host ...
-          
-       *(where ``...`` represents the rest of the arguments to pass to Docker
-       and RTRTR)*
        
        If you're not using ``--net=host`` you will need to tell Docker to 
        expoese the RTRTR target ports, either one by one using ``-p``, or you 
