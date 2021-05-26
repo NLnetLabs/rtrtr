@@ -14,11 +14,11 @@ Quick Start
 
    .. tab:: Packages
 
-       Assuming you have a machine running a recent Debian or Ubuntu distribution, you
-       can install RTRTR from our `software package repository
-       <https://packages.nlnetlabs.nl>`_. To use this repository, add the line below
-       that corresponds to your operating system to your ``/etc/apt/sources.list`` or
-       ``/etc/apt/sources.list.d/``:
+       Assuming you have a machine running a recent Debian or Ubuntu
+       distribution, you can install RTRTR from our `software package repository
+       <https://packages.nlnetlabs.nl>`_. To use this repository, add the line
+       below that corresponds to your operating system to your
+       ``/etc/apt/sources.list`` or ``/etc/apt/sources.list.d/``:
 
        .. code-block:: text
 
@@ -90,8 +90,9 @@ Quick Start
                
    .. tab:: Cargo
 
-       Assuming you have a newly installed Debian or Ubuntu machine, you will need to
-       install rsync, the C toolchain and Rust. You can then install RTRTR:
+       Assuming you have a newly installed Debian or Ubuntu machine, you will
+       need to install rsync, the C toolchain and Rust. You can then install
+       RTRTR:
 
        .. code-block:: bash
 
@@ -100,11 +101,9 @@ Quick Start
           source ~/.cargo/env
           cargo install --locked rtrtr
 
-       Once RTRTR is installed, you need to create a config file that suits your
-       needs. The :file:`etc/rtrtr.conf` example in the `repository
-       <https://github.com/NLnetLabs/rtrtr/blob/main/etc/rtrtr.conf>`_ may be a
-       good way to start. The config file to use needs to be passed to RTRTR via
-       the :option:`-c` option, i.e.:
+       Once RTRTR is installed, you need to create a :ref:`configuration file
+       <doc_rtrtr_configuration>` that suits your needs. The config file to use
+       needs to be passed to RTRTR via the :option:`-c` option, i.e.:
        
        .. code-block:: text
        

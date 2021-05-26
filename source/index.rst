@@ -32,10 +32,9 @@ exchanging operational experiences we provide a `mailing list
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting Started
-   :name: toc-getting-started
 
    installation
+   configuration
    
 .. history
 .. authors
