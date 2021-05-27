@@ -31,8 +31,7 @@ fn _main() -> Result<(), ExitError> {
     let mut config = Config::from_arg_matches(
         &matches, &cur_dir, &mut manager
     )?;
-    let mut runtime = runtime::Builder::new()
-        .threaded_scheduler()
+    let runtime = runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();

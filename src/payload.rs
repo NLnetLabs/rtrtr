@@ -21,9 +21,9 @@ use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::cmp::Ordering;
 use std::sync::Arc;
-use rpki_rtr::client::VrpError;
-use rpki_rtr::payload::{Action, Payload};
-use rpki_rtr::state::Serial;
+use rpki::rtr::client::VrpError;
+use rpki::rtr::payload::{Action, Payload};
+use rpki::rtr::state::Serial;
 
 
 //------------ Set -----------------------------------------------------------

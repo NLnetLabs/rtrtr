@@ -5,7 +5,7 @@ use std::fs::File;
 use std::time::Duration;
 use log::{debug, error, warn};
 use reqwest::Url;
-use rpki_rtr::Serial;
+use rpki::rtr::Serial;
 use serde::Deserialize;
 use tokio::sync::oneshot;
 use tokio::time::{Instant, timeout_at};
