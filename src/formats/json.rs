@@ -5,7 +5,7 @@ use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use rpki_rtr::payload::{Ipv4Prefix, Ipv6Prefix, Payload};
+use rpki::rtr::payload::{Ipv4Prefix, Ipv6Prefix, Payload};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::payload;

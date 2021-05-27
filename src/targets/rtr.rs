@@ -7,10 +7,11 @@ use std::net::TcpListener as StdTcpListener;
 use arc_swap::ArcSwap;
 use log::{debug, error};
 use serde::Deserialize;
-use rpki_rtr::payload::Timing;
-use rpki_rtr::server::{NotifySender, Server, VrpSource};
-use rpki_rtr::state::{Serial, State};
+use rpki::rtr::payload::Timing;
+use rpki::rtr::server::{NotifySender, Server, VrpSource};
+use rpki::rtr::state::{Serial, State};
 use tokio::net::TcpListener;
+use tokio_stream::wrappers::TcpListenerStream;
 use crate::payload;
 use crate::comms::Link;
 use crate::log::ExitError;
@@ -58,7 +59,7 @@ impl Tcp {
                 return Err(ExitError)
             }
         };
-        let mut listener = match TcpListener::from_std(listener) {
+        let listener = match TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(err) => {
                 error!("Fatal error listening on {}: {}", addr, err);
@@ -66,7 +67,7 @@ impl Tcp {
             }
         };
         tokio::spawn(async move {
-            let listener = listener.incoming();
+            let listener = TcpListenerStream::new(listener);
             let server = Server::new(listener, notify, target);
             if server.run().await.is_err() {
                 error!("Fatal error listening on {}.", addr);

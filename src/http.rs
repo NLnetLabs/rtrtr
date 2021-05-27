@@ -21,10 +21,9 @@ use hyper::server::accept::Accept;
 use hyper::service::{make_service_fn, service_fn};
 use log::error;
 use serde::Deserialize;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
-use tokio::stream::Stream;
 use crate::log::ExitError;
 use crate::metrics;
 
@@ -308,11 +307,17 @@ impl Accept for HttpAccept {
     ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
         let sock = &mut self.sock;
         pin_mut!(sock);
-        sock.poll_next(cx).map(|sock| sock.map(|sock| sock.map(|sock| {
-            HttpStream {
-                sock,
+        match sock.poll_accept(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Ok((sock, _addr))) => {
+                Poll::Ready(Some(Ok(HttpStream {
+                    sock,
+                })))
             }
-        })))
+            Poll::Ready(Err(err)) => {
+                Poll::Ready(Some(Err(err)))
+            }
+        }
     }
 }
 
@@ -324,8 +329,8 @@ struct HttpStream {
 
 impl AsyncRead for HttpStream {
     fn poll_read(
-        mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]
-    ) -> Poll<Result<usize, io::Error>> {
+        mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf
+    ) -> Poll<Result<(), io::Error>> {
         let sock = &mut self.sock;
         pin_mut!(sock);
         sock.poll_read(cx, buf)

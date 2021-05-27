@@ -102,7 +102,7 @@ impl Any {
         // source at random and then loop around. That’s not truly random but
         // deterministic.
         let mut next = if self.random {
-            thread_rng().gen_range(0, self.sources.len())
+            thread_rng().gen_range(0..self.sources.len())
         }
         else if let Some(curr) = curr {
             (curr + 1) % self.sources.len()
