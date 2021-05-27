@@ -1,5 +1,5 @@
 # -- stage 1: build static rtrtr with musl libc for alpine
-FROM alpine:3.13.0 as build
+FROM alpine:3.13.5 as build
 
 RUN apk add rust cargo
 
@@ -13,7 +13,7 @@ RUN cargo build \
 
 # -- stage 2: create alpine-based container with the static rtrtr
 #             executable
-FROM alpine:3.13.0
+FROM alpine:3.13.5
 COPY --from=build /tmp/rtrtr/target/x86_64-alpine-linux-musl/release/rtrtr /usr/local/bin/
 
 # Build variables for uid and guid of user to run container
