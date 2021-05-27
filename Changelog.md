@@ -4,12 +4,17 @@
 
 Breaking Changes
 
+* The minimum supported Rust version is now 1.47. ([#17])
+
 New
 
 Bug Fixes
 
 Other
 
+* Upgraded to Tokio 1.0, Hyper 0.14, and Reqwest 0.11. ([#17]) 
+
+[#17]: https://github.com/NLnetLabs/rtrtr/pull/17
 
 
 ## 0.1.2 ‘Ten Four’
