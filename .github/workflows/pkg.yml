@@ -121,7 +121,6 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          target
         key: ${{ matrix.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up tooling installation by only re-downloading and re-building
