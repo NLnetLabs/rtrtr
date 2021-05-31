@@ -224,9 +224,9 @@ jobs:
             DEB_VER="${PKG_RTRTR_VER}-1${OS_REL}"
 
             if [[ "${VARIANT_NAME}" == "" ]]; then
-              cargo deb --deb-version ${DEB_VER} -v
+              cargo deb --deb-version ${DEB_VER} -v -- --locked
             else
-              cargo deb --deb-version ${DEB_VER} --variant ${VARIANT_NAME} -v
+              cargo deb --deb-version ${DEB_VER} --variant ${VARIANT_NAME} -v -- --locked
             fi
             ;;
           centos)
