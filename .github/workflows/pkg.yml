@@ -291,8 +291,8 @@ jobs:
       with:
         name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
         path: |
-          target/debian/*.deb
-          target/generate-rpm/*.rpm
+          target/**/*.deb
+          target/**/*.rpm
 
   # Download and sanity check on target operating systems the packages created
   # by previous jobs (see above). Don't test on GH runners as they come with
