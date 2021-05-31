@@ -246,7 +246,7 @@ jobs:
             strip -s target/release/rtrtr
 
             # Fix the version string to be used for the RPM package
-            sed -i -e "s/$RTRTR_VER/$RPM_RTRTR_VER/" Cargo.toml
+            sed -i -e "s/$RTRTR_VER/$PKG_RTRTR_VER/" Cargo.toml
 
             # Select the correct systemd service unit file for the target operating system
             case ${MATRIX_IMAGE} in
