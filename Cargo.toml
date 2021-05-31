@@ -75,6 +75,7 @@ assets = [
     { source = "README.md", dest = "/usr/share/doc/rtrtr/README.md", mode = "644" },
     { source = "etc/rtrtr.conf.system-service", dest = "/etc/rtrtr.conf", mode = "644", config = true },
     { source = "pkg/common/service.preset", dest = "/lib/systemd/system-preset/50-rtrtr.preset", mode = "644" },
+    { source = "pkg/rpm/postinst", dest = "/usr/share/rtrtr/rpm/postinst", mode = "755" },
 ]
 post_install_script = "/usr/share/rtrtr/rpm/postinst $*"
 
