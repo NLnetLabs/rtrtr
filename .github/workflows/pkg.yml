@@ -291,8 +291,8 @@ jobs:
       with:
         name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
         path: |
-          target/**/*.deb
-          target/**/*.rpm
+          target/debian/*.deb
+          target/generate-rpm/*.rpm
 
   # Download and sanity check on target operating systems the packages created
   # by previous jobs (see above). Don't test on GH runners as they come with
@@ -394,12 +394,12 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            DEB_FILE=$(ls -1 *.deb)
+            DEB_FILE=$(ls -1 debian/*.deb)
             sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
             echo "PKG_FILE=${DEB_FILE}" >> $GITHUB_ENV
             ;;
           centos)
-            RPM_FILE=$(ls -1 *.rpm)
+            RPM_FILE=$(ls -1 generate-rpm/*.rpm)
             sg lxd -c "lxc file push ${RPM_FILE} testcon/tmp/"
             echo "PKG_FILE=${RPM_FILE}" >> $GITHUB_ENV
             ;;
