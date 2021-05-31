@@ -401,7 +401,7 @@ jobs:
           centos)
             RPM_FILE=$(ls -1 generate-rpm/*.rpm)
             sg lxd -c "lxc file push ${RPM_FILE} testcon/tmp/"
-            echo "PKG_FILE=${RPM_FILE}" >> $GITHUB_ENV
+            echo "PKG_FILE=${basename RPM_FILE}" >> $GITHUB_ENV
             ;;
         esac
 
