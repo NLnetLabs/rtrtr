@@ -215,9 +215,12 @@ jobs:
 
             # Generate the changelog file that Debian packages are required to have.
             # See: https://www.debian.org/doc/manuals/maint-guide/dreq.en.html#changelog
-            echo "rtrtr (${PKG_RTRTR_VER}) unstable; urgency=medium" >debian/changelog
-            echo "  * See: https://github.com/NLnetLabs/rtrtr/releases/tag/v${RTRTR_NEW_VER}" >>debian/changelog
-            echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>debian/changelog
+            if [ ! -d target/debian ]; then
+              mkdir -p target/debian
+            fi
+            echo "rtrtr (${PKG_RTRTR_VER}) unstable; urgency=medium" >target/debian/changelog
+            echo "  * See: https://github.com/NLnetLabs/rtrtr/releases/tag/v${RTRTR_NEW_VER}" >>target/debian/changelog
+            echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
             DEB_VER="${PKG_RTRTR_VER}-1${OS_REL}"
 
             if [[ "${VARIANT_NAME}" == "" ]]; then
