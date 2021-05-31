@@ -126,7 +126,7 @@ jobs:
 
     # Speed up tooling installation by only re-downloading and re-building
     # dependent crates if we change the version of the tool that we are using.
-    - name: Cache Cargo Packaging tools
+    - name: Cache Cargo packaging tools
       id: cache-pkg-tools
       uses: actions/cache@v2
       with:
@@ -136,7 +136,7 @@ jobs:
         key: ${{ matrix.image }}-pkg-tools-${{ env.CARGO_DEB_VER }}-${{ env.CARGO_GENERATE_RPM_VER }}
 
     # Only install cargo-deb if not already fetched from the cache.
-    - name: Install Cargo Deb
+    - name: Install Cargo packaging tools
       if: steps.cache-cargo-pkg-tools.outputs.cache-hit != 'true'
       run: |
         case ${OS_NAME} in
@@ -146,6 +146,7 @@ jobs:
           centos)
             cargo install cargo-generate-rpm --version ${CARGO_GENERATE_RPM_VER}
             ;;
+        esac
 
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on
     # Cargo.toml settings and command line arguments.
