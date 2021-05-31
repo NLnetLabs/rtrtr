@@ -82,8 +82,16 @@ jobs:
     # doesn't work inside a Docker container.
     - name: Install Rust
       run: |
-        apt-get update
-        apt-get install -y curl
+        case ${OS_NAME} in
+          debian|ubuntu)
+            apt-get update
+            apt-get install -y curl
+            ;;
+          centos)
+            yum update -y
+            ;;
+        esac
+
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       env:
