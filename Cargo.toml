@@ -72,6 +72,7 @@ systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = fal
 license = "BSD"
 assets = [
     { source = "target/release/rtrtr", dest = "/usr/bin/rtrtr", mode = "755" },
+    { source = "target/rpm/rtrtr.service", dest = "/lib/systemd/system/rtrtr.service", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/rtrtr/README.md", mode = "644" },
     { source = "etc/rtrtr.conf.system-service", dest = "/etc/rtrtr.conf", mode = "644", config = true },
     { source = "pkg/common/service.preset", dest = "/lib/systemd/system-preset/50-rtrtr.preset", mode = "644" },
