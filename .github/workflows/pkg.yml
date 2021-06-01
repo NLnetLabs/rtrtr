@@ -228,7 +228,7 @@ jobs:
             if [ ! -d target/debian ]; then
               mkdir -p target/debian
             fi
-            echo "RTRTR (${PKG_RTRTR_VER}) unstable; urgency=medium" >target/debian/changelog
+            echo "rtrtr (${PKG_RTRTR_VER}) unstable; urgency=medium" >target/debian/changelog
             echo "  * See: https://github.com/NLnetLabs/rtrtr/releases/tag/v${RTRTR_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
             DEB_VER="${PKG_RTRTR_VER}-1${OS_REL}"
