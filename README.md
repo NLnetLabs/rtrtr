@@ -34,17 +34,19 @@ constantly update one new set of data. _Targets_ take the data set from
 one particular unit and serve it to an external party.
 
 Which components RTRTR will use and how they are connected is described in
-a config file. An example can be found in [`etc/rtrtr.conf`]. For the
-moment, this example file also serves as a manual for the available
-components and their configuration.
+[the documentation](https://rtrtr.docs.nlnetlabs.nl/) Also, an example 
+config file can be found in [`etc/rtrtr.conf`].
 
-## Quick Start with Debian and Ubuntu Packages
+## Quick Start with Binary Packages
 
-Assuming you have a machine running a recent Debian or Ubuntu distribution, you
-can install RTRTR from our [software package
-repository](https://packages.nlnetlabs.nl). To use this repository, add the line
-below that corresponds to your operating system to your `/etc/apt/sources.list`
-or `/etc/apt/sources.list.d/`
+On the NLnet Labs software package repository we provide RTRTR packages for
+amd64/x86_64 architectures running Debian and Ubuntu, as well as Red Hat 
+Enterprise Linux and CentOS.
+
+### Installing on Debian/Unbuntu
+
+Add the line below that corresponds to your operating system to your
+`/etc/apt/sources.list` or `/etc/apt/sources.list.d/`
 
 ```bash
 deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch main
@@ -53,19 +55,45 @@ deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial main
 deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic main
 deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal main
 ```
-Then run the following commands
+
+Then run the following commands to add the public key and update the repository 
+list
 
 ```bash
-sudo apt update && apt-get install -y gnupg2
 wget -qO- https://packages.nlnetlabs.nl/aptkey.asc | sudo apt-key add -
 sudo apt update
 ```
 
-You can then install RTRTR by running
+You can then install RTRTR by running this command
 
 ```bash
 sudo apt install rtrtr
 ```
+
+### Installing on RHEL/CentOS
+
+Create a file named `/etc/yum.repos.d/nlnetlabs.repo`, enter this configuration
+and save it:
+
+```bash
+[nlnetlabs]
+name=NLnet Labs
+baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/main/$basearch
+enabled=1
+```
+Then run the following command to add the public key
+
+```bash
+sudo rpm --import https://packages.nlnetlabs.nl/aptkey.asc
+```
+
+You can then install RTRTR by running this command
+
+```bash
+sudo yum install -y rtrtr
+```
+
+### Setting up RTRTR
 
 You can now configure RTRTR by editing `/etc/rtrtr.conf` and start it with
 `sudo systemctl enable --now rtrtr`. You can check the status with the 
