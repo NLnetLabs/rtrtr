@@ -80,6 +80,6 @@ assets = [
 ]
 post_install_script = "/usr/share/rtrtr/rpm/postinst $*"
 
-# ensure that the useradd and rsync tools are present by installing their respective packages
+# ensure that the useradd tool is present by depending on its package
 [package.metadata.generate-rpm.requires]
 shadow-utils = "*"
