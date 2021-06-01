@@ -1,6 +1,7 @@
 # RTRTR – An RPKI data proxy
 
 ![ci](https://github.com/NLnetLabs/rtrtr/workflows/ci/badge.svg)
+[![Documentation Status](https://readthedocs.org/projects/rtrtr/badge/?version=stable)](https://rtrtr.docs.nlnetlabs.nl/en/stable/?badge=stable)
 [![](https://img.shields.io/crates/v/rtrtr.svg?color=brightgreen)](https://crates.io/crates/rtrtr)
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
 
@@ -15,12 +16,13 @@ and JSON and, in turn, provide an RTR service for routers to connect to.
 The HTTP server provides the validated data set in JSON format, as well as
 a monitoring endpoint in plain text and Prometheus format.
 
-If you have feedback, we would love to hear from you. Don’t hesitate to
-[create an issue on Github](https://github.com/NLnetLabs/rtrtr/issues/new)
-or post a message on our [RPKI mailing
-list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki). You can learn more
-about RTRTR and RPKI technology by reading our documentation on
-[Read the Docs](https://rpki.readthedocs.io/).
+If you have feedback, we would love to hear from you. Don’t hesitate to [create
+an issue on Github](https://github.com/NLnetLabs/rtrtr/issues/new) or post
+a message on our [RPKI mailing
+list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki) or [Discord
+server](https://discord.gg/8dvKB5Ykhy). You can learn more by reading the 
+[RTRTR documentation](https://rtrtr.docs.nlnetlabs.nl/) and the
+[RPKI technology documentation](https://rpki.readthedocs.io/) on Read the Docs.
 
 ## Architecture
 
