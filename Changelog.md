@@ -10,6 +10,11 @@ New
 
 Bug Fixes
 
+* Corrected the RTR PDU type of the Cache Reset PDU from 7 to 8.
+  ([rpki #151])
+
+[rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
+
 Other
 
 * Upgraded to Tokio 1.0, Hyper 0.14, and Reqwest 0.11. ([#17]) 
