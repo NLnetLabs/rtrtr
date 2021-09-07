@@ -2,12 +2,10 @@
 //!
 
 use std::fmt;
-use std::net::IpAddr;
-use std::str::FromStr;
-use std::sync::Arc;
-use rpki::rtr::payload::{Ipv4Prefix, Ipv6Prefix, Payload};
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use rpki::payload::addr::{MaxLenPrefix, Prefix};
+use rpki::payload::rtr::{PrefixOrigin, Payload};
+use rpki::rtr::server::PayloadSet;
+use serde::{Deserialize, Serialize};
 use crate::payload;
 
 
@@ -23,174 +21,146 @@ pub struct Set {
 
 impl Set {
     pub fn into_payload(self) -> payload::Set {
-        let mut res = payload::SetBuilder::empty();
+        let mut res = payload::PackBuilder::empty();
         for item in self.roas {
             let _ = res.insert(item.into_payload());
         }
-        res.finalize()
+        res.finalize().into()
     }
 }
 
 
 //------------ Vrp -----------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 struct Vrp {
-    asn: Asn,
-    prefix: Prefix,
-
-    #[serde(rename = "maxLength")]
-    max_len: u8,
+    payload: PrefixOrigin,
     ta: String,
 }
 
 impl Vrp {
     fn into_payload(self) -> Payload {
-        match self.prefix.addr {
-            IpAddr::V4(addr) => {
-                Payload::V4(Ipv4Prefix {
-                    prefix: addr,
-                    prefix_len: self.prefix.prefix_len,
-                    max_len: self.max_len,
-                    asn: self.asn.0,
-                })
-            }
-            IpAddr::V6(addr) => {
-                Payload::V6(Ipv6Prefix {
-                    prefix: addr,
-                    prefix_len: self.prefix.prefix_len,
-                    max_len: self.max_len,
-                    asn: self.asn.0,
-                })
-            }
-        }
+        Payload::Origin(self.payload)
     }
 }
 
+//--- Deserialize and Serialize
+//
 
-//------------ Asn -----------------------------------------------------------
+impl<'de> Deserialize<'de> for Vrp {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        use serde::de;
 
-#[derive(Clone, Debug)]
-struct Asn(u32);
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        enum Fields { Prefix, Asn, MaxLength, Ta }
 
-impl Serialize for Asn {
-    fn serialize<S: Serializer>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(
-            &format_args!("AS{}", self.0)
+        struct StructVisitor;
+
+        impl<'de> de::Visitor<'de> for StructVisitor {
+            type Value = Vrp;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("VRP struct")
+            }
+
+            fn visit_map<V: de::MapAccess<'de>>(
+                self, mut map: V
+            ) -> Result<Self::Value, V::Error> {
+                let mut prefix = None;
+                let mut asn = None;
+                let mut max_len = None;
+                let mut ta = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Fields::Prefix => {
+                            if prefix.is_some() {
+                                return Err(
+                                    de::Error::duplicate_field("prefix")
+                                );
+                            }
+                            prefix = Some(map.next_value()?);
+                        }
+                        Fields::Asn => {
+                            if asn.is_some() {
+                                return Err(
+                                    de::Error::duplicate_field("asn")
+                                );
+                            }
+                            asn = Some(map.next_value()?);
+                        }
+                        Fields::MaxLength => {
+                            if max_len.is_some() {
+                                return Err(
+                                    de::Error::duplicate_field("maxLength")
+                                );
+                            }
+                            max_len = Some(map.next_value()?);
+                        }
+                        Fields::Ta => {
+                            if ta.is_some() {
+                                return Err(
+                                    de::Error::duplicate_field("ta")
+                                );
+                            }
+                            ta = Some(map.next_value()?);
+                        }
+                    }
+                }
+
+                let prefix: Prefix = prefix.ok_or_else(|| {
+                    de::Error::missing_field("prefix")
+                })?;
+                let asn = asn.ok_or_else(|| {
+                    de::Error::missing_field("asn")
+                })?;
+                let max_len = max_len.ok_or_else(|| {
+                    de::Error::missing_field("maxLength")
+                })?;
+                let ta = ta.ok_or_else(|| {
+                    de::Error::missing_field("ta")
+                })?;
+
+                let prefix = MaxLenPrefix::new(prefix, max_len).map_err(
+                    de::Error::custom
+                )?;
+
+                Ok(Vrp { payload: PrefixOrigin::new(prefix, asn), ta })
+            }
+        }
+
+        const FIELDS: &[&str] = &[
+            "prefix", "asn", "maxLength", "ta"
+        ];
+        deserializer.deserialize_struct(
+            "Vrp", FIELDS, StructVisitor
         )
     }
 }
 
-impl<'de> Deserialize<'de> for Asn {
-    fn deserialize<D: Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
-        struct Visitor;
-
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = Asn;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a string with an AS number")
-            }
-
-            fn visit_str<E: de::Error>(
-                self, v: &str
-            ) -> Result<Self::Value, E> {
-                if v.len() < 3 {
-                    return Err(E::invalid_value(
-                        de::Unexpected::Str(v), &self
-                    ))
-                }
-                if 
-                    (v.as_bytes()[0] != b'a' && v.as_bytes()[0] != b'A')
-                    || (v.as_bytes()[1] != b's' && v.as_bytes()[1] != b'S')
-                {
-                    return Err(E::invalid_value(
-                        de::Unexpected::Str(v), &self
-                    ))
-                }
-                match u32::from_str(&v[2..]) {
-                    Ok(asn) => Ok(Asn(asn)),
-                    Err(_) => {
-                        Err(E::invalid_value(
-                            de::Unexpected::Str(v), &self
-                        ))
-                    }
-                }
-            }
-        }
-
-        deserializer.deserialize_str(Visitor)
-    }
-}
-
-
-//------------ Prefix --------------------------------------------------------
-
-#[derive(Clone, Copy, Debug)]
-struct Prefix {
-    addr: IpAddr,
-    prefix_len: u8,
-}
-
-impl Serialize for Prefix {
-    fn serialize<S: Serializer>(
+impl Serialize for Vrp {
+    fn serialize<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(
-            &format_args!("{}/{}", self.addr, self.prefix_len)
-        )
-    }
-}
+        use serde::ser::SerializeStruct;
 
-impl<'de> Deserialize<'de> for Prefix {
-    fn deserialize<D: Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
-        struct Visitor;
-
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = Prefix;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a string with a prefix in slash notation")
-            }
-
-            fn visit_str<E: de::Error>(
-                self, v: &str
-            ) -> Result<Self::Value, E> {
-                let slash = match v.find('/') {
-                    Some(slash) => slash,
-                    None => {
-                        return Err(E::invalid_value(
-                            de::Unexpected::Str(v), &self
-                        ))
-                    }
-                };
-                let addr = match IpAddr::from_str(&v[..slash]) {
-                    Ok(addr) => addr,
-                    Err(_) => {
-                        return Err(E::invalid_value(
-                            de::Unexpected::Str(v), &self
-                        ))
-                    }
-                };
-                let prefix_len = match u8::from_str(&v[slash + 1..]) {
-                    Ok(len) => len,
-                    Err(_) => {
-                        return Err(E::invalid_value(
-                            de::Unexpected::Str(v), &self
-                        ))
-                    }
-                };
-                Ok(Prefix { addr, prefix_len })
-            }
-        }
-
-        deserializer.deserialize_str(Visitor)
+        let mut serializer = serializer.serialize_struct( "Vrp", 4)?;
+        serializer.serialize_field(
+            "prefix", &self.payload.prefix.prefix(),
+        )?;
+        serializer.serialize_field(
+            "asn", &format!("{}", self.payload.asn),
+        )?;
+        serializer.serialize_field(
+            "maxLength", &self.payload.prefix.max_len()
+        )?;
+        serializer.serialize_field(
+            "ta", &self.ta
+        )?;
+        serializer.end()
     }
 }
 
@@ -207,7 +177,7 @@ struct Metadata {
 //------------ OutputStream --------------------------------------------------
 
 pub struct OutputStream {
-    iter: payload::SetIter,
+    iter: payload::OwnedSetIter,
     state: StreamState,
 }
 
@@ -220,10 +190,20 @@ enum StreamState {
 }
 
 impl OutputStream {
-    pub fn new(set: Arc<payload::Set>) -> Self {
+    pub fn new(set: payload::Set) -> Self {
         OutputStream {
-            iter: set.into(),
+            iter: set.into_owned_iter(),
             state: StreamState::Header,
+        }
+    }
+
+    pub fn next_origin(&mut self) -> Option<PrefixOrigin> {
+        loop {
+            match self.iter.next() {
+                Some(Payload::Origin(value)) => return Some(*value),
+                None => return None,
+                _ => {}
+            }
         }
     }
 }
@@ -238,27 +218,16 @@ impl Iterator for OutputStream {
                 Some(b"{{\n  \"roas\": [\n".to_vec())
             }
             StreamState::First => {
-                match self.iter.next() {
-                    Some(Payload::V4(payload)) => {
+                match self.next_origin() {
+                    Some(payload) => {
                         self.state = StreamState::Body;
                         Some(format!(
                             "    {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
                             \"maxLength\": {}, \"ta\": \"N/A\" }}",
                             payload.asn,
-                            payload.prefix,
-                            payload.prefix_len,
-                            payload.max_len,
-                        ).into_bytes())
-                    }
-                    Some(Payload::V6(payload)) => {
-                        self.state = StreamState::Body;
-                        Some(format!(
-                            "    {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
-                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
-                            payload.asn,
-                            payload.prefix,
-                            payload.prefix_len,
-                            payload.max_len,
+                            payload.prefix.prefix(),
+                            payload.prefix.prefix_len(),
+                            payload.prefix.unwrapped_max_len(),
                         ).into_bytes())
                     }
                     None => {
@@ -268,27 +237,16 @@ impl Iterator for OutputStream {
                 }
             }
             StreamState::Body => {
-                match self.iter.next() {
-                    Some(Payload::V4(payload)) => {
+                match self.next_origin() {
+                    Some(payload) => {
                         Some(format!(
                             ",\n    \
                             {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
                             \"maxLength\": {}, \"ta\": \"N/A\" }}",
                             payload.asn,
-                            payload.prefix,
-                            payload.prefix_len,
-                            payload.max_len,
-                        ).into_bytes())
-                    }
-                    Some(Payload::V6(payload)) => {
-                        Some(format!(
-                            ",\n    \
-                            {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
-                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
-                            payload.asn,
-                            payload.prefix,
-                            payload.prefix_len,
-                            payload.max_len,
+                            payload.prefix.prefix(),
+                            payload.prefix.prefix_len(),
+                            payload.prefix.unwrapped_max_len(),
                         ).into_bytes())
                     }
                     None => {
@@ -310,25 +268,30 @@ impl Iterator for OutputStream {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::net::IpAddr;
+    use std::str::FromStr;
 
     #[test]
     fn deserialize() {
         fn check_set(set: Set) {
             assert_eq!(set.roas.len(), 2);
 
-            assert_eq!(set.roas[0].asn.0, 64512);
-            assert_eq!(set.roas[0].prefix.addr, IpAddr::from([192,0,2,0]));
-            assert_eq!(set.roas[0].prefix.prefix_len, 24);
-            assert_eq!(set.roas[0].max_len, 24);
+            assert_eq!(set.roas[0].payload.asn, 64512.into());
+            assert_eq!(
+                set.roas[0].payload.prefix.addr(),
+                IpAddr::from([192,0,2,0])
+            );
+            assert_eq!(set.roas[0].payload.prefix.prefix_len(), 24);
+            assert_eq!(set.roas[0].payload.prefix.max_len(), Some(24));
             assert_eq!(set.roas[0].ta, "ta");
 
-            assert_eq!(set.roas[1].asn.0, 4200000000);
+            assert_eq!(set.roas[1].payload.asn, 4200000000.into());
             assert_eq!(
-                set.roas[1].prefix.addr,
+                set.roas[1].payload.prefix.addr(),
                 IpAddr::from_str("2001:DB8::").unwrap()
             );
-            assert_eq!(set.roas[1].prefix.prefix_len, 32);
-            assert_eq!(set.roas[1].max_len, 32);
+            assert_eq!(set.roas[1].payload.prefix.prefix_len(), 32);
+            assert_eq!(set.roas[1].payload.prefix.max_len(), Some(32));
             assert_eq!(set.roas[1].ta, "ta");
         }
 

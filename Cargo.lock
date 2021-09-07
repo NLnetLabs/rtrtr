@@ -693,14 +693,16 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "718f0d99ad56874728162d2f082e43c2cb378ab62b87202cdf806b9fd13b2d0a"
+version = "0.12.3-dev"
+source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=slurm#2f8ae310646d1991743db97b9d9a6a2557896c2f"
 dependencies = [
+ "base64",
  "bytes",
  "chrono",
  "futures-util",
  "log",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "uuid",

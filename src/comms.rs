@@ -4,10 +4,10 @@
 //! its data set and operational state to all other components that are
 //! interested. It also takes care of managing these communication lines.
 //!
-//! There are two three main types here: Each unit has a single [`Gate`] to
+//! There are three main types here: Each unit has a single [`Gate`] to
 //! which it hands its updates. The opposite end is called a [`Link`] and
-//! by any interested component. A [`GateAgent`] is a reference to a gate
-//! that can be used to create new links.
+//! a clone is owned by any interested component. A [`GateAgent`] is a
+//! reference to a gate that can be used to create new links.
 //!
 //! The type [`GateMetrics`] can be used by units to provide some obvious
 //! metrics such as the number of payload units in the data set or the time

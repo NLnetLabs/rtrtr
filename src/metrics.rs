@@ -360,7 +360,7 @@ impl<'a> Records<'a> {
 pub enum OutputFormat {
     /// Prometheus’ text-base exposition format.
     ///
-    /// See https://prometheus.io/docs/instrumenting/exposition_formats/
+    /// See <https://prometheus.io/docs/instrumenting/exposition_formats/>
     /// for details.
     Prometheus,
 

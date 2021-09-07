@@ -43,12 +43,12 @@ impl Target {
                     return None
                 }
 
-                if let Some(ref update) = http_source.set() {
+                if let Some(update) = http_source.set() {
                     Some(
                         Response::builder()
                         .header("Content-Type", format.content_type())
                         .body(Body::wrap_stream(stream::iter(
-                            format.stream(update.clone())
+                            format.stream(update)
                             .map(Result::<_, Infallible>::Ok)
                         )))
                         .unwrap()
@@ -89,16 +89,19 @@ impl Target {
 #[derive(Clone, Default)]
 struct Source {
     /// The current set of RTR data.
-    data: Arc<ArcSwap<Option<Arc<payload::Set>>>>
+    data: Arc<ArcSwap<Option<payload::Set>>>
 }
 
 impl Source {
     fn update(&self, update: payload::Update) {
-        self.data.store(Some(update.set()).into())
+        self.data.store(Some(update.set().clone()).into())
     }
 
-    fn set(&self) -> Option<Arc<payload::Set>> {
-        (**self.data.load()).as_ref().cloned()
+    fn set(&self) -> Option<payload::Set> {
+        match self.data.load().as_ref() {
+            Some(ref inner) => Some(inner.clone()),
+            None => None
+        }
     }
 }
 

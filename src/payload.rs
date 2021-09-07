@@ -1,158 +1,97 @@
-//! The data that we are maintaining.
-//!
-//! We call the data we manage ‘payload,’ even if this isn’t quite accurate.
-//! The data is maintained in payload sets – a collection of all the data
-//! currently assumed valid – via the type [`Set`]. These sets are modified
-//! by adding, removing, and updating indivual items. An atomic update to
-//! a set is called a [`Diff`]. It contains all information to change a
-//! given set into a new set.
-//!
-//! Whenever the payload set maintained by a unit changes, it sends out an
-//! [`Update`]. This update contains the new payload set and a serial
-//! number. This serial number is increased by one from update to update.
-//!
-//! The update optionally contains a payload diff with the changes from the
-//! payload set of the previous update, i.e., the update with a serial number
-//! one less than the current one. The diff should only be included if it is
-//! available anyway or can be created cheaply. It should not be generated at
-//! all cost.
-
-use std::collections::{HashMap, HashSet};
-use std::collections::hash_map::Entry;
+use std::slice;
+use std::borrow::Borrow;
 use std::cmp::Ordering;
+use std::collections::HashSet;
+use std::iter::Peekable;
+use std::ops::{Deref, Range};
 use std::sync::Arc;
-use rpki::rtr::client::VrpError;
-use rpki::rtr::payload::{Action, Payload};
+use rpki::payload::rtr::{Action, Payload};
+use rpki::rtr::client::PayloadError;
+use rpki::rtr::server::{PayloadDiff, PayloadSet};
 use rpki::rtr::state::Serial;
 
 
-//------------ Set -----------------------------------------------------------
+//------------ Pack ----------------------------------------------------------
 
-/// A set of payload.
-#[derive(Clone, Debug, Default)]
-pub struct Set {
+/// An imutable, shareable, sorted collection of payload data.
+///
+/// This is essentially a vec of payload kept in an arc so it can be shared.
+/// A pack always keeps the payload in sorted order. Once created, it cannot
+/// be changed anymore.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pack {
     /// The payload items.
+    items: Arc<[Payload]>,
+}
+
+impl Pack {
+    /// Returns a slice of the payload.
+    pub fn as_slice(&self) -> &[Payload] {
+        self.items.as_ref()
+    }
+
+    /// Returns a block for the given range.
     ///
-    /// This vec is guaranteed to be ordered and not contain duplicated at all
-    /// times.
-    items: Vec<Payload>,
-}
-
-impl Set {
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    /*
-    /// Removes all items in `set` from `self`.
-    pub fn remove_set(&mut self, set: &Set) {
-        let mut set: &[Payload] = set.items.as_ref();
-        self.items.retain(|item| {
-            match set.binary_search(item) {
-                Ok(pos) => {
-                    set = &set[pos..];
-                    false
-                }
-                Err(pos) => {
-                    set = &set[pos..];
-                    true
-                }
-            }
-        })
-    }
-    */
-
-    /// Returns the diff to get from `other` to `self`.
-    pub fn diff_from(&self, other: &Set) -> Diff {
-        let mut diff = Vec::new();
-        let mut source = other.items.as_slice();
-        let mut target = self.items.as_slice();
-
-        // Process items while there’s some left in both sets.
-        while let (Some(source_item), Some(target_item)) = (
-            source.first(), target.first()
-        ) {
-            match source_item.cmp(target_item) {
-                Ordering::Less => {
-                    diff.push((*source_item, Action::Withdraw));
-                    skip_first(&mut source);
-                }
-                Ordering::Equal => {
-                    skip_first(&mut source);
-                    skip_first(&mut target);
-                }
-                Ordering::Greater => {
-                    diff.push((*target_item, Action::Announce));
-                    skip_first(&mut target);
-                }
-            }
-        }
-
-        // Now at least one set is empty so we can just withdraw anything
-        // left in source and announce anything left in target. Only one of
-        // those will happen.
-        for &item in source {
-            diff.push((item, Action::Withdraw))
-        }
-        for &item in target {
-            diff.push((item, Action::Announce))
-        }
-        Diff { items: diff }
-    }
-}
-
-impl From<SetBuilder> for Set {
-    fn from(builder: SetBuilder) -> Self {
-        builder.finalize()
-    }
-}
-
-
-//------------ SetIter ------------------------------------------------
-
-/// An iterator over the content of an arc of a set.
-pub struct SetIter {
-    set: Arc<Set>,
-    pos: usize,
-}
-
-impl From<Arc<Set>> for SetIter {
-    fn from(set: Arc<Set>) -> Self {
-        SetIter {
-            set,
-            pos: 0
+    /// # Panics
+    ///
+    /// The method panics if the range’s ends is greater than the number of
+    /// items.
+    pub fn block(&self, range: Range<usize>) -> Block {
+        assert!(range.end <= self.items.len());
+        Block {
+            pack: self.clone(),
+            range
         }
     }
-}
 
-impl Iterator for SetIter {
-    type Item = Payload;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.set.items.get(self.pos) {
-            Some(res) => {
-                self.pos += 1;
-                Some(*res)
-            }
-            None => None,
-        }
+    /// Returns an owned iterator-like for the block.
+    pub fn owned_iter(&self) -> OwnedBlockIter {
+        OwnedBlockIter::new(self.clone().into())
     }
 }
 
 
-//------------ SetBuilder ---------------------------------------------
+//--- Default
 
-/// A builder for a payload set.
+impl Default for Pack {
+    fn default() -> Self {
+        Pack { items: Arc::new([]) }
+    }
+}
+
+
+//--- Deref, AsRef, Borrow
+
+impl Deref for Pack {
+    type Target = [Payload];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl AsRef<[Payload]> for Pack {
+    fn as_ref(&self) -> &[Payload] {
+        self.as_slice()
+    }
+}
+
+impl Borrow<[Payload]> for Pack {
+    fn borrow(&self) -> &[Payload] {
+        self.as_slice()
+    }
+}
+
+
+//------------ PackBuilder ---------------------------------------------------
+
+/// A builder for a payload pack.
 #[derive(Clone, Debug, Default)]
-pub struct SetBuilder {
+pub struct PackBuilder {
     items: HashSet<Payload>,
 }
 
-impl SetBuilder {
+impl PackBuilder {
     /// Creates a new, empty set.
     pub fn empty() -> Self {
         Self::default()
@@ -162,24 +101,29 @@ impl SetBuilder {
     ///
     /// The method fails with an appropriate error if there already is an
     /// element with the given payload in the set.
-    pub fn insert(&mut self, payload: Payload) -> Result<(), VrpError> {
+    pub fn insert(&mut self, payload: Payload) -> Result<(), PayloadError> {
         if self.items.insert(payload) {
             Ok(())
         }
         else {
-            Err(VrpError::DuplicateAnnounce)
+            Err(PayloadError::DuplicateAnnounce)
         }
+    }
+
+    /// Inserts a new element without checking.
+    fn insert_unchecked(&mut self, payload: Payload) {
+        self.items.insert(payload);
     }
 
     /// Removes an existing element from the set.
     ///
     /// The method fails with an appropriate error if there is no such item.
-    pub fn remove(&mut self, payload: &Payload) -> Result<(), VrpError> {
+    pub fn remove(&mut self, payload: &Payload) -> Result<(), PayloadError> {
         if self.items.remove(payload) {
             Ok(())
         }
         else {
-            Err(VrpError::UnknownWithdraw)
+            Err(PayloadError::UnknownWithdraw)
         }
     }
 
@@ -198,80 +142,666 @@ impl SetBuilder {
         self.items.is_empty()
     }
 
-    /*
-    pub fn push_set(&mut self, set: Set) {
-        self.items.extend(&set.items)
+    /// Converts the builder into an imutable set.
+    pub fn finalize(self) -> Pack {
+        let mut items: Vec<_> = self.items.into_iter().collect();
+        items.sort_unstable();
+        Pack { items: items.into_boxed_slice().into() }
+    }
+}
+
+
+//------------ Block ---------------------------------------------------------
+
+/// Part of a [`Pack`].
+///
+/// A block references a slice of a [`Pack`]’s items.
+#[derive(Clone, Debug)]
+pub struct Block {
+    pack: Pack,
+    range: Range<usize>,
+}
+
+impl Block {
+    /// Returns the first index in the underlying pack.
+    pub fn start(&self) -> usize {
+        self.range.start
     }
 
-    pub fn finalize_strict(mut self) -> Option<Set> {
-        self.items.sort_unstable();
-        for pair in self.items.windows(2) {
-            if pair[0] == pair[1] {
-                return None
+    /// Returns the first index in the pack that is not in the block.
+    pub fn end(&self) -> usize {
+        self.range.end
+    }
+
+    /// Returns the block’s content as a slice,
+    fn as_slice(&self) ->&[Payload] {
+        &self.pack[self.range.clone()]
+    }
+
+    /// Returns an item from the pack if the index is in range.
+    pub(crate) fn get_from_pack(&self, pack_index: usize) -> Option<&Payload> {
+        if self.range.contains(&pack_index) {
+            self.pack.get(pack_index)
+        }
+        else {
+            None
+        }
+    }
+
+    /// Returns a block from the beginning to the given pack index.
+    ///
+    /// # Panics
+    ///
+    /// The method panics if `pack_index` is beyond the end of the block.
+    pub(crate) fn head_until(&self, pack_index: usize) -> Self {
+        assert!(pack_index <= self.range.end);
+        Block {
+            pack: self.pack.clone(),
+            range: self.range.start..pack_index
+        }
+    }
+
+    /// Returns an owned iterator-like for the block.
+    pub fn owned_iter(&self) -> OwnedBlockIter {
+        OwnedBlockIter::new(self.clone())
+    }
+
+    /// Returns whether this block overlaps in content with the given block.
+    pub fn overlaps(&self, other: &Block) -> bool {
+        // If any of these is `None` there we have empty blocks and there is
+        // no overlap.
+        let (self_first, self_last, other_first, other_last) = match (
+            self.first(), self.last(), other.first(), other.last()
+        ) {
+            (Some(sf), Some(sl), Some(of), Some(ol)) => (sf, sl, of, ol),
+            _ => return false,
+        };
+
+        (other_first < self_first && other_last >= self_first)
+        || (other_first < self_last)
+    }
+}
+
+
+//--- From
+
+impl From<Pack> for Block {
+    fn from(pack: Pack) -> Self {
+        Block {
+            range: 0..pack.len(),
+            pack: pack,
+        }
+    }
+}
+
+
+//--- Deref, AsRef, and Borrow
+
+impl Deref for Block {
+    type Target = [Payload];
+
+    fn deref(&self) -> &[Payload] {
+        self.as_slice()
+    }
+}
+
+impl AsRef<[Payload]> for Block {
+    fn as_ref(&self) ->&[Payload] {
+        self.as_slice()
+    }
+}
+
+impl Borrow<[Payload]> for Block {
+    fn borrow(&self) ->&[Payload] {
+        self.as_slice()
+    }
+}
+
+
+//--- IntoIterator
+
+impl<'a> IntoIterator for &'a Block {
+    type Item = &'a Payload;
+    type IntoIter = slice::Iter<'a, Payload>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
+
+//------------ OwnedBlockIter ------------------------------------------------
+
+/// An owned iterator-like type for iterating over the items of a block.
+#[derive(Clone, Debug)]
+pub struct OwnedBlockIter {
+    block: Block,
+    pos: usize,
+}
+
+impl OwnedBlockIter {
+    /// Creates a new value.
+    fn new(block: Block) -> Self {
+        OwnedBlockIter {
+            pos: block.range.start,
+            block
+        }
+    }
+
+    /// Peeks at the next item.
+    pub fn peek(&self) -> Option<&Payload> {
+        if self.pos < self.block.range.end {
+            self.block.pack.get(self.pos)
+        }
+        else {
+            None
+        }
+    }
+
+    /// Returns the next item.
+    ///
+    /// This is similar to an iterator but returns a reference to the item
+    /// instead of a clone.
+    pub fn next(&mut self) -> Option<&Payload> {
+        if self.pos < self.block.range.end {
+            let res = self.block.pack.get(self.pos)?;
+            self.pos +=1;
+            Some(res)
+        }
+        else {
+            None
+        }
+    }
+}
+
+
+//------------ Set -----------------------------------------------------------
+
+/// An ordered set of payload items.
+#[derive(Clone, Debug)]
+pub struct Set {
+    /// The blocks of the set.
+    blocks: Arc<[Block]>,
+
+    /// The overall number of items in the set.
+    len: usize,
+}
+
+impl Set {
+    /// Returns the number of items in the set.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns whether the set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    /// Returns an iterator over the set’s elements.
+    pub fn iter(&self) -> SetIter {
+        SetIter::new(self)
+    }
+
+    /// Returns an owned iterator over the set’s elements.
+    pub fn owned_iter(&self) -> OwnedSetIter {
+        OwnedSetIter::new(self.clone())
+    }
+
+    /// Converts the set into an owned iterator.
+    pub fn into_owned_iter(self) -> OwnedSetIter {
+        OwnedSetIter::new(self)
+    }
+
+    /// Returns a set with the indicated elements removed.
+    ///
+    /// Each element in the current set is presented to the closure and only
+    /// those for which the closure returns `true` are added to the returned
+    /// set.
+    pub fn filter(&self, mut retain: impl FnMut(&Payload) -> bool) -> Set {
+        let mut res = Vec::new();
+        let mut res_len = 0;
+
+        // Here’s the idea: We go over the blocks and for each blocks we
+        // cycle between looking for the first element to drop and then for
+        // the first element to retain. We add the runs that are to be
+        // retained to `res` and ignore the ones to be dropped.
+        for block in self.blocks.iter() {
+            let mut start = block.start();
+            while start < block.end() {
+                // A block to retain ...
+                let mut end = start;
+                while end < block.end() {
+                    if !retain(&block.pack[end]) {
+                        break;
+                    }
+                    else {
+                        end += 1;
+                    }
+                }
+                if end > start {
+                    let new_block = block.pack.block(start..end);
+                    res_len += new_block.len();
+                    res.push(new_block);
+                }
+
+                // ... a block to ignore.
+                end += 1;
+                while end < block.end() {
+                    if retain(&block.pack[end]) {
+                        start = end;
+                        break;
+                    }
+                    else {
+                        end += 1;
+                    }
+                }
             }
         }
-        Some(Set { items: self.items })
-    }
-    */
 
-    /// Converts the builder into an imutable set.
-    pub fn finalize(self) -> Set {
-        let mut res = Set { items: self.items.into_iter().collect() };
-        res.items.sort_unstable();
+        Set {
+            blocks: res.into(),
+            len: res_len
+        }
+    }
+
+    /// Returns the diff to get from `other` to `self`.
+    pub fn diff_from(&self, other: &Set) -> Diff {
+        let mut diff = DiffBuilder::empty();
+        let mut source = other.iter().peekable();
+        let mut target = self.iter().peekable();
+
+        // Process items while there’s some left in both sets.
+        while let (Some(&source_item), Some(&target_item)) = (
+            source.peek(), target.peek()
+        ) {
+            match source_item.cmp(target_item) {
+                Ordering::Less => {
+                    diff.withdrawn.insert_unchecked(source_item.clone());
+                    source.next();
+                }
+                Ordering::Equal => {
+                    source.next();
+                    target.next();
+                }
+                Ordering::Greater => {
+                    diff.announced.insert_unchecked(target_item.clone());
+                    target.next();
+                }
+            }
+        }
+
+        // Now at least one set is empty so we can just withdraw anything
+        // left in source and announce anything left in target. Only one of
+        // those will happen.
+        for item in source {
+            diff.withdrawn.insert_unchecked(item.clone());
+        }
+        for item in target {
+            diff.announced.insert_unchecked(item.clone());
+        }
+        diff.finalize()
+    }
+
+
+    /// Returns a reference of the blocks of the set.
+    pub fn as_blocks(&self) -> &[Block] {
+        self.blocks.as_ref()
+    }
+
+    /// Returns a builder based on the set.
+    pub fn to_builder(&self) -> SetBuilder {
+        SetBuilder {
+            blocks: self.blocks.as_ref().into()
+        }
+    }
+}
+
+
+//--- Default
+
+impl Default for Set {
+    fn default() -> Self {
+        Set {
+            blocks: Arc::new([]),
+            len: 0,
+        }
+    }
+}
+
+
+//--- From
+
+impl From<Pack> for Set {
+    fn from(pack: Pack) -> Self {
+        Block::from(pack).into()
+    }
+}
+
+impl From<Block> for Set {
+    fn from(block: Block) -> Self {
+        Set {
+            len: block.len(),
+            blocks: vec!(block).into(),
+        }
+    }
+}
+
+
+//--- PartialEq and Eq
+
+impl PartialEq for Set {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for Set { }
+
+
+//--- IntoIterator
+
+impl<'a> IntoIterator for &'a Set {
+    type Item = &'a Payload;
+    type IntoIter = SetIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SetIter::new(self)
+    }
+}
+
+
+//------------ SetIter -------------------------------------------------------
+
+/// An iterator over the content of a set.
+#[derive(Clone, Debug)]
+pub struct SetIter<'a> {
+    /// The “block” we currently are processing.
+    head: &'a [Payload],
+ 
+    /// During iteration, we modify the block’s ranges
+    /// The blocks we haven’t processed yet.
+    tail: &'a [Block],
+}
+
+impl<'a> SetIter<'a> {
+    fn new(set: &'a Set) -> Self {
+        let mut res = SetIter {
+            head: &[],
+            tail: &set.blocks
+        };
+        res.next_block();
         res
     }
-}
 
-impl From<Set> for SetBuilder {
-    fn from(set: Set) -> Self {
-        SetBuilder {
-            items: set.items.into_iter().collect()
+    /// Progresses to the next block.
+    ///
+    /// Returns `true` if there is another block to progress to.
+    fn next_block(&mut self) -> bool {
+        match self.tail.split_first() {
+            Some((head, tail)) => {
+                self.head = head.as_slice();
+                self.tail = tail;
+                true
+            }
+            None => return false,
         }
     }
 }
 
-impl<'a> From<&'a Set> for SetBuilder {
-    fn from(set: &'a Set) -> Self {
-        SetBuilder {
-            items: set.items.iter().cloned().collect()
+impl<'a> Iterator for SetIter<'a> {
+    type Item = &'a Payload;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.head.split_first() {
+            Some((head, tail)) => {
+                self.head = tail;
+                Some(head)
+            }
+            None => {
+                if self.next_block() {
+                    self.next()
+                }
+                else {
+                    None
+                }
+            }
         }
     }
 }
 
 
-//------------ Diff ---------------------------------------------------
+//------------ OwnedSetIter --------------------------------------------------
+
+/// An owned iterator-like over the content of an arc of a set.
+#[derive(Clone, Debug)]
+pub struct OwnedSetIter {
+    set: Set,
+    block: usize,
+    item: usize,
+}
+
+impl OwnedSetIter {
+    fn new(set: Set) -> Self {
+        OwnedSetIter {
+            set, block: 0, item: 0
+        }
+    }
+
+    /// Peeks at the next item.
+    pub fn peek(&self) -> Option<&Payload> {
+        if let Some(item) =
+            self.set.blocks.get(self.block)?.get_from_pack(self.item)
+        {
+            Some(item)
+        }
+        else {
+            self.set.blocks.get(self.block + 1)?.first()
+        }
+    }
+}
+
+impl PayloadSet for OwnedSetIter {
+    fn next(&mut self) -> Option<&Payload> {
+        if let Some(item) =
+            self.set.blocks.get(self.block)?.get_from_pack(self.item)
+        {
+            self.item += 1;
+            Some(item)
+        }
+        else {
+            self.block += 1;
+            self.item = self.set.blocks.get(self.block)?.start();
+            self.set.blocks.get(self.block)?.get_from_pack(self.item)
+        }
+    }
+}
+
+
+//------------ SetBuilder-----------------------------------------------------
+
+/// A builder for a set.
+#[derive(Clone, Debug, Default)]
+pub struct SetBuilder {
+    blocks: Vec<Block>,
+}
+
+impl SetBuilder {
+    /// Creates a new empty builder.
+    pub fn empty() -> Self {
+        Default::default()
+    }
+
+    /// Inserts a pack into the builder.
+    pub fn insert_pack(&mut self, pack: Pack) {
+        self.insert_block(pack.into());
+    }
+
+    /// Inserts a block into the builder.
+    pub fn insert_block(&mut self, block: Block) {
+        self.blocks.push(block);
+    }
+
+    /// Inserts a set into the builder.
+    pub fn insert_set(&mut self, set: Set) {
+        self.blocks.extend(set.blocks.iter().cloned())
+    }
+
+    /// Inserts a pack into the builder if it doesn’t overlap.
+    pub fn try_insert_pack(&mut self, pack: Pack) -> Result<(), PayloadError> {
+        self.try_insert_block(pack.into())
+    }
+
+    /// Inserts a block into the builder if it doesn’t overlap.
+    pub fn try_insert_block(&mut self, block: Block) -> Result<(), PayloadError> {
+        if self.blocks.iter().any(|item| item.overlaps(&block)) {
+            return Err(PayloadError::Corrupt)
+        }
+        self.insert_block(block);
+        Ok(())
+    }
+
+    /// Finalizes the builder into a set.
+    pub fn finalize(mut self) -> Set {
+        // All blocks themselves are already sorted. But since they may not
+        // be continuous, we may have to break them up and insert other
+        // blocks in between.
+
+        // Now we take a slice of the blocks vec and eat blocks from the
+        // beginning. We trim the unique sections off the first block and
+        // add them to the result. Rinse and repeat until the slice is empty.
+        let mut res = Vec::new();
+        let mut res_len = 0;
+        let mut src = self.blocks.as_mut_slice();
+        loop {
+            // First, let’s skip over all empty blocks at the beginning. We
+            // can use this later and slowly drain the first block until it
+            // is empty and gets removed here.
+            while src.first().map(|blk| blk.is_empty()).unwrap_or(false) {
+                src = &mut src[1..];
+            }
+
+            // Next, sorts the blocks by their start element. This is
+            // necessary since later we will cut elements from the start of
+            // the first block and that may result in it having to go further
+            // back.
+            src.sort_by(|left, right| left.first().cmp(&right.first()));
+
+            // Because of lifetimes we can only manipulate `src` once we
+            // dropped all references into it. So we just calculate the end of 
+            // the part of the first block we have pushed to the result
+            // already and then deal with it later.
+            let first_end = {
+                // First element or we are done.
+                let first = match src.first() {
+                    Some(first) => first,
+                    None => break,
+                };
+
+                // Get the first element of the next non-empty block. If there
+                // isn’t one, we can append the whole first block and be done.
+                let second = match
+                    src[1..].iter().find_map(|blk| blk.first())
+                {
+                    Some(second) => second,
+                    None => {
+                        res.push(first.clone());
+                        res_len += first.len();
+                        break;
+                    }
+                };
+
+                // Find the last element in `first` that is smaller
+                // than `second`. Note that we are working with pack indexes
+                // here so we can more easily split blocks later.
+                let mut first_end = first.start();
+                while let Some(item) = first.get_from_pack(first_end) {
+                    if item < second {
+                        first_end += 1;
+                    }
+                    else {
+                        break;
+                    }
+                }
+                
+                // Add the part before `first_end` to the result.
+                if first_end > first.start() {
+                    res.push(first.head_until(first_end));
+                    res_len += first.len();
+                }
+
+                // If the first remaining element of `first` is equal to
+                // the first element in `second`, we need to skip it, too.
+                if first.get_from_pack(first_end) == Some(second) {
+                    first_end + 1
+                }
+                else {
+                    first_end
+                }
+            };
+
+            // The beginning of the first block needs to be `first_end` now.
+            if let Some(first) = src.first_mut() {
+                first.range.start = first_end;
+            }
+        }
+
+        Set {
+            blocks: res.into(),
+            len: res_len
+        }
+    }
+}
+
+
+//------------ Diff ----------------------------------------------------------
 
 /// The differences between two payload sets.
+///
+/// This is a list of additions to a set called _announcments_ and a list of
+/// removals called _withdrawals._ When iterated over, these two are provided
+/// as a single list of pairs of [`Payload`] and [`Actions`] in order of the
+/// payload. This makes it relatively safe to apply non-atomically.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Diff {
-    /// The diff items.
-    ///
-    /// This vec is guaranteed to be ordered by payload and will only ever
-    /// contain at most one element for each payload.
-    items: Vec<(Payload, Action)>,
+    /// A set of announced elements.
+    announced: Pack,
+
+    /// A pack of withdrawn elements.
+    withdrawn: Pack,
 }
 
 impl Diff {
-    /// Returns the number of changes in this diff.
+    /// Returns the number of changes in the diff.
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.announced.len() + self.withdrawn.len()
     }
 
-    /// Returns whether this diff is empty and does not contain any changes.
+    /// Returns whether the diff contains no changes at all.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.announced.is_empty() && self.withdrawn.is_empty()
     }
 
-    /// Returns an iterator over a shared diff.
-    pub fn shared_iter(self: &Arc<Self>) -> DiffIter {
-        DiffIter::from(self.clone())
+    /// Returns an iterator over the set’s elements.
+    pub fn iter(&self) -> DiffIter {
+        DiffIter::new(self)
+    }
+
+    /// Returns an owned iterator over the diff’s elements.
+    pub fn owned_iter(&self) -> OwnedDiffIter {
+        OwnedDiffIter::new(self.clone())
+    }
+
+    /// Converts the value into an owned iterator.
+    pub fn into_owned_iter(self) -> OwnedDiffIter {
+        OwnedDiffIter::new(self)
     }
 
     /// Returns a new diff by extending this diff with additional changes.
     ///
     /// This will result in an error if the diffs cannot be added to each
     /// other.
-    pub fn extend(&self, additional: &Diff) -> Result<Diff, VrpError> {
+    pub fn extend(&self, additional: &Diff) -> Result<Diff, PayloadError> {
         let mut builder = DiffBuilder::default();
         builder.push_diff(self)?;
         builder.push_diff(additional)?;
@@ -279,138 +809,149 @@ impl Diff {
     }
 
     /// Applies the diff to a set returning a new set.
-    ///
-    /// The method assumes that the diff can be applied cleanly to the given
-    /// set.
-    ///
-    /// # Todo
-    ///
-    /// This should probably return an error if the diff cannot be applied.
-    pub fn apply(&self, set: &Set) -> Set {
-        let mut res = Vec::new();
-        let mut diff = self.items.as_slice();
-        let mut set = set.items.as_slice();
-
-        // First, we process items until one of the two iterators runs out.
-        while let (Some(&item), Some(&(payload, action))) = (
-            set.first(), diff.first()
-        ) {
-            match item.cmp(&payload) {
-                Ordering::Less => {
-                    res.push(item);
-                    skip_first(&mut set);
-                }
-                Ordering::Equal => {
-                    if action.is_announce() {
-                        res.push(item);
-                    }
-                    skip_first(&mut set);
-                    skip_first(&mut diff);
-                }
-                Ordering::Greater => {
-                    if action.is_announce() {
-                        res.push(payload);
-                    }
-                    skip_first(&mut diff);
-                }
-            }
+    pub fn apply(&self, set: &Set) -> Result<Set, PayloadError> {
+        let mut res = set.to_builder();
+        res.try_insert_pack(self.announced.clone()).map_err(|_|
+            PayloadError::DuplicateAnnounce
+        )?;
+        let res = res.finalize();
+        let mut withdrawn: HashSet<_> = self.withdrawn.iter().collect();
+        let res = res.filter(|item| {
+            !withdrawn.remove(item)
+        });
+        if !withdrawn.is_empty() {
+            Err(PayloadError::UnknownWithdraw)
         }
-
-        // Since now one of the iterators is done, only one of the two loops
-        // will actually add items.
-        for item in set {
-            res.push(*item);
+        else {
+            Ok(res)
         }
-        for &(item, action) in diff {
-            if action.is_announce() {
-                res.push(item)
-            }
-        }
-
-        Set { items: res }
-    }
-
-    /*
-    pub fn apply_strict(
-        &self,
-        set: &Set
-    ) -> Result<Set, (Action, Payload)> {
-        let mut res = Vec::new();
-        let mut diff = self.items.as_slice();
-        let mut set = set.items.as_slice();
-
-        // First, we process items until one of the two iterators runs out.
-        while let (Some(&item), Some(&(action, payload))) = (
-            set.first(), diff.first()
-        ) {
-            match item.cmp(&payload) {
-                Ordering::Less => {
-                    res.push(item);
-                    skip_first(&mut set);
-                }
-                Ordering::Equal => {
-                    if action.is_announce() {
-                        return Err((action, payload))
-                    }
-                    skip_first(&mut set);
-                    skip_first(&mut diff);
-                }
-                Ordering::Greater => {
-                    if action.is_announce() {
-                        res.push(payload);
-                    }
-                    else {
-                        return Err((action, payload))
-                    }
-                    skip_first(&mut diff);
-                }
-            }
-        }
-
-        // Since now one of the iterators is done, only one of the two loops
-        // will actually add items.
-        for item in set {
-            res.push(*item);
-        }
-        for &(action, item) in diff {
-            if action.is_announce() {
-                res.push(item)
-            }
-            else {
-                return Err((action, item))
-            }
-        }
-
-        Ok(Set { items: res })
-    }
-    */
-}
-
-
-//------------ DiffIter -----------------------------------------------
-
-/// An iterator over a shared diff.
-pub struct DiffIter {
-    diff: Arc<Diff>,
-    pos: usize,
-}
-
-impl From<Arc<Diff>> for DiffIter {
-    fn from(diff: Arc<Diff>) -> Self {
-        DiffIter { diff, pos: 0 }
     }
 }
 
-impl Iterator for DiffIter {
-    type Item = (Action, Payload);
+impl<'a> IntoIterator for &'a Diff {
+    type Item = (&'a Payload, Action);
+    type IntoIter = DiffIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+
+//------------ DiffIter ------------------------------------------------------
+
+/// An iterator over the content of a diff.
+#[derive(Clone, Debug)]
+pub struct DiffIter<'a> {
+    announced: Peekable<slice::Iter<'a, Payload>>,
+    withdrawn: Peekable<slice::Iter<'a, Payload>>,
+}
+
+impl<'a> DiffIter<'a> {
+    fn new(diff: &'a Diff) -> Self {
+        DiffIter {
+            announced: diff.announced.iter().peekable(),
+            withdrawn: diff.withdrawn.iter().peekable(),
+        }
+    }
+}
+
+impl<'a> Iterator for DiffIter<'a> {
+    type Item = (&'a Payload, Action);
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.diff.items.get(self.pos) {
-            Some(&(payload, action)) => {
-                self.pos += 1;
-                Some((action, payload))
+        match (self.announced.peek(), self.withdrawn.peek()) {
+            (Some(_), None) => {
+                self.announced.next().and_then(|some| {
+                    Some((some, Action::Announce))
+                })
             }
-            None => None,
+            (None, Some(_)) => {
+                self.withdrawn.next().and_then(|some| {
+                    Some((some, Action::Withdraw))
+                })
+            }
+            (Some(announced), Some(withdrawn)) => {
+                if announced < withdrawn {
+                    self.announced.next().and_then(|some| {
+                        Some((some, Action::Announce))
+                    })
+                }
+                else {
+                    self.withdrawn.next().and_then(|some| {
+                        Some((some, Action::Withdraw))
+                    })
+                }
+            }
+            (None, None) => None,
+        }
+    }
+}
+
+
+//------------ OwnedDiffIter -------------------------------------------------
+
+/// An owned iterator-like over the content of diff.
+#[derive(Clone, Debug)]
+pub struct OwnedDiffIter {
+    announced: OwnedBlockIter,
+    withdrawn: OwnedBlockIter,
+}
+
+impl OwnedDiffIter {
+    fn new(diff: Diff) -> Self {
+        OwnedDiffIter {
+            announced: diff.announced.owned_iter(), 
+            withdrawn: diff.withdrawn.owned_iter(),
+        }
+    }
+
+    /// Peeks at the next item.
+    pub fn peek(&self) -> Option<(&Payload, Action)> {
+        match (self.announced.peek(), self.withdrawn.peek()
+        ) {
+            (Some(some), None) => Some((some, Action::Announce)),
+            (None, Some(some)) => Some((some, Action::Withdraw)),
+            (Some(announced), Some(withdrawn)) => {
+                if announced < withdrawn {
+                    Some((announced, Action::Announce))
+                }
+                else {
+                    Some((withdrawn, Action::Withdraw))
+                }
+            }
+            (None, None) => None,
+        }
+    }
+}
+
+impl PayloadDiff for OwnedDiffIter {
+    fn next(&mut self) -> Option<(&Payload, Action)> {
+        match (self.announced.peek(), self.withdrawn.peek()
+        ) {
+            (Some(_), None) => {
+                self.announced.next().and_then(|some| {
+                    Some((some, Action::Announce))
+                })
+            }
+            (None, Some(_)) => {
+                self.withdrawn.next().and_then(|some| {
+                    Some((some, Action::Withdraw))
+                })
+            }
+            (Some(announced), Some(withdrawn)) => {
+                if announced < withdrawn {
+                    self.announced.next().and_then(|some| {
+                        Some((some, Action::Announce))
+                    })
+                }
+                else {
+                    self.withdrawn.next().and_then(|some| {
+                        Some((some, Action::Withdraw))
+                    })
+                }
+            }
+            (None, None) => None,
         }
     }
 }
@@ -421,18 +962,24 @@ impl Iterator for DiffIter {
 /// A builder for a diff.
 #[derive(Clone, Debug, Default)]
 pub struct DiffBuilder {
-    items: HashMap<Payload, Action>,
+    announced: PackBuilder,
+    withdrawn: PackBuilder,
 }
 
 impl DiffBuilder {
-    /// Returns the number of changes in the diff.
-    pub fn len(&self) -> usize {
-        self.items.len()
+    /// Creates an empty builder.
+    pub fn empty() -> Self {
+        Self::default()
     }
 
-    /// Returns whether the diff is empty and contains no changes.
+    /// Returns the number of changes in the diff.
+    pub fn len(&self) -> usize {
+        self.announced.len() + self.withdrawn.len()
+    }
+
+    /// Returns whether the builder is currently empty.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.announced.is_empty() && self.withdrawn.is_empty()
     }
 
     /// Adds a change to the diff.
@@ -441,20 +988,19 @@ impl DiffBuilder {
     /// element.
     pub fn push(
         &mut self, payload: Payload, action: Action
-    ) -> Result<(), VrpError> {
-        match self.items.entry(payload) {
-            Entry::Vacant(entry) => {
-                entry.insert(action);
-                Ok(())
+    ) -> Result<(), PayloadError> {
+        match action {
+            Action::Announce => {
+                if self.withdrawn.contains(&payload) {
+                    return Err(PayloadError::Corrupt)
+                }
+                self.announced.insert(payload)
             }
-            Entry::Occupied(entry) => {
-                if *entry.get() == action {
-                    Err(VrpError::Corrupt)
+            Action::Withdraw => {
+                if self.announced.contains(&payload) {
+                    return Err(PayloadError::Corrupt)
                 }
-                else {
-                    entry.remove();
-                    Ok(())
-                }
+                self.withdrawn.insert(payload)
             }
         }
     }
@@ -466,68 +1012,19 @@ impl DiffBuilder {
     /// `self`.
     pub fn push_diff(
         &mut self, diff: &Diff
-    ) -> Result<(), VrpError> {
-        for &(payload, action) in &diff.items {
-            self.push(payload, action)?
+    ) -> Result<(), PayloadError> {
+        for (payload, action) in diff {
+            self.push(payload.clone(), action)?
         }
         Ok(())
     }
 
-    /*
-    pub fn finalize_strict(mut self) -> Option<Diff> {
-        self.items.sort_unstable_by_key(|item| item.1);
-        for pair in self.items.windows(2) {
-            if pair[0].1 == pair[1].1 {
-                return None
-            }
-        }
-        Some(Diff { items: self.items })
-    }
-    */
-
-    /// Converts the builder into an imutable diff.
+    /// Converts the builder into a diff.
     pub fn finalize(self) -> Diff {
-        let mut res = Diff {
-            items: self.items.into_iter().collect()
-        };
-        res.items.sort_unstable_by_key(|item| item.0);
-        res
-    }
-
-    /*
-    /// Removes items that are duplicates or both added and removed.
-    fn dedup(&mut self) {
-        // We walk over the items once via index r. Items that are to be
-        // kept are swaped into their final position at index w. At the end,
-        // we cut back to w items.
-        let mut r = 0;
-        let mut w = 0;
-        
-        while r < self.items.len() {
-            let mut keep = true;
-            let mut rr = r + 1;
-            while rr < self.items.len() && self.items[rr].1 == self.items[r].1 {
-                if keep {
-                    if self.items[rr].0 != self.items[r].0 {
-                        keep = false
-                    }
-                }
-                rr += 1
-            }
-            if keep {
-                self.items.swap(r, w);
-                w += 1
-            }
-            r = rr
+        Diff {
+            announced: self.announced.finalize(),
+            withdrawn: self.withdrawn.finalize(),
         }
-        self.items.truncate(w);
-    }
-    */
-}
-
-impl From<Diff> for DiffBuilder {
-    fn from(diff: Diff) -> Self {
-        DiffBuilder { items: diff.items.into_iter().collect() }
     }
 }
 
@@ -544,16 +1041,16 @@ pub struct Update {
     serial: Serial,
 
     /// The new payload set.
-    set: Arc<Set>,
+    set: Set,
 
     /// The optional diff from the previous update.
-    diff: Option<Arc<Diff>>,
+    diff: Option<Diff>,
 }
 
 impl Update {
     /// Creates a new update.
     pub fn new(
-        serial: Serial, set: Arc<Set>, diff: Option<Arc<Diff>>
+        serial: Serial, set: Set, diff: Option<Diff>
     ) -> Self {
         Update { serial, set, diff }
     }
@@ -564,16 +1061,21 @@ impl Update {
     }
 
     /// Returns the payload set of the update.
-    pub fn set(&self) -> Arc<Set> {
-        self.set.clone()
+    pub fn set(&self) -> &Set {
+        &self.set
+    }
+
+    /// Converts the update into the payload set.
+    pub fn into_set(self) -> Set {
+        self.set
     }
 
     /// Returns the diff if it can be used for the given serial.
     ///
     /// The method will return the diff if it is preset and if the given
     /// serial is one less than the update’s serial.
-    pub fn get_usable_diff(&self, serial: Serial) -> Option<Arc<Diff>> {
-        self.diff.clone().and_then(|diff| {
+    pub fn get_usable_diff(&self, serial: Serial) -> Option<&Diff> {
+        self.diff.as_ref().and_then(|diff| {
             if serial.add(1) == self.serial {
                 Some(diff)
             }
@@ -585,9 +1087,139 @@ impl Update {
 }
 
 
-//------------ Helper Functions ----------------------------------------------
+//============ Tests =========================================================
 
-fn skip_first<T>(slice: &mut &[T]) {
-    *slice = slice.split_first().map(|s| s.1).unwrap_or(&[])
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::net::IpAddr;
+
+    
+    //-------- Scaffolding ---------------------------------------------------
+
+    /// Create payload from a `u32`.
+    ///
+    /// We assume that the ordering of payload is correct, so it is fine to
+    /// only use the most simple type of payload, an IPv4 VRP. To further
+    /// simplify things, this function makes such a VRP from a `u32` in some
+    /// arbitrary way.
+    fn p(value: u32) -> Payload {
+        Payload::origin(
+            rpki::payload::addr::MaxLenPrefix::new(
+                rpki::payload::addr::Prefix::new_v4(value.into(), 32).unwrap(),
+                Some(32)
+            ).unwrap(),
+            0.into()
+        )
+    }
+
+    /// Create a pack of payload from a slice of `u32`s.
+    fn pack(values: &[u32]) -> Pack {
+        Pack {
+            items:
+                values.iter().cloned().map(p).collect::<Vec<_>>().into()
+        }
+    }
+
+    /// Create a block of payload from a slice of `u32`s.
+    fn block(values: &[u32], range: Range<usize>) -> Block {
+        Block {
+            pack: pack(values),
+            range
+        }
+    }
+
+    /*
+    /// Checks that a pack fulfils all invariants.
+    fn check_pack(pack: &Pack) {
+        // Empty pack is allowed.
+        if pack.items.is_empty() {
+            return
+        }
+
+        // Pack needs to be ordered without duplicates.
+        for window in pack.items.windows(2) {
+            assert!(window[0] < window[1])
+        }
+    }
+    */
+
+    /// Checks that a set conforms to all invariants.
+    fn check_set(set: &Set) {
+        // No empty blocks.
+        for block in set.blocks.iter() {
+            assert!(!block.is_empty())
+        }
+
+        // Elements are in order and without duplicates.
+        //
+        // (This relies on SetIter being correct -- there are tests for that
+        // below.)
+        for window in set.iter().cloned().collect::<Vec<_>>().windows(2) {
+            assert!(window[0] < window[1])
+        }
+    }
+
+    /// Converts a set into a vec of integers.
+    fn set_to_vec(set: &Set) -> Vec<u32> {
+        set.iter().map(|payload| match payload {
+            Payload::Origin(item) => {
+                match item.prefix.addr() {
+                    IpAddr::V4(addr) => addr.into(),
+                    _ => panic!("not a v4 prefix")
+                }
+            }
+            _ => panic!("not a v4 prefix")
+        }).collect()
+    }
+
+
+    //-------- Test Functions ------------------------------------------------
+
+    #[test]
+    fn set_iter() {
+        assert_eq!(
+            Set {
+                blocks: vec![
+                    block(&[1, 2, 4], 0..3),
+                    block(&[4, 5], 1..2)
+                ].into(),
+                len: 4
+            }.iter().cloned().collect::<Vec<_>>(),
+            [p(1), p(2), p(4), p(5)]
+        );
+    }
+
+    #[test]
+    fn set_builder() {
+        let mut builder = SetBuilder::empty();
+        builder.insert_pack(pack(&[1, 2, 11, 12]));
+        builder.insert_pack(pack(&[5, 6, 7, 15, 18]));
+        builder.insert_pack(pack(&[6, 7]));
+        builder.insert_pack(pack(&[7]));
+        builder.insert_pack(pack(&[17]));
+        let set = builder.finalize();
+        check_set(&set);
+        assert_eq!(
+            set_to_vec(&set),
+            [1, 2, 5, 6, 7, 11, 12, 15, 17, 18]
+        );
+    }
+
+    #[test]
+    fn diff_iter() {
+        use rpki::payload::rtr::Action::{Announce as A, Withdraw as W};
+
+        assert_eq!(
+            Diff {
+                announced: pack(&[6, 7, 15, 18]).into(),
+                withdrawn: pack(&[2, 8, 9]).into(),
+            }.iter().collect::<Vec<_>>(),
+            [
+                (&p(2), W), (&p(6), A), (&p(7), A), (&p(8), W), (&p(9), W),
+                (&p(15), A), (&p(18), A)
+            ]
+        );
+    }
 }
 

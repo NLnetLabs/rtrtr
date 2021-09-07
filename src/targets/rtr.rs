@@ -8,7 +8,7 @@ use arc_swap::ArcSwap;
 use log::{debug, error};
 use serde::Deserialize;
 use rpki::rtr::payload::Timing;
-use rpki::rtr::server::{NotifySender, Server, VrpSource};
+use rpki::rtr::server::{NotifySender, Server, PayloadSource};
 use rpki::rtr::state::{Serial, State};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -96,15 +96,15 @@ impl Source {
                 SourceData {
                     state: data.state,
                     unit_serial: update.serial(),
-                    current: Some(update.set()),
+                    current: Some(update.set().clone()),
                     diffs: Vec::new(),
                     timing: Timing::default(),
                 }
             }
             Some(current) => {
                 let diff = match update.get_usable_diff(data.unit_serial) {
-                    Some(diff) => diff,
-                    None => Arc::new(update.set().diff_from(current)),
+                    Some(diff) => diff.clone(),
+                    None => update.set().diff_from(current),
                 };
                 if diff.is_empty() {
                     // If there is no change in data, don’t update.
@@ -120,7 +120,7 @@ impl Source {
                     }
                     diffs.push((
                         *serial,
-                        Arc::new(old_diff.extend(&diff).unwrap())
+                        old_diff.extend(&diff).unwrap()
                     ))
                 }
                 let mut state = data.state;
@@ -128,7 +128,7 @@ impl Source {
                 SourceData {
                     state,
                     unit_serial: update.serial(),
-                    current: Some(update.set()),
+                    current: Some(update.set().clone()),
                     diffs,
                     timing: Timing::default(),
                 }
@@ -139,9 +139,9 @@ impl Source {
     }
 }
 
-impl VrpSource for Source {
-    type FullIter = payload::SetIter;
-    type DiffIter = payload::DiffIter;
+impl PayloadSource for Source {
+    type Set = payload::OwnedSetIter;
+    type Diff = payload::OwnedDiffIter;
 
     fn ready(&self) -> bool {
         self.data.load().current.is_some()
@@ -151,22 +151,22 @@ impl VrpSource for Source {
         self.data.load().state
     }
 
-    fn full(&self) -> (State, Self::FullIter) {
+    fn full(&self) -> (State, Self::Set) {
         let this = self.data.load();
         match this.current.as_ref() {
-            Some(current) => (this.state, current.clone().into()),
-            None => (this.state, Arc::new(payload::Set::default()).into())
+            Some(current) => (this.state, current.owned_iter()),
+            None => (this.state, payload::Set::default().owned_iter()),
         }
     }
 
-    fn diff(&self, state: State) -> Option<(State, Self::DiffIter)> {
+    fn diff(&self, state: State) -> Option<(State, Self::Diff)> {
         let this = self.data.load();
         if this.current.is_none() || state.session() != this.state.session() {
             return None
         }
 
         this.get_diff(state.serial()).map(|diff| {
-            (this.state, diff.shared_iter())
+            (this.state, diff)
         })
     }
 
@@ -187,26 +187,26 @@ struct SourceData {
     unit_serial: Serial,
 
     /// The current set of RTR data.
-    current: Option<Arc<payload::Set>>,
+    current: Option<payload::Set>,
 
     /// The diffs we currently keep.
     ///
     /// The diff with the largest serial is first.
-    diffs: Vec<(Serial, Arc<payload::Diff>)>,
+    diffs: Vec<(Serial, payload::Diff)>,
 
     /// The timing paramters for this source.
     timing: Timing,
 }
 
 impl SourceData {
-    fn get_diff(&self, serial: Serial) -> Option<Arc<payload::Diff>> {
+    fn get_diff(&self, serial: Serial) -> Option<payload::OwnedDiffIter> {
         if serial == self.state.serial() {
-            Some(Arc::new(payload::Diff::default()))
+            Some(payload::Diff::default().into_owned_iter())
         }
         else {
             self.diffs.iter().find_map(|item| {
                 if item.0 == serial {
-                    Some(item.1.clone())
+                    Some(item.1.owned_iter())
                 }
                 else {
                     None
