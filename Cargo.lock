@@ -694,7 +694,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.12.3-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=slurm#2f8ae310646d1991743db97b9d9a6a2557896c2f"
+source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=slurm#6083d98a0545286319f6f0c1240e092cc983aee2"
 dependencies = [
  "base64",
  "bytes",

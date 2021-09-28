@@ -5,11 +5,10 @@ use crossbeam_utils::atomic::AtomicCell;
 use futures::future::{select, select_all, Either, FutureExt};
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
-use crate::metrics;
+use crate::{metrics, payload};
 use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::comms::{Gate, GateMetrics, Link, Terminated, UnitStatus};
 use crate::manager::Component;
-use crate::payload;
 
 
 //------------ Any -----------------------------------------------------------

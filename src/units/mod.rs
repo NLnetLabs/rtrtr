@@ -21,6 +21,7 @@
 mod combine;
 mod json;
 mod rtr;
+mod slurm;
 
 //------------ Unit ----------------------------------------------------------
 
@@ -40,6 +41,9 @@ pub enum Unit {
 
     #[serde(rename = "json")]
     Json(json::Json),
+
+    #[serde(rename = "slurm")]
+    Slurm(slurm::LocalExceptions),
 }
 
 impl Unit {
@@ -50,6 +54,7 @@ impl Unit {
             Unit::Any(unit) => unit.run(component, gate).await,
             Unit::RtrTcp(unit) => unit.run(component, gate).await,
             Unit::Json(unit) => unit.run(component, gate).await,
+            Unit::Slurm(unit) => unit.run(component, gate).await,
         };
     }
 }

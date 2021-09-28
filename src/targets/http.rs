@@ -98,10 +98,7 @@ impl Source {
     }
 
     fn set(&self) -> Option<payload::Set> {
-        match self.data.load().as_ref() {
-            Some(ref inner) => Some(inner.clone()),
-            None => None
-        }
+        self.data.load().as_ref().as_ref().cloned()
     }
 }
 

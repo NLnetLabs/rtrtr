@@ -111,7 +111,7 @@ impl PackBuilder {
     }
 
     /// Inserts a new element without checking.
-    fn insert_unchecked(&mut self, payload: Payload) {
+    pub fn insert_unchecked(&mut self, payload: Payload) {
         self.items.insert(payload);
     }
 
@@ -229,7 +229,7 @@ impl From<Pack> for Block {
     fn from(pack: Pack) -> Self {
         Block {
             range: 0..pack.len(),
-            pack: pack,
+            pack,
         }
     }
 }
@@ -302,6 +302,7 @@ impl OwnedBlockIter {
     ///
     /// This is similar to an iterator but returns a reference to the item
     /// instead of a clone.
+    #[allow(clippy::should_implement_trait)] // The name is on purpose.
     pub fn next(&mut self) -> Option<&Payload> {
         if self.pos < self.block.range.end {
             let res = self.block.pack.get(self.pos)?;
@@ -544,7 +545,7 @@ impl<'a> SetIter<'a> {
                 self.tail = tail;
                 true
             }
-            None => return false,
+            None => false,
         }
     }
 }
@@ -653,7 +654,9 @@ impl SetBuilder {
     }
 
     /// Inserts a block into the builder if it doesn’t overlap.
-    pub fn try_insert_block(&mut self, block: Block) -> Result<(), PayloadError> {
+    pub fn try_insert_block(
+        &mut self, block: Block
+    ) -> Result<(), PayloadError> {
         if self.blocks.iter().any(|item| item.overlaps(&block)) {
             return Err(PayloadError::Corrupt)
         }
@@ -760,7 +763,7 @@ impl SetBuilder {
 ///
 /// This is a list of additions to a set called _announcments_ and a list of
 /// removals called _withdrawals._ When iterated over, these two are provided
-/// as a single list of pairs of [`Payload`] and [`Actions`] in order of the
+/// as a single list of pairs of [`Payload`] and [`Action`]s in order of the
 /// payload. This makes it relatively safe to apply non-atomically.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Diff {
@@ -809,6 +812,7 @@ impl Diff {
     }
 
     /// Applies the diff to a set returning a new set.
+    #[allow(clippy::mutable_key_type)] // false positive on Payload.
     pub fn apply(&self, set: &Set) -> Result<Set, PayloadError> {
         let mut res = set.to_builder();
         res.try_insert_pack(self.announced.clone()).map_err(|_|
@@ -825,6 +829,18 @@ impl Diff {
         else {
             Ok(res)
         }
+    }
+
+    /// Applies the diff to a set ignoring overlaps and missing items.
+    #[allow(clippy::mutable_key_type)] // false positive on Payload.
+    pub fn apply_relaxed(&self, set: &Set) -> Set {
+        let mut res = set.to_builder();
+        res.insert_pack(self.announced.clone());
+        let res = res.finalize();
+        let mut withdrawn: HashSet<_> = self.withdrawn.iter().collect();
+        res.filter(|item| {
+            !withdrawn.remove(item)
+        })
     }
 }
 
@@ -862,25 +878,17 @@ impl<'a> Iterator for DiffIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match (self.announced.peek(), self.withdrawn.peek()) {
             (Some(_), None) => {
-                self.announced.next().and_then(|some| {
-                    Some((some, Action::Announce))
-                })
+                self.announced.next().map(|some| (some, Action::Announce))
             }
             (None, Some(_)) => {
-                self.withdrawn.next().and_then(|some| {
-                    Some((some, Action::Withdraw))
-                })
+                self.withdrawn.next().map(|some| (some, Action::Withdraw))
             }
             (Some(announced), Some(withdrawn)) => {
                 if announced < withdrawn {
-                    self.announced.next().and_then(|some| {
-                        Some((some, Action::Announce))
-                    })
+                    self.announced.next().map(|some| (some, Action::Announce))
                 }
                 else {
-                    self.withdrawn.next().and_then(|some| {
-                        Some((some, Action::Withdraw))
-                    })
+                    self.withdrawn.next().map(|some| (some, Action::Withdraw))
                 }
             }
             (None, None) => None,
@@ -930,25 +938,17 @@ impl PayloadDiff for OwnedDiffIter {
         match (self.announced.peek(), self.withdrawn.peek()
         ) {
             (Some(_), None) => {
-                self.announced.next().and_then(|some| {
-                    Some((some, Action::Announce))
-                })
+                self.announced.next().map(|some| (some, Action::Announce))
             }
             (None, Some(_)) => {
-                self.withdrawn.next().and_then(|some| {
-                    Some((some, Action::Withdraw))
-                })
+                self.withdrawn.next().map(|some| (some, Action::Withdraw))
             }
             (Some(announced), Some(withdrawn)) => {
                 if announced < withdrawn {
-                    self.announced.next().and_then(|some| {
-                        Some((some, Action::Announce))
-                    })
+                    self.announced.next().map(|some| (some, Action::Announce))
                 }
                 else {
-                    self.withdrawn.next().and_then(|some| {
-                        Some((some, Action::Withdraw))
-                    })
+                    self.withdrawn.next().map(|some| (some, Action::Withdraw))
                 }
             }
             (None, None) => None,
@@ -1083,6 +1083,14 @@ impl Update {
                 None
             }
         })
+    }
+
+    /// Applies a diff to the update.
+    ///
+    /// The update will retain its current serial number.
+    pub fn apply_diff_relaxed(&mut self, diff: &Diff)  {
+        self.set = diff.apply_relaxed(&self.set);
+        self.diff = None;
     }
 }
 
