@@ -147,7 +147,7 @@ impl ExceptionSet {
 }
 
 
-//------------ Conectet ------------------------------------------------------
+//------------ Content -------------------------------------------------------
 
 /// The content of a SLURM file in slightly pre-processed form.
 #[derive(Default)]

@@ -35,6 +35,9 @@ url             = { version = "2.2", features = ["serde"] }
 libc            = "0.2.68"
 syslog          = "5.0.0"
 
+[dev-dependencies]
+rand_pcg        = "0.3"
+
 [profile.release]
 panic = "abort"
 

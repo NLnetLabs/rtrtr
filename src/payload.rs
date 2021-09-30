@@ -208,17 +208,27 @@ impl Block {
 
     /// Returns whether this block overlaps in content with the given block.
     pub fn overlaps(&self, other: &Block) -> bool {
-        // If any of these is `None` there we have empty blocks and there is
-        // no overlap.
-        let (self_first, self_last, other_first, other_last) = match (
-            self.first(), self.last(), other.first(), other.last()
-        ) {
-            (Some(sf), Some(sl), Some(of), Some(ol)) => (sf, sl, of, ol),
-            _ => return false,
-        };
-
-        (other_first < self_first && other_last >= self_first)
-        || (other_first < self_last)
+        // Since blocks are not continous, we really have to check item
+        // pairs. But because they are ordered, we can optimize this a bit.
+        // We’ll go over self item for item and advance other until the first
+        // item that is bigger -- or equal, in which case we have an overlap.
+        let mut other_iter = other.iter().peekable();
+        for self_item in self.iter() {
+            loop {
+                let other_item = match other_iter.peek() {
+                    Some(item) => item,
+                    None => return false
+                };
+                match other_item.cmp(&self_item) {
+                    Ordering::Less => {
+                        let _ = other_iter.next();
+                    }
+                    Ordering::Equal => return true,
+                    Ordering::Greater => break,
+                }
+            }
+        }
+        false
     }
 }
 
@@ -390,13 +400,13 @@ impl Set {
                 end += 1;
                 while end < block.end() {
                     if retain(&block.pack[end]) {
-                        start = end;
                         break;
                     }
                     else {
                         end += 1;
                     }
                 }
+                start = end;
             }
         }
 
@@ -957,7 +967,7 @@ impl PayloadDiff for OwnedDiffIter {
 }
 
 
-//------------ DiffBuilder --------------------------------------------
+//------------ DiffBuilder ---------------------------------------------------
 
 /// A builder for a diff.
 #[derive(Clone, Debug, Default)]
@@ -1007,14 +1017,26 @@ impl DiffBuilder {
 
     /// Adds another diff to this diff.
     ///
-    /// Each change in `diff` is added individually. The method will therefore
-    /// fail if for any change in `diff` the payload was already present in
-    /// `self`.
+    /// The `diff` is added as if it were the next step in a chain of diffs.
+    /// That is, if it announces elements previously withdrawn or withdraws
+    /// elements previously announced, these are simply dropped from the
+    /// builder.
     pub fn push_diff(
         &mut self, diff: &Diff
     ) -> Result<(), PayloadError> {
         for (payload, action) in diff {
-            self.push(payload.clone(), action)?
+            match action {
+                Action::Announce => {
+                    if self.withdrawn.remove(payload).is_err() {
+                        self.announced.insert(payload.clone())?
+                    }
+                }
+                Action::Withdraw => {
+                    if self.announced.remove(payload).is_err() {
+                        self.withdrawn.insert(payload.clone())?
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -1137,7 +1159,6 @@ mod test {
         }
     }
 
-    /*
     /// Checks that a pack fulfils all invariants.
     fn check_pack(pack: &Pack) {
         // Empty pack is allowed.
@@ -1150,7 +1171,6 @@ mod test {
             assert!(window[0] < window[1])
         }
     }
-    */
 
     /// Checks that a set conforms to all invariants.
     fn check_set(set: &Set) {
@@ -1227,6 +1247,105 @@ mod test {
                 (&p(2), W), (&p(6), A), (&p(7), A), (&p(8), W), (&p(9), W),
                 (&p(15), A), (&p(18), A)
             ]
+        );
+    }
+
+    #[test]
+    fn mix_and_match() {
+        use rand::Rng;
+        
+        fn random_vec<T: Rng>(rng: &mut T, len: usize) -> Vec<Payload> {
+            let mut res = Vec::with_capacity(len);
+            for _ in 0..len {
+                res.push(p(rng.gen()))
+            }
+            res
+        }
+
+        fn build_pack(data: &[Payload]) -> Pack {
+            let mut res = PackBuilder::empty();
+            for item in data {
+                res.insert_unchecked(item.clone());
+            }
+            let res = res.finalize();
+            check_pack(&res);
+            res
+        }
+
+        fn sort_and_dedup(mut vec: Vec<Payload>) -> Vec<Payload> {
+            vec.sort();
+            vec.dedup();
+            vec
+        }
+
+        // Let’s make three vecs with payload data.
+        let mut rng = rand_pcg::Pcg32::new(
+            0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7
+        );
+        let v1 = random_vec(&mut rng, 100);
+        let v2 = random_vec(&mut rng, 10);
+        let v3 = random_vec(&mut rng, 50);
+
+        // Make packs from the vecs, check that they are the same as the vecs.
+        let p1 = build_pack(&v1);
+        let p2 = build_pack(&v2);
+        let p3 = build_pack(&v3);
+        let v1 = sort_and_dedup(v1);
+        let v2 = sort_and_dedup(v2);
+        let v3 = sort_and_dedup(v3);
+        assert!(p1.iter().eq(v1.iter()));
+        assert!(p2.iter().eq(v2.iter()));
+        assert!(p3.iter().eq(v3.iter()));
+
+        // Now merge everything into one vec and one set and see if
+        // they match.
+        let mut v = v1.clone();
+        v.extend_from_slice(&v2);
+        v.extend_from_slice(&v3);
+        v.sort();
+        v.dedup();
+        let v = v;
+
+        let mut s = SetBuilder::empty();
+        s.insert_pack(p1.clone());
+        s.insert_pack(p2.clone());
+        s.insert_pack(p3.clone());
+        let s = s.finalize();
+
+        assert!(s.iter().eq(v.iter()));
+
+        // Now make diffs and see if they are correct.
+        let h1 = v1.iter().cloned().collect::<HashSet<_>>();
+        let h2 = v2.iter().cloned().collect::<HashSet<_>>();
+        let h3 = v3.iter().cloned().collect::<HashSet<_>>();
+        let s1 = Set::from(p1.clone());
+        let s2 = Set::from(p2.clone());
+        let s3 = Set::from(p3.clone());
+        let d2 = s2.diff_from(&s1);
+        let d3 = s3.diff_from(&s2);
+
+        fn check_diff(
+            d: &Diff, from: &HashSet<Payload>, to: &HashSet<Payload>
+        ) {
+            let mut announced =
+                to.difference(from).cloned().collect::<Vec<_>>();
+            announced.sort();
+            let mut withdrawn =
+                from.difference(to).cloned().collect::<Vec<_>>();
+            withdrawn.sort();
+            assert!(d.announced.iter().eq(announced.iter()));
+            assert!(d.withdrawn.iter().eq(withdrawn.iter()));
+        }
+        check_diff(&d2, &h1, &h2);
+        check_diff(&d3, &h2, &h3);
+
+        // Now check that applying those diffs works.
+        assert!(d2.apply(&s1).unwrap().iter().eq(s2.iter()));
+        assert!(d3.apply(&s2).unwrap().iter().eq(s3.iter()));
+
+        // Now merge the two diffs and see if that still works.
+        assert!(
+            d2.extend(&d3).unwrap().apply(&s1).unwrap().iter().eq(s3.iter())
         );
     }
 }
