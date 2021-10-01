@@ -182,3 +182,68 @@ impl From<SlurmFile> for Content {
     }
 }
 
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::payload::testrig;
+    use rpki::slurm::PrefixFilter;
+    use rpki::payload::rtr::Payload;
+
+    #[test]
+    fn apply_content() {
+        use rand::Rng;
+        
+        fn random_pack<T: Rng>(rng: &mut T, len: usize) -> payload::Pack {
+            let mut res = payload::PackBuilder::empty();
+            for _ in 0..len {
+                res.insert_unchecked(testrig::p(rng.gen()))
+            }
+            res.finalize()
+        }
+
+        let mut rng = rand_pcg::Pcg32::new(
+            0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7
+        );
+
+        // First, let’s make a data set.
+        let s1 = payload::Set::from(random_pack(&mut rng, 100));
+
+        // Now, a pack that we first insert and then remove again via
+        // local exceptions.
+        let s2 = payload::Set::from(random_pack(&mut rng, 10));
+
+        // And a pack which is what we are going to insert via local
+        // exceptions.
+        let p3 = random_pack(&mut rng, 15);
+
+        // Now we can make the input and output sets.
+        let input = s1.merge(&s2);
+        let output = s1.merge(&payload::Set::from(p3.clone()));
+
+        // Time to make the content.
+        let content = Content {
+            filters: ValidationOutputFilters {
+                prefix: s2.iter().filter_map(|payload| {
+                    match payload {
+                        Payload::Origin(origin) => {
+                            Some(PrefixFilter::new(
+                                Some(origin.prefix.prefix()),
+                                Some(origin.asn),
+                                None
+                            ))
+                        }
+                        _ => None
+                    }
+                }).collect(),
+                bgpsec: Vec::new()
+            },
+            assertions: p3.clone()
+        };
+
+        assert_eq!(content.apply(input.clone()), output);
+    }
+}
+

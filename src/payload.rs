@@ -364,6 +364,15 @@ impl Set {
         OwnedSetIter::new(self)
     }
 
+    /// Returns a set which has this set and the other set merged.
+    ///
+    /// The two sets may overlap.
+    pub fn merge(&self, other: &Set) -> Set {
+        let mut res = self.to_builder();
+        res.insert_set(other.clone());
+        res.finalize()
+    }
+
     /// Returns a set with the indicated elements removed.
     ///
     /// Each element in the current set is presented to the closure and only
@@ -1120,7 +1129,7 @@ impl Update {
 //============ Tests =========================================================
 
 #[cfg(test)]
-mod test {
+pub(crate) mod testrig {
     use super::*;
     use std::net::IpAddr;
 
@@ -1133,7 +1142,7 @@ mod test {
     /// only use the most simple type of payload, an IPv4 VRP. To further
     /// simplify things, this function makes such a VRP from a `u32` in some
     /// arbitrary way.
-    fn p(value: u32) -> Payload {
+    pub fn p(value: u32) -> Payload {
         Payload::origin(
             rpki::payload::addr::MaxLenPrefix::new(
                 rpki::payload::addr::Prefix::new_v4(value.into(), 32).unwrap(),
@@ -1144,7 +1153,7 @@ mod test {
     }
 
     /// Create a pack of payload from a slice of `u32`s.
-    fn pack(values: &[u32]) -> Pack {
+    pub fn pack(values: &[u32]) -> Pack {
         Pack {
             items:
                 values.iter().cloned().map(p).collect::<Vec<_>>().into()
@@ -1152,7 +1161,7 @@ mod test {
     }
 
     /// Create a block of payload from a slice of `u32`s.
-    fn block(values: &[u32], range: Range<usize>) -> Block {
+    pub fn block(values: &[u32], range: Range<usize>) -> Block {
         Block {
             pack: pack(values),
             range
@@ -1160,7 +1169,7 @@ mod test {
     }
 
     /// Checks that a pack fulfils all invariants.
-    fn check_pack(pack: &Pack) {
+    pub fn check_pack(pack: &Pack) {
         // Empty pack is allowed.
         if pack.items.is_empty() {
             return
@@ -1173,7 +1182,7 @@ mod test {
     }
 
     /// Checks that a set conforms to all invariants.
-    fn check_set(set: &Set) {
+    pub fn check_set(set: &Set) {
         // No empty blocks.
         for block in set.blocks.iter() {
             assert!(!block.is_empty())
@@ -1189,7 +1198,7 @@ mod test {
     }
 
     /// Converts a set into a vec of integers.
-    fn set_to_vec(set: &Set) -> Vec<u32> {
+    pub fn set_to_vec(set: &Set) -> Vec<u32> {
         set.iter().map(|payload| match payload {
             Payload::Origin(item) => {
                 match item.prefix.addr() {
@@ -1200,9 +1209,13 @@ mod test {
             _ => panic!("not a v4 prefix")
         }).collect()
     }
+}
 
 
-    //-------- Test Functions ------------------------------------------------
+#[cfg(test)]
+mod test {
+    use super::*;
+    use super::testrig::*;
 
     #[test]
     fn set_iter() {
