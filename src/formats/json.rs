@@ -41,7 +41,6 @@ struct Vrp {
 
     #[serde(rename = "maxLength")]
     max_len: u8,
-    ta: String,
 }
 
 impl Vrp {
@@ -320,7 +319,6 @@ mod test {
             assert_eq!(set.roas[0].prefix.addr, IpAddr::from([192,0,2,0]));
             assert_eq!(set.roas[0].prefix.prefix_len, 24);
             assert_eq!(set.roas[0].max_len, 24);
-            assert_eq!(set.roas[0].ta, "ta");
 
             assert_eq!(set.roas[1].asn.0, 4200000000);
             assert_eq!(
@@ -329,7 +327,6 @@ mod test {
             );
             assert_eq!(set.roas[1].prefix.prefix_len, 32);
             assert_eq!(set.roas[1].max_len, 32);
-            assert_eq!(set.roas[1].ta, "ta");
         }
 
         check_set(serde_json::from_slice::<Set>(
