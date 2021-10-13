@@ -306,9 +306,11 @@ impl LogConfig {
         res = res
             .level(self.log_level.0)
             .level_for("rustls", LevelFilter::Error);
-        if self.log_level.0 == LevelFilter::Debug {
+        if self.log_level.0 >= LevelFilter::Debug {
             res = res
+                .level_for("mio", LevelFilter::Info)
                 .level_for("tokio_reactor", LevelFilter::Info)
+                .level_for("tokio_util", LevelFilter::Info)
                 .level_for("hyper", LevelFilter::Info)
                 .level_for("reqwest", LevelFilter::Info)
                 .level_for("h2", LevelFilter::Info);
