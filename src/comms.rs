@@ -163,7 +163,6 @@ impl Gate {
     /// This method will send out the update to all active links. It will
     /// also update the gate metrics based on the update.
     pub async fn update_data(&mut self, update: payload::Update) {
-        println!("{}", self.updates.len());
         for (_, item) in &mut self.updates {
             if item.suspended {
                 continue
