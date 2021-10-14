@@ -748,8 +748,9 @@ impl SetBuilder {
                 
                 // Add the part before `first_end` to the result.
                 if first_end > first.start() {
-                    res.push(first.head_until(first_end));
-                    res_len += first.len();
+                    let block = first.head_until(first_end);
+                    res_len += block.len();
+                    res.push(block);
                 }
 
                 // If the first remaining element of `first` is equal to
