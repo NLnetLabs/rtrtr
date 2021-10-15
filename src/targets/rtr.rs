@@ -59,6 +59,13 @@ impl Tcp {
                 return Err(ExitError)
             }
         };
+        if let Err(err) = listener.set_nonblocking(true) {
+            error!(
+                "Fatal: failed to set listener {} to non-blocking: {}.",
+                addr, err
+            );
+            return Err(ExitError);
+        }
         let listener = match TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(err) => {
