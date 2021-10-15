@@ -59,13 +59,21 @@ impl Server {
         for addr in &self.listen {
             // Binding needs to have happened before dropping privileges
             // during detach. So we do this here synchronously.
-            match StdListener::bind(addr) {
-                Ok(listener) => listeners.push(listener),
+            let listener = match StdListener::bind(addr) {
+                Ok(listener) => listener,
                 Err(err) => {
                     error!("Fatal: error listening on {}: {}", addr, err);
                     return Err(ExitError);
                 }
             };
+            if let Err(err) = listener.set_nonblocking(true) {
+                error!(
+                    "Fatal: failed to set listener {} to non-blocking: {}.",
+                    addr, err
+                );
+                return Err(ExitError);
+            }
+            listeners.push(listener);
         }
         for listener in listeners {
             runtime.spawn(
