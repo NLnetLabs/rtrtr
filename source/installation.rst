@@ -32,6 +32,7 @@ run with Docker or build from Cargo, Rust's build system and package manager.
 
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch main
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ buster main
+          deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ bullseye main
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial main
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic main
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal main
@@ -198,6 +199,7 @@ a specific version, if needed.
 
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch-proposed main
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ buster-proposed main
+          deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ bullseye-proposed main
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial-proposed main
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic-proposed main 
           deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal-proposed main
