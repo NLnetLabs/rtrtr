@@ -183,9 +183,9 @@ run with Docker or build from Cargo, Rust's build system and package manager.
 Installing Specific Versions
 ----------------------------
 
-Before every new release of RTRTR, one or more release candidates are 
-provided for testing through every installation method. You can also install
-a specific version, if needed.
+Before every new release of RTRTR, one or more release candidates are provided
+for testing through every installation method. You can also install a specific
+version, if needed.
 
 .. tabs::
 
@@ -215,12 +215,12 @@ a specific version, if needed.
 
        .. code-block:: text
 
-          sudo apt install routinator=0.1.1
+          sudo apt install rtrtr=0.1.1
           
    .. group-tab:: RPM Packages
 
-       To install release candidates of RTRTR, create an additional repo 
-       file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`, enter this
+       To install release candidates of RTRTR, create an additional repo file
+       named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`, enter this
        configuration and save it:
        
        .. code-block:: text
@@ -241,27 +241,27 @@ a specific version, if needed.
          
        .. code-block:: bash
          
-          sudo yum install -y routinator-0.1.1
+          sudo yum install -y rtrtr-0.1.1
              
    .. group-tab:: Docker
 
-       All release versions of Routinator, as well as release candidates and
-       builds based on the latest main branch are available on `Docker Hub
+       All release versions of RTRTR, as well as release candidates and builds
+       based on the latest main branch are available on `Docker Hub
        <https://hub.docker.com/r/nlnetlabs/rtrtr/tags?page=1&ordering=last_updated>`_. 
        
-       For example, installing Routinator 0.1.2 is as simple as:
+       For example, installing RTRTR 0.1.2 is as simple as:
         
        .. code-block:: text
        
-          docker run -it nlnetlabs/routinator:v0.1.2
+          docker run -it nlnetlabs/rtrtr:v0.1.2
                
    .. group-tab:: Cargo
 
        All release versions of RTRTR, as well as release candidates, are
-       available on `crates.io <https://crates.io/crates/rtrtr/versions>`_,
-       the Rust package registry. If you want to install a specific version of
-       Routinator using Cargo, explicitly use the ``--version`` option. If
-       needed, use the ``--force`` option to overwrite an existing version:
+       available on `crates.io <https://crates.io/crates/rtrtr/versions>`_, the
+       Rust package registry. If you want to install a specific version of RTRTR
+       using Cargo, explicitly use the ``--version`` option. If needed, use the
+       ``--force`` option to overwrite an existing version:
                
        .. code-block:: text
 
@@ -289,7 +289,7 @@ on any system where you can fulfil these requirements.
 C Toolchain
 """""""""""
 
-Some of the libraries Routinator depends on require a C toolchain to be present.
+Some of the libraries RTRTR depends on require a C toolchain to be present.
 Your system probably has some easy way to install the minimum set of packages to
 build from C sources. For example, this command will install everything you need
 on Debian/Ubuntu:
@@ -309,10 +309,9 @@ not all of them are equally supported. The official `Rust Platform Support
 <https://doc.rust-lang.org/nightly/rustc/platform-support.html>`_ page provides
 an overview of the various support levels.
 
-While some system distributions include Rust as system packages,
-Routinator relies on a relatively new version of Rust, currently 1.47 or
-newer. We therefore suggest to use the canonical Rust installation via a
-tool called :command:`rustup`.
+While some system distributions include Rust as system packages, RTRTR relies on
+a relatively new version of Rust, currently 1.47 or newer. We therefore suggest
+to use the canonical Rust installation via a tool called :command:`rustup`.
 
 To install :command:`rustup` and Rust, simply do:
 
@@ -332,12 +331,12 @@ You can update your Rust installation later by running:
 Building
 """"""""
 
-The easiest way to get Routinator is to leave it to Cargo by saying:
+The easiest way to get RTRTR is to leave it to Cargo by saying:
 
 .. code-block:: text
 
    cargo install --locked rtrtr
 
-The command will build Routinator and install it in the same directory that
+The command will build RTRTR and install it in the same directory that
 Cargo itself lives in, likely ``$HOME/.cargo/bin``. This means RTRTR will
 be in your path, too.
