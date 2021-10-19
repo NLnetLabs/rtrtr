@@ -3,41 +3,6 @@
 Configuration
 =============
 
-A configuration file is required for RTRTR to run. It describes which components
-should be loaded and how they will be connected. The file is in a format call
-:abbr:`TOML (Tom's Obvious Minimal Language)`, which is somewhat similar to INI
-files. You can find more information on the `TOML website
-<https://toml.io/en/>`_. 
-
-The file’s content starts out with a number of optional general parameters:
-
-.. code-block:: text
-
-    # The minimum log level to consider.
-    log_level = "debug"
-
-    # The target for logging. This can be "syslog", "stderr", "file", or
-    # "default".
-    log_target = "stderr"
-
-    # If syslog is used, the syslog facility can be given:
-    log_facility = "daemon"
-
-    # If file logging is used, the log file must be given.
-    log_file = "/var/log/rtrtr.log"
-
-RTRTR has a built in HTTP server that provides status information at the 
-:command:`/status` path and Prometheus metrics at the :command:`/metrics` path:
-
-.. code-block:: text
-
-    # Where should the HTTP server listen on?
-    #
-    # The HTTP server provides access to Prometheus-style metrics under the
-    # `/metrics` path and plain text status information under `/status` and
-    # can be used as a target for serving data (see below for more on targets).
-    http-listen = ["127.0.0.1:8080"]
-
 RTRTR uses two classes of components: *units* and *targets*. Units take data
 from somewhere and produce a single, constantly updated data set. Targets take
 the data set from exactly one other unit and serve it in some specific way.
@@ -47,97 +12,158 @@ that defines which particular kind of unit or target this is. For each type,
 additional arguments need to be provided. Which these are and what they mean
 depends on the type.
 
-At this time, there are only two types of units and one type of target. Each
-unit and target gets its own section in the config. The name of the section,
-given in square brackets, describes whether a unit or target is wanted and,
-after a dot, the name of the unit or target.
+Units and targets can be wired together in any way to achieve your specific
+goal. This is done in a configuration file, which also specifies several general
+parameters for logging, as well as status and Prometheus metrics endpoints via
+the built-in HTTP server.
 
-Let's start with a unit for an RTR client. We call it ``local-3323`` because
-it connects to port 3323 on localhost. You can, of course, choose whatever
-name you like:
+.. Note:: The configuration file is in :abbr:`TOML (Tom's Obvious Minimal 
+          Language)` format, which is somewhat similar to INI files. You can 
+          find more information on the `TOML website <https://toml.io/en/>`_. 
+
+General Parameters
+------------------
+
+The configuration file starts out with a number of optional parameters to
+specify logging. The built-in HTTP server provides status information at the
+:command:`/status` path and Prometheus metrics at the :command:`/metrics` path.
+Note that details are provided for each unit and each target.
 
 .. code-block:: text
 
-    [units.local-3323]
+    # The minimum log level to consider.
+    log_level = "debug"
 
-The type of this unit is ``rtr`` for an RTR client using plain TCP:
+    # The target for logging. This can be "syslog", "stderr", "file", or "default".
+    log_target = "stderr"
+
+    # If syslog is used, the syslog facility can be given.
+    log_facility = "daemon"
+
+    # If file logging is used, the log file must be given.
+    log_file = "/var/log/rtrtr.log"
+
+    # Where should the HTTP server listen on?
+    http-listen = ["127.0.0.1:8080"]
+
+Units
+-----
+
+RTRTR currently has four types of units. Each unit gets its own section in the
+configuration. The name of the section, given in square brackets, starts with
+``units.`` and is followed by a descriptive name you set, which you can later
+refer to from other units, or a target.
+
+RTR Unit
+++++++++
+
+The unit of the type ``rtr`` takes a feed of Validated ROA Payloads (VRPs) from
+a Relying Party software instance via the RTR protocol. Along with a unique
+name, the only required argument is the IP or hostname of the instance to
+connect to, along with the port. Because the RTR protocol uses sessions and
+state, we don't need to specify a refresh interval for this unit.
 
 .. code-block:: text
 
+    [units.rtr-unit-name]
     type = "rtr"
+    remote = "validator.example.net:3323"
 
-The rtr unit needs one more argument: where to connect to:
+JSON Unit
++++++++++
+
+Most Relying Party software packages can produce the Validated ROA Payload set
+in JSON format as well, either as a file on disk or at an HTTP endpoint. RTRTR
+can use this format as a data source too, using units of the type ``json``. 
+Along with specifying a name, you must specify the URI to fetch the VRP set
+from, as well as the refresh interval in seconds.
 
 .. code-block:: text
 
-    remote = "localhost:3323"
-
-Let’s add another RTR unit for another server:
-
-.. code-block:: text
-
-    [units.local-3324]
-    type = "rtr"
-    remote = "localhost:3324"
-
-    [units.local-json]
+    [units.json-unit-name]
     type = "json"
-    uri = "http://localhost:8323/json"
+    uri = "http://validator.example.net/vrps.json"
     refresh = 60
 
-    [units.cloudflare-json]
-    type = "json"
-    uri = "https://rpki.cloudflare.com/rpki.json"
-    refresh = 60
+Any Unit
+++++++++
 
-The second unit type is called ``any``. It is given any number of other units
-and picks the data set from one of them. Units can signal that they currently
-don’t have an up-to-date dataset available, so an any unit can skip those and
-make sure to always have an up-to-date data set.
+The ``any`` unit type is given any number of *other* units and picks the data
+set from one of them. Units can signal that they currently don’t have an
+up-to-date data set available, allowing the ``any`` unit to skip those. This
+ensures there is always an up-to-date data set available.
+
+To configure this unit, specify a name, set the type to ``any`` and list the
+sources that should be used. Lastly, specify if a random unit should be selected
+every time it needs to switch or whether it should go through the list in order.
 
 .. code-block:: text
 
-    [units.any-rtr]
+    [units.any-unit-name]
     type = "any"
-
-The names of the units the any unit should get its data from:
-
-.. code-block:: text
-
-    sources = [ "local-3323", "local-3324", "cloudflare-json" ]
-
-Whether the unit should pick a unit random every time it needs to switch
-or rather go through the list in order:
-
-.. code-block:: text
-
+    sources = [ "unit-1", "unit-2", "unit-3" ]
     random = false
 
-Finally, we need to do something with the data: serve it via RTR. This is what 
-the ``rtr`` target does:
+SLURM Unit
+++++++++++
+
+In some cases, you may want to override the global RPKI data set with your own
+local exceptions. You can do this by specifying route origins that should be
+filtered out of the output, as well as origins that should be added, in a file
+using JSON notation according to the :abbr:`SLURM (Simplified Local Internet
+Number Resource Management with the RPKI)` standard specified in :RFC:`8416`.
+
+You can refer to the JSON file you created with a unit of the type ``slurm``. As
+the source to which the exceptions should be applied, you must specify any of
+the other units you have created. Note that the ``files`` attribute is an array
+and can take multiple values as input.
 
 .. code-block:: text
 
-    [targets.local-9001]
+    [units.slurm]
+    type = "slurm"
+    source = "source-unit-name"
+    files = [ "/var/lib/rtrtr/local-expections.json" ]
+
+Targets
+-------
+
+RTRTR currently has two types of targets. As with units, each unit gets its own
+section in the configuration. And also here, the name of the section starts with
+``targets.`` and is followed by a descriptive name you set, all enclosed in
+square brackets.
+
+RTR Target
+++++++++++
+
+Targets of the type ``rtr`` let you serve the data you collected with your units
+via the RPKI-to-Router (RTR) protocol. You must give your target a name and
+specify the host name or IP address it should listen on, along with the port. As
+the RTR target can listen on  multiple addresses, the listen argument is a list.
+Lastly, you must specify the name of the unit the target should receive its data
+from.
+
+.. code-block:: text
+
+    [targets.rtr-target-name]
     type = "rtr"
-
-The ``rtr`` target can listen on multiple addresses, so the listen argument is a 
-list:
-
-.. code-block:: text
-
     listen = [ "127.0.0.1:9001" ]
+    unit = "source-unit-name"
 
-The name of the unit the target should receive its data from:
+HTTP Target
++++++++++++
+
+Targets of the type ``http`` let you serve the collected data via HTTP, which is
+currently only possible in ``json`` format. You can us this data stream for
+monitoring, provisioning, your IP address management, or any other purpose that
+you require. To use this target, specify a name and a path, as well as the name
+of the unit the target should receive its data from.
 
 .. code-block:: text
 
-    unit = "any-rtr"
-
-.. code-block:: text
-
-    [targets.http-json]
+    [targets.http-target-name]
     type = "http"
     path = "/json"
     format = "json"
-    unit = "any-rtr"
+    unit = "source-unit-name"
+    
