@@ -36,6 +36,7 @@ exchanging operational experiences we provide a `mailing list
    introduction
    installation
    configuration
+   example-scenario
    
 .. history
 .. authors
