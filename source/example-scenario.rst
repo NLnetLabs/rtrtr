@@ -22,8 +22,8 @@ easy, the ``slurm`` unit gets its data from the ``any`` unit so only a single
 file has to be kept up-to-date.
 
 Finally, an ``http`` target is configured to get the VRPs without the SLURM 
-exceptions, to be fed into internal tooling running in the headquarters. 
-Finally, an ``rtr`` unit is defined to serve the routing infrastructure.
+exceptions, to be fed into internal tooling running in the headquarters and 
+an ``rtr`` unit is defined to serve the routing infrastructure.
 
 .. figure:: img/rtrtr-flow-example.*
     :align: center
