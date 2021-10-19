@@ -10,7 +10,7 @@ the configuration file needed to accomplish it.
 
 In this example, there is routing infrastructure in a European data centre
 (DC1). To ensure redundancy, it gets Validated ROA Payloads (VRPs) primarily
-from Relying Party software running in the ``eu-west-3`` data centre, using the
+from Relying Party software running in the ``eu-west-3`` location, using the
 RTR protocol. There are two backups configured: another validator serving RTR,
 running in ``ap-south-1`` and, if that fails as well, the public JSON feed
 Cloudflare offers as a last resort. A unit of the type ``any`` is configured to

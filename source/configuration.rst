@@ -93,6 +93,11 @@ set from one of them. Units can signal that they currently don’t have an
 up-to-date data set available, allowing the ``any`` unit to skip those. This
 ensures there is always an up-to-date data set available.
 
+.. Important:: The ``any`` unit uses a single data source at a time. RTRTR does 
+               **not** attempt to make a union or intersection of multiple VRPs
+               sets, to avoid the risk of making a route *invalid* that would
+               otherwise be *unknown*.
+
 To configure this unit, specify a name, set the type to ``any`` and list the
 sources that should be used. Lastly, specify if a random unit should be selected
 every time it needs to switch or whether it should go through the list in order.
