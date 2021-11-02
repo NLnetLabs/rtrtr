@@ -24,6 +24,8 @@ on:
       - v*
 
   pull_request:
+  
+  workflow_dispatch:
 
 defaults:
   run:
