@@ -162,7 +162,7 @@ impl JsonRunner {
             self.gate.update_status(self.status).await
         }
         self.gate.update_data(
-            payload::Update::new(self.serial, res.into_payload().into(), None)
+            payload::Update::new(self.serial, res.into_payload(), None)
         ).await;
         debug!("Unit {}: successfully updated.", self.component.name());
         Ok(Ok(()))

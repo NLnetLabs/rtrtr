@@ -6,7 +6,7 @@ use std::time::Duration;
 use futures::pin_mut;
 use futures::future::{select, Either};
 use log::{debug, warn};
-use rpki::rtr::client::{Client, VrpError, VrpTarget, VrpUpdate};
+use rpki::rtr::client::{Client, PayloadError, PayloadTarget, PayloadUpdate};
 use rpki::rtr::payload::{Action, Payload, Timing};
 use rpki::rtr::state::{Serial, State};
 use serde::Deserialize;
@@ -93,10 +93,9 @@ impl Tcp {
                         return Err(Terminated)
                     }
                 };
-                if !update.is_definitely_empty() {
-                    self.serial = self.serial.add(1);
-                    let update = update.into_update(self.serial);
-                    client.target_mut().current = update.set();
+                if let Some(update) = update {
+                    self.serial = update.serial();
+                    client.target_mut().current = update.set().clone();
                     gate.update_data(update).await;
                 }
             }
@@ -147,20 +146,33 @@ impl Tcp {
 
     async fn update(
         &mut self, client: &mut Client<TcpStream, Target>, gate: &mut Gate
-    ) -> Result<Result<TargetUpdate, io::Error>, Terminated> {
-        let update = client.update();
-        pin_mut!(update);
+    ) -> Result<Result<Option<payload::Update>, io::Error>, Terminated> {
+        let next_serial = self.serial.add(1);
+        let update_fut = async {
+            let update = client.update().await?;
+            if update.is_definitely_empty() {
+                return Ok(None)
+            }
+            match update.into_update(next_serial) {
+                Ok(res) => Ok(Some(res)),
+                Err(err) => {
+                    client.send_error(err).await?;
+                    Err(io::Error::new(io::ErrorKind::Other, err))
+                }
+            }
+        };
+        pin_mut!(update_fut);
 
         loop {
             let process = gate.process();
             pin_mut!(process);
-            match select(process, update).await {
+            match select(process, update_fut).await {
                 Either::Left((Err(_), _)) => {
                     return Err(Terminated)
                 }
                 Either::Left((Ok(status), next_fut)) => {
                     self.status = status;
-                    update = next_fut;
+                    update_fut = next_fut;
                 }
                 Either::Right((res, _)) => {
                     return Ok(res)
@@ -192,7 +204,7 @@ impl Tcp {
 //------------ Target --------------------------------------------------------
 
 struct Target {
-    current: Arc<payload::Set>,
+    current: payload::Set,
 
     state: Option<State>,
 
@@ -209,21 +221,18 @@ impl Target {
     }
 }
 
-impl VrpTarget for Target {
+impl PayloadTarget for Target {
     type Update = TargetUpdate;
 
     fn start(&mut self, reset: bool) -> Self::Update {
         debug!("Unit {}: starting update (reset={})", self.name, reset);
         if reset {
-            TargetUpdate {
-                set: Default::default(),
-                diff: None
-            }
+            TargetUpdate::Reset(payload::PackBuilder::empty())
         }
         else {
-            TargetUpdate {
-                set: self.current.as_ref().into(),
-                diff: Some(Default::default())
+            TargetUpdate::Serial {
+                set: self.current.clone(),
+                diff: payload::DiffBuilder::empty(),
             }
         }
     }
@@ -231,9 +240,8 @@ impl VrpTarget for Target {
     fn apply(
         &mut self, 
         _update: Self::Update, 
-        _reset: bool, 
         _timing: Timing
-    ) -> Result<(), VrpError> {
+    ) -> Result<(), PayloadError> {
         unreachable!()
     }
 }
@@ -241,60 +249,55 @@ impl VrpTarget for Target {
 
 //------------ TargetUpdate --------------------------------------------------
 
-struct TargetUpdate {
-    /// The new data set.
-    set: payload::SetBuilder,
-
-    /// The diff.
-    ///
-    /// If this is `None` we are processing a reset query.
-    diff: Option<payload::DiffBuilder>,
+enum TargetUpdate {
+    Reset(payload::PackBuilder),
+    Serial {
+        set: payload::Set,
+        diff: payload::DiffBuilder,
+    }
 }
 
 impl TargetUpdate {
     fn is_definitely_empty(&self) -> bool {
-        if let Some(diff) = self.diff.as_ref() {
-            diff.is_empty()
-        }
-        else {
-            false
+        match *self {
+            TargetUpdate::Reset(_) => false,
+            TargetUpdate::Serial { ref diff, .. } => diff.is_empty()
         }
     }
 
-    fn into_update(self, serial: Serial) -> payload::Update {
-        payload::Update::new(
-            serial,
-            Arc::new(self.set.finalize()),
-            self.diff.map(|diff| Arc::new(diff.finalize()))
-        )
+    fn into_update(
+        self, serial: Serial
+    ) -> Result<payload::Update, PayloadError> {
+        match self {
+            TargetUpdate::Reset(pack) => {
+                Ok(payload::Update::new(serial, pack.finalize().into(), None))
+            }
+            TargetUpdate::Serial { set, diff } => {
+                let diff = diff.finalize();
+                let set = diff.apply(&set)?;
+                Ok(payload::Update::new(serial, set, Some(diff)))
+            }
+        }
     }
 }
 
-impl VrpUpdate for TargetUpdate {
-    fn push_vrp(
+impl PayloadUpdate for TargetUpdate {
+    fn push_update(
         &mut self, 
         action: Action, 
         payload: Payload
-    ) -> Result<(), VrpError> {
-        match self.diff {
-            Some(ref mut diff) => {
-                match action {
-                    Action::Announce => {
-                        self.set.insert(payload)?;
-                    }
-                    Action::Withdraw => {
-                        self.set.remove(&payload)?;
-                    }
-                }
-                diff.push(payload, action)
-            }
-            None => {
+    ) -> Result<(), PayloadError> {
+        match *self {
+            TargetUpdate::Reset(ref mut pack) => {
                 if action == Action::Withdraw {
-                    Err(VrpError::Corrupt)
+                    Err(PayloadError::Corrupt)
                 }
                 else {
-                    self.set.insert(payload)
+                    pack.insert(payload)
                 }
+            }
+            TargetUpdate::Serial { ref mut diff, .. } => {
+                diff.push(payload, action)
             }
         }
     }

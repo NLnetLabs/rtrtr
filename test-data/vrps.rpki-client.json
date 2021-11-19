@@ -1,0 +1,43 @@
+{
+	"metadata": {
+		"buildmachine": "rpki-client",
+		"buildtime": "2021-11-18T12:56:53Z",
+		"elapsedtime": "159",
+		"usertime": "124",
+		"systemtime": "37",
+		"roas": 96585,
+		"failedroas": 4,
+		"invalidroas": 0,
+		"bgpsec_pubkeys": 2,
+		"certificates": 28079,
+		"invalidcertificates": 0,
+		"tals": 5,
+		"invalidtals": 0,
+		"talfiles": [
+			"/etc/tals/arin.tal",
+			"/etc/tals/afrinic.tal",
+			"/etc/tals/ripe.tal",
+			"/etc/tals/lacnic.tal",
+			"/etc/tals/apnic.tal"
+		],
+		"manifests": 28077,
+		"failedmanifests": 8,
+		"stalemanifests": 2,
+		"crls": 28067,
+		"gbrs": 2,
+		"repositories": 50,
+		"vrps": 297379,
+		"uniquevrps": 292313,
+		"cachedir_del_files": 37,
+		"cachedir_del_dirs": 51783
+	},
+
+	"roas": [
+		{ "asn": 64512, "prefix": "192.0.2.0/24", "maxLength": 24, "ta": "ta", "expires": 1637371167 },
+		{ "asn": 4200000000, "prefix": "2001:DB8::/32", "maxLength": 32, "ta": "ta", "expires": 1637407864 }
+	],
+
+	"bgpsec_keys": [
+		{ "asn": 64512, "ski": "BE889B55D0B737397D75C49F485B858FA98AD11F", "pubkey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4FxJr0n2bux1uX1Evl+QWwZYvIadPjLuFX2mxqKuAGUhKnr7VLLDgrE++l9p5eH2kWTNVAN22FUU3db/RKpE2w==", "ta": "ta", "expires": 1668009883 }
+    ]
+}

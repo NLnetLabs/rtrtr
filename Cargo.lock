@@ -636,6 +636,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_pcg"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59cad018caf63deb318e5a4586d99a24424a364f40f1e5778c29aca23f4fc73e"
+dependencies = [
+ "rand_core",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -692,15 +701,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "rpki"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "718f0d99ad56874728162d2f082e43c2cb378ab62b87202cdf806b9fd13b2d0a"
+name = "routecore"
+version = "0.0.2-dev"
+source = "git+https://github.com/NLnetLabs/routecore.git?branch=main#6f7cc5971c07b31800823f5643f74c98e52db430"
 dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "rpki"
+version = "0.14.0-dev"
+source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=main#423fa2529ed3143039727812061f71ecb22bfda6"
+dependencies = [
+ "base64",
  "bytes",
  "chrono",
  "futures-util",
  "log",
+ "routecore",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "uuid",
@@ -721,7 +741,9 @@ dependencies = [
  "log",
  "log-reroute",
  "rand",
+ "rand_pcg",
  "reqwest",
+ "routecore",
  "rpki",
  "serde",
  "serde_json",
