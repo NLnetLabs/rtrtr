@@ -1,7 +1,6 @@
 //! All supported output formats.
 
 
-use std::sync::Arc;
 use serde::Deserialize;
 use crate::payload;
 use super::json;
@@ -23,7 +22,7 @@ impl Format {
         }
     }
 
-    pub fn stream(self, set: Arc<payload::Set>) -> Stream {
+    pub fn stream(self, set: payload::Set) -> Stream {
         Stream::new(self, set)
     }
 }
@@ -38,7 +37,7 @@ enum StreamInner {
 }
 
 impl Stream {
-    fn new(format: Format, set: Arc<payload::Set>) -> Self {
+    fn new(format: Format, set: payload::Set) -> Self {
         Stream(match format {
             Format::Json => StreamInner::Json(json::OutputStream::new(set)),
         })
