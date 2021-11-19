@@ -240,10 +240,10 @@ mod test {
                 }).collect(),
                 bgpsec: Vec::new()
             },
-            assertions: p3.clone()
+            assertions: p3
         };
 
-        assert_eq!(content.apply(input.clone()), output);
+        assert_eq!(content.apply(input), output);
     }
 }
 
