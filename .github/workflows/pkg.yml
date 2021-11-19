@@ -22,8 +22,6 @@ on:
       - main
     tags:
       - v*
-
-  pull_request:
   
   workflow_dispatch:
 
