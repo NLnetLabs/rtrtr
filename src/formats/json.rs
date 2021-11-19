@@ -37,7 +37,6 @@ impl Set {
 #[serde(try_from = "JsonVrp", into = "JsonVrp")]
 struct Vrp {
     payload: RouteOrigin,
-    ta: String,
 }
 
 impl Vrp {
@@ -53,7 +52,6 @@ impl TryFrom<JsonVrp> for Vrp {
         MaxLenPrefix::new(json.prefix, Some(json.max_length)).map(|prefix| {
             Vrp {
                 payload: RouteOrigin::new(prefix, json.asn),
-                ta: json.ta
             }
         })
     }
@@ -77,8 +75,6 @@ struct JsonVrp {
 
     #[serde(rename = "maxLength")]
     max_length: u8,
-    
-    ta: String,
 }
 
 impl From<Vrp> for JsonVrp {
@@ -87,7 +83,6 @@ impl From<Vrp> for JsonVrp {
             prefix: vrp.payload.prefix.prefix(),
             asn: vrp.payload.asn,
             max_length: vrp.payload.prefix.resolved_max_len(),
-            ta: vrp.ta
         }
     }
 }
@@ -211,7 +206,6 @@ mod test {
             );
             assert_eq!(set.roas[0].payload.prefix.prefix_len(), 24);
             assert_eq!(set.roas[0].payload.prefix.max_len(), Some(24));
-            assert_eq!(set.roas[0].ta, "ta");
 
             assert_eq!(set.roas[1].payload.asn, 4200000000.into());
             assert_eq!(
@@ -220,7 +214,6 @@ mod test {
             );
             assert_eq!(set.roas[1].payload.prefix.prefix_len(), 32);
             assert_eq!(set.roas[1].payload.prefix.max_len(), Some(32));
-            assert_eq!(set.roas[1].ta, "ta");
         }
 
         check_set(serde_json::from_slice::<Set>(
