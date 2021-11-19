@@ -9,7 +9,8 @@ Breaking Changes
 New
 
 * The `"json"` unit now supports the modified JSON format used by newer
-  versions of rpki-client. ([#30])
+  versions of rpki-client. That is, it accepts ASNs as numbers or
+  strings and ignores any fields that aren’t essential. ([#30], [#32])
 * Added a `"slurm"` unit that can be used to manipulate payload sets based
   on local exception files defined in [RFC 8416]. ([#31])
 
@@ -25,6 +26,7 @@ Other
 [#17]: https://github.com/NLnetLabs/rtrtr/pull/17
 [#30]: https://github.com/NLnetLabs/rtrtr/pull/30
 [#31]: https://github.com/NLnetLabs/rtrtr/pull/31
+[#31]: https://github.com/NLnetLabs/rtrtr/pull/32
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
 
