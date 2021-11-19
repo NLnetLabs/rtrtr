@@ -8,18 +8,25 @@ Breaking Changes
 
 New
 
+* The `"json"` unit now supports the modified JSON format used by newer
+  versions of rpki-client. ([#30])
+* Added a `"slurm"` unit that can be used to manipulate payload sets based
+  on local exception files defined in [RFC 8416]. ([#31])
+
 Bug Fixes
 
 * Corrected the RTR PDU type of the Cache Reset PDU from 7 to 8.
   ([rpki #151])
-
-[rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 
 Other
 
 * Upgraded to Tokio 1.0, Hyper 0.14, and Reqwest 0.11. ([#17]) 
 
 [#17]: https://github.com/NLnetLabs/rtrtr/pull/17
+[#30]: https://github.com/NLnetLabs/rtrtr/pull/30
+[#31]: https://github.com/NLnetLabs/rtrtr/pull/31
+[rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
+[RFC 8416]: https://tools.ietf.org/html/rfc8416
 
 
 ## 0.1.2 ‘Ten Four’
