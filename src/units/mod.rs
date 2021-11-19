@@ -39,6 +39,9 @@ pub enum Unit {
     #[serde(rename = "rtr")]
     RtrTcp(rtr::Tcp),
 
+    #[serde(rename = "rtr-tls")]
+    RtrTls(rtr::Tls),
+
     #[serde(rename = "json")]
     Json(json::Json),
 
@@ -53,6 +56,7 @@ impl Unit {
         let _ = match self {
             Unit::Any(unit) => unit.run(component, gate).await,
             Unit::RtrTcp(unit) => unit.run(component, gate).await,
+            Unit::RtrTls(unit) => unit.run(component, gate).await,
             Unit::Json(unit) => unit.run(component, gate).await,
             Unit::Slurm(unit) => unit.run(component, gate).await,
         };
