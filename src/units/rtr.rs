@@ -1,22 +1,34 @@
 //! RTR Clients.
 
 use std::io;
+use std::fs::File;
+use std::future::Future;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::pin_mut;
 use futures::future::{select, Either};
-use log::{debug, warn};
+use log::{debug, error, info, warn};
 use rpki::rtr::client::{Client, PayloadError, PayloadTarget, PayloadUpdate};
 use rpki::rtr::payload::{Action, Payload, Timing};
 use rpki::rtr::state::{Serial, State};
 use serde::Deserialize;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::time::{timeout_at, Instant};
+use tokio_rustls::{
+    TlsConnector, client::TlsStream, rustls::ClientConfig, webpki::DNSName,
+    webpki::DNSNameRef
+};
 use crate::metrics;
 use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
 use crate::manager::Component;
 use crate::payload;
 
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use pin_project_lite::pin_project;
+use tokio::io::{ReadBuf};
 
 //------------ Tcp -----------------------------------------------------------
 
@@ -29,31 +41,182 @@ pub struct Tcp {
     /// How long to wait before connecting again if the connection is closed.
     #[serde(default = "Tcp::default_retry")]
     retry: u64,
-
-    /// Our gate status.
-    #[serde(skip)]
-    status: GateStatus,
-
-    /// Our current serial.
-    #[serde(skip)]
-    serial: Serial,
 }
 
 impl Tcp {
-    pub fn default_retry() -> u64 {
+    fn default_retry() -> u64 {
         60
     }
 
     pub async fn run(
-        mut self, mut component: Component, mut gate: Gate
+        self, component: Component, gate: Gate
+    ) -> Result<(), Terminated> {
+        RtrClient::run(component, gate, self.retry, || {
+            TcpStream::connect(&self.remote)
+        }).await
+    }
+}
+
+
+//------------ Tls -----------------------------------------------------------
+
+/// An RTR client using an unencrypted plain TCP socket.
+#[derive(Debug, Deserialize)]
+pub struct Tls {
+    /// The remote address to connect to.
+    remote: String,
+
+    /// How long to wait before connecting again if the connection is closed.
+    #[serde(default = "Tcp::default_retry")]
+    retry: u64,
+
+    /// Paths to root certficates.
+    #[serde(default)]
+    cacerts: Vec<PathBuf>,
+}
+
+struct TlsState {
+    tls: Tls,
+    domain: DNSName,
+    connector: TlsConnector,
+}
+
+impl Tls {
+    pub async fn run(
+        self, component: Component, gate: Gate
+    ) -> Result<(), Terminated> {
+        let domain = self.get_domain_name(component.name())?;
+        let connector = self.build_connector(component.name())?;
+        let retry = self.retry;
+        let state = Arc::new(TlsState {
+            tls: self, domain, connector
+        });
+        RtrClient::run(
+            component, gate, retry,
+            move || {
+                Self::connect(state.clone())
+            }
+        ).await
+    }
+
+    fn get_domain_name(
+        &self, unit_name: &str
+    ) -> Result<DNSName, Terminated> {
+        let host = if let Some((host, port)) = self.remote.rsplit_once(':') {
+            if port.parse::<u16>().is_ok() {
+                host
+            }
+            else {
+                self.remote.as_ref()
+            }
+        }
+        else {
+            self.remote.as_ref()
+        };
+        DNSNameRef::try_from_ascii_str(host).map(Into::into).map_err(|err| {
+            error!(
+                "Unit {}: Invalid remote name '{}': {}'",
+                unit_name, host, err
+            );
+            Terminated
+        })
+    }
+
+    fn build_connector(
+        &self, unit_name: &str
+    ) -> Result<TlsConnector, Terminated> {
+        let mut config = ClientConfig::new();
+        config.root_store.add_server_trust_anchors(
+            &webpki_roots::TLS_SERVER_ROOTS
+        );
+        for path in &self.cacerts {
+            let mut file = io::BufReader::new(
+                File::open(path).map_err(|err| {
+                    error!(
+                        "Unit {}: failed to open cacert file '{}': {}",
+                        unit_name, path.display(), err
+                    );
+                    Terminated
+                })?
+            );
+            match config.root_store.add_pem_file(&mut file) {
+                Ok((good, bad)) => {
+                    info!(
+                        "Unit {}: cacert file '{}': \
+                        added {} and skipped {} certificates.",
+                        unit_name, path.display(), good, bad
+                    );
+                }
+                Err(_) => {
+                    error!(
+                        "Unit {}: failed to read cacert file '{}.",
+                        unit_name, path.display()
+                    );
+                    return Err(Terminated)
+                }
+            }
+        }
+        Ok(TlsConnector::from(Arc::new(config)))
+    }
+
+    async fn connect(
+        state: Arc<TlsState>
+    ) -> Result<TlsStream<MyTcpStream>, io::Error> {
+        let stream = TcpStream::connect(&state.tls.remote).await?;
+        state.connector.connect(state.domain.as_ref(), MyTcpStream { sock: stream }).await
+    }
+}
+
+
+//------------ RtrClient -----------------------------------------------------
+
+/// The transport-agnostic parts of a running RTR client.
+#[derive(Debug)]
+struct RtrClient<Connect> {
+    /// The connect closure.
+    connect: Connect,
+
+    /// How long to wait before connecting again if the connection is closed.
+    retry: u64,
+
+    /// Our gate status.
+    status: GateStatus,
+
+    /// Our current serial.
+    serial: Serial,
+}
+
+impl<Connect> RtrClient<Connect> {
+    fn new(connect: Connect, retry: u64) -> Self {
+        RtrClient {
+            connect,
+            retry,
+            status: Default::default(),
+            serial: Serial::default(),
+        }
+    }
+}
+
+impl<Connect, ConnectFut, Socket> RtrClient<Connect>
+where
+    Connect: FnMut() -> ConnectFut,
+    ConnectFut: Future<Output = Result<Socket, io::Error>>,
+    Socket: AsyncRead + AsyncWrite + Unpin,
+{
+    async fn run(
+        mut component: Component,
+        mut gate: Gate,
+        retry: u64,
+        connect: Connect,
     ) -> Result<(), Terminated> {
         let mut target = Target::new(component.name().clone());
         let metrics = Arc::new(RtrMetrics::new(&gate));
         component.register_metrics(metrics.clone());
+        let mut this = Self::new(connect, retry);
         gate.update_status(UnitStatus::Stalled).await;
         loop {
             debug!("Unit {}: Connecting ...", target.name);
-            let mut client = match self.connect(target, &mut gate).await {
+            let mut client = match this.connect(target, &mut gate).await {
                 Ok(client) => {
                     gate.update_status(UnitStatus::Healthy).await;
                     client
@@ -64,14 +227,14 @@ impl Tcp {
                         res.name
                     );
                     gate.update_status(UnitStatus::Stalled).await;
-                    self.retry_wait(&mut gate).await?;
+                    this.retry_wait(&mut gate).await?;
                     target = res;
                     continue;
                 }
             };
 
             loop {
-                let update = match self.update(&mut client, &mut gate).await {
+                let update = match this.update(&mut client, &mut gate).await {
                     Ok(Ok(update)) => {
                         debug!(
                             "Unit {}: received update.", client.target().name
@@ -94,7 +257,7 @@ impl Tcp {
                     }
                 };
                 if let Some(update) = update {
-                    self.serial = update.serial();
+                    this.serial = update.serial();
                     client.target_mut().current = update.set().clone();
                     gate.update_data(update).await;
                 }
@@ -102,17 +265,17 @@ impl Tcp {
 
             target = client.into_target();
             gate.update_status(UnitStatus::Stalled).await;
-            self.retry_wait(&mut gate).await?;
+            this.retry_wait(&mut gate).await?;
         }
     }
 
     async fn connect(
         &mut self, target: Target, gate: &mut Gate,
-    ) -> Result<Client<TcpStream, Target>, Target> {
+    ) -> Result<Client<Socket, Target>, Target> {
         let sock = {
-            let connect = TcpStream::connect(&self.remote);
+            let connect = (self.connect)();
             pin_mut!(connect);
-            
+
             loop {
                 let process = gate.process();
                 pin_mut!(process);
@@ -132,10 +295,7 @@ impl Tcp {
         let sock = match sock {
             Ok(sock) => sock,
             Err(err) => {
-                warn!(
-                    "Unit {}: Failed to connect to RTR server {}: {}",
-                    target.name, &self.remote, err
-                );
+                warn!("Unit {}: {}", target.name, err);
                 return Err(target)
             }
         };
@@ -145,7 +305,7 @@ impl Tcp {
     }
 
     async fn update(
-        &mut self, client: &mut Client<TcpStream, Target>, gate: &mut Gate
+        &mut self, client: &mut Client<Socket, Target>, gate: &mut Gate
     ) -> Result<Result<Option<payload::Update>, io::Error>, Terminated> {
         let next_serial = self.serial.add(1);
         let update_fut = async {
@@ -238,8 +398,8 @@ impl PayloadTarget for Target {
     }
 
     fn apply(
-        &mut self, 
-        _update: Self::Update, 
+        &mut self,
+        _update: Self::Update,
         _timing: Timing
     ) -> Result<(), PayloadError> {
         unreachable!()
@@ -283,8 +443,8 @@ impl TargetUpdate {
 
 impl PayloadUpdate for TargetUpdate {
     fn push_update(
-        &mut self, 
-        action: Action, 
+        &mut self,
+        action: Action,
         payload: Payload
     ) -> Result<(), PayloadError> {
         match *self {
@@ -322,6 +482,45 @@ impl RtrMetrics {
 impl metrics::Source for RtrMetrics {
     fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
         self.gate.append(unit_name, target);
+    }
+}
+
+
+pin_project! {
+    struct MyTcpStream { #[pin] sock: TcpStream }
+}
+
+impl AsyncRead for MyTcpStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        self.as_mut().project().sock.poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for MyTcpStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8]
+    ) -> Poll<Result<usize, io::Error>> {
+        self.as_mut().project().sock.poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        self.as_mut().project().sock.poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        self.as_mut().project().sock.poll_shutdown(cx)
     }
 }
 

@@ -1,16 +1,28 @@
 /// RTR servers as a target.
 
-use std::cmp;
+use std::{cmp, io};
+use std::fs::File;
 use std::sync::Arc;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
+use futures::{TryFuture, ready};
 use log::{debug, error};
+use pin_project_lite::pin_project;
 use serde::Deserialize;
 use rpki::rtr::payload::Timing;
 use rpki::rtr::server::{NotifySender, Server, PayloadSource};
 use rpki::rtr::state::{Serial, State};
-use tokio::net::TcpListener;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::{Accept, TlsAcceptor};
+use tokio_rustls::rustls::{
+    Certificate, NoClientAuth, PrivateKey, ServerConfig
+};
+use tokio_rustls::server::TlsStream;
 use tokio_stream::wrappers::TcpListenerStream;
 use crate::payload;
 use crate::comms::Link;
@@ -79,7 +91,149 @@ impl Tcp {
             if server.run().await.is_err() {
                 error!("Fatal error listening on {}.", addr);
             }
-        });   
+        });
+        Ok(())
+    }
+
+}
+
+
+//------------ Tls -----------------------------------------------------------
+
+/// An RTR server atop TLS.
+#[derive(Debug, Deserialize)]
+pub struct Tls {
+    listen: Vec<SocketAddr>,
+    unit: Link,
+    certificate: PathBuf,
+    key: PathBuf,
+}
+
+impl Tls {
+    /// Runs the target.
+    pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
+        let acceptor = TlsAcceptor::from(Arc::new(self.create_tls_config()?));
+        let mut notify = NotifySender::new();
+        let target = Source::default();
+        for &addr in &self.listen {
+            self.spawn_listener(
+                addr, acceptor.clone(), target.clone(), notify.clone()
+            )?;
+        }
+
+        loop {
+            if let Ok(update) = self.unit.query().await {
+                debug!(
+                    "Target {}: Got update ({} entries)",
+                    component.name(), update.set().len()
+                );
+                target.update(update);
+                notify.notify()
+            }
+        }
+    }
+
+    /// Creates the TLS server config.
+    fn create_tls_config(&self) -> Result<ServerConfig, ExitError> {
+        let certs = rustls_pemfile::certs(
+            &mut io::BufReader::new(
+                File::open(&self.certificate).map_err(|err| {
+                    error!(
+                        "Failed to open TLS certificate file '{}': {}.",
+                        self.certificate.display(), err
+                    );
+                    ExitError
+                })?
+            )
+        ).map_err(|err| {
+            error!(
+                "Failed to read TLS certificate file '{}': {}.",
+                self.certificate.display(), err
+            );
+            ExitError
+        }).map(|mut certs| {
+            certs.drain(..).map(Certificate).collect()
+        })?;
+
+        let key = rustls_pemfile::pkcs8_private_keys(
+            &mut io::BufReader::new(
+                File::open(&self.key).map_err(|err| {
+                    error!(
+                        "Failed to open TLS key file '{}': {}.",
+                        self.key.display(), err
+                    );
+                    ExitError
+                })?
+            )
+        ).map_err(|err| {
+            error!(
+                "Failed to read TLS key file '{}': {}.",
+                self.key.display(), err
+            );
+            ExitError
+        }).and_then(|mut certs| {
+            if certs.is_empty() {
+                error!(
+                    "TLS key file '{}' does not contain any usable keys.",
+                    self.key.display()
+                );
+                return Err(ExitError)
+            }
+            if certs.len() != 1 {
+                error!(
+                    "TLS key file '{}' contains multiple keys.",
+                    self.key.display()
+                );
+                return Err(ExitError)
+            }
+            Ok(PrivateKey(certs.pop().unwrap()))
+        })?;
+
+        let mut res = ServerConfig::new(NoClientAuth::new());
+        res.set_single_cert(certs, key).map_err(|err| {
+            error!("Failed to create TLS server config: {}", err);
+            ExitError
+        })?;
+        Ok(res)
+    }
+
+    /// Spawns a single listener onto the current runtime.
+    fn spawn_listener(
+        &self, addr: SocketAddr, config: TlsAcceptor,
+        target: Source, notify: NotifySender,
+    ) -> Result<(), ExitError> {
+        let listener = match StdTcpListener::bind(addr) {
+            Ok(listener) => listener,
+            Err(err) => {
+                error!("Can’t bind to {}: {}", addr, err);
+                return Err(ExitError)
+            }
+        };
+        if let Err(err) = listener.set_nonblocking(true) {
+            error!(
+                "Fatal: failed to set listener {} to non-blocking: {}.",
+                addr, err
+            );
+            return Err(ExitError);
+        }
+        let listener = match TcpListener::from_std(listener) {
+            Ok(listener) => listener,
+            Err(err) => {
+                error!("Fatal error listening on {}: {}", addr, err);
+                return Err(ExitError)
+            }
+        };
+        tokio::spawn(async move {
+            use futures::StreamExt;
+
+            let listener = TcpListenerStream::new(listener).map(|sock| {
+                sock.map(|sock| TlsSocket::new(&config , sock))
+            });
+            let server = Server::new(listener, notify, target);
+            if server.run().await.is_err() {
+                error!("Fatal error listening on {}.", addr);
+            }
+        });
         Ok(())
     }
 
@@ -220,6 +374,159 @@ impl SourceData {
                 }
             })
         }
+    }
+}
+
+
+//----------- TlsSocket ------------------------------------------------------
+
+pin_project! {
+    #[project = TlsSocketProj]
+    enum TlsSocket {
+        Accept { #[pin] fut: Accept<MyTcpStream> },
+        Stream { #[pin] fut: TlsStream<MyTcpStream> },
+        Empty,
+    }
+}
+
+impl TlsSocket {
+    fn new(acceptor: &TlsAcceptor, sock: TcpStream) -> Self {
+        Self::Accept { fut: acceptor.accept(MyTcpStream { sock }) }
+    }
+
+    fn poll_accept(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Pin<&mut Self>, io::Error>> {
+        match self.as_mut().project() {
+            TlsSocketProj::Accept { fut } => {
+                match ready!(fut.try_poll(cx)) {
+                    Ok(fut) => {
+                        self.set(Self::Stream { fut });
+                        Poll::Ready(Ok(self))
+                    }
+                    Err(err) => {
+                        self.set(Self::Empty);
+                        Poll::Ready(Err(err))
+                    }
+                }
+            }
+            TlsSocketProj::Stream { .. } => Poll::Ready(Ok(self)),
+            TlsSocketProj::Empty => panic!("polling a concluded future")
+        }
+    }
+}
+
+impl rpki::rtr::server::Socket for TlsSocket { }
+
+impl AsyncRead for TlsSocket {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsSocketProj::Stream { fut } => {
+                fut.poll_read(cx, buf)
+            }
+            _ => unreachable!()
+        }
+    }
+}
+
+impl AsyncWrite for TlsSocket {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8]
+    ) -> Poll<Result<usize, io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsSocketProj::Stream { fut } => {
+                fut.poll_write(cx, buf)
+            }
+            _ => unreachable!()
+        }
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsSocketProj::Stream { fut } => {
+                fut.poll_flush(cx)
+            }
+            _ => unreachable!()
+        }
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        let mut this = match ready!(self.poll_accept(cx)) {
+            Ok(this) => this,
+            Err(err) => return Poll::Ready(Err(err))
+        };
+        match this.as_mut().project() {
+            TlsSocketProj::Stream { fut } => {
+                fut.poll_shutdown(cx)
+            }
+            _ => unreachable!()
+        }
+    }
+}
+
+
+pin_project! {
+    struct MyTcpStream { #[pin] sock: TcpStream }
+}
+
+impl AsyncRead for MyTcpStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        let res = self.as_mut().project().sock.poll_read(cx, buf);
+        res
+    }
+}
+
+impl AsyncWrite for MyTcpStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8]
+    ) -> Poll<Result<usize, io::Error>> {
+        let res = self.as_mut().project().sock.poll_write(cx, buf);
+        res
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        self.as_mut().project().sock.poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>
+    ) -> Poll<Result<(), io::Error>> {
+        self.as_mut().project().sock.poll_shutdown(cx)
     }
 }
 

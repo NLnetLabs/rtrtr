@@ -33,6 +33,9 @@ pub enum Target {
     #[serde(rename = "rtr")]
     RtrTcp(rtr::Tcp),
 
+    #[serde(rename = "rtr-tls")]
+    RtrTls(rtr::Tls),
+
     #[serde(rename = "http")]
     Http(http::Target),
 }
@@ -42,6 +45,7 @@ impl Target {
     pub async fn run(self, component: Component) -> Result<(), ExitError> {
         match self {
             Target::RtrTcp(target) => target.run(component).await,
+            Target::RtrTls(target) => target.run(component).await,
             Target::Http(target) => target.run(component).await,
         }
     }
