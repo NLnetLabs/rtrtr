@@ -13,6 +13,8 @@ New
   strings and ignores any fields that aren’t essential. ([#30], [#32])
 * Added a `"slurm"` unit that can be used to manipulate payload sets based
   on local exception files defined in [RFC 8416]. ([#31])
+* Added `"rtr-tls"` unit and target that send RTR data over TLS
+  connections. ([#34])
 
 Bug Fixes
 
@@ -26,7 +28,8 @@ Other
 [#17]: https://github.com/NLnetLabs/rtrtr/pull/17
 [#30]: https://github.com/NLnetLabs/rtrtr/pull/30
 [#31]: https://github.com/NLnetLabs/rtrtr/pull/31
-[#31]: https://github.com/NLnetLabs/rtrtr/pull/32
+[#32]: https://github.com/NLnetLabs/rtrtr/pull/32
+[#34]: https://github.com/NLnetLabs/rtrtr/pull/34
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
 
