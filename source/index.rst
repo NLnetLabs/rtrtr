@@ -38,6 +38,8 @@ exchanging operational experiences we provide a `mailing list
    configuration
    example-scenario
    
+   manual-page
+
 .. history
 .. authors
 .. license
