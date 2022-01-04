@@ -1,3 +1,6 @@
+Manual Page
+===========
+
 .. only:: html
 
     :command:`rtrtr` – RPKI data proxy
