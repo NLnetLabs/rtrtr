@@ -1,19 +1,29 @@
-//! RTR Clients.
+//! RTR client units.
+//!
+//! There are two units in this module that act as an RTR client but use
+//! different transport protocols: [`Tcp`] uses plain, unencrypted TCP while
+//! [`Tls`] uses TLS.
 
 use std::io;
 use std::fs::File;
 use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic;
+use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64};
+use std::task::{Context, Poll};
 use std::time::Duration;
+use chrono::{TimeZone, Utc};
 use futures::pin_mut;
 use futures::future::{select, Either};
 use log::{debug, error, info, warn};
+use pin_project_lite::pin_project;
 use rpki::rtr::client::{Client, PayloadError, PayloadTarget, PayloadUpdate};
 use rpki::rtr::payload::{Action, Payload, Timing};
 use rpki::rtr::state::{Serial, State};
 use serde::Deserialize;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 use tokio::time::{timeout_at, Instant};
 use tokio_rustls::{
@@ -23,12 +33,8 @@ use tokio_rustls::{
 use crate::metrics;
 use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
 use crate::manager::Component;
+use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::payload;
-
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use pin_project_lite::pin_project;
-use tokio::io::{ReadBuf};
 
 //------------ Tcp -----------------------------------------------------------
 
@@ -44,16 +50,28 @@ pub struct Tcp {
 }
 
 impl Tcp {
+    /// The default re-connect timeout in seconds.
     fn default_retry() -> u64 {
         60
     }
 
+    /// Runs the unit.
+    ///
+    /// This method will only ever return if the RTR client encounters a fatal
+    /// error.
     pub async fn run(
         self, component: Component, gate: Gate
     ) -> Result<(), Terminated> {
-        RtrClient::run(component, gate, self.retry, || {
-            TcpStream::connect(&self.remote)
-        }).await
+        let metrics = Arc::new(RtrMetrics::new(&gate));
+        RtrClient::run(
+            component, gate, self.retry, metrics.clone(),
+            || async {
+                Ok(RtrTcpStream {
+                    sock: TcpStream::connect(&self.remote).await?,
+                    metrics: metrics.clone()
+                })
+            }
+        ).await
     }
 }
 
@@ -71,34 +89,51 @@ pub struct Tls {
     retry: u64,
 
     /// Paths to root certficates.
+    ///
+    /// The files should contain one or more PEM-encoded certificates.
     #[serde(default)]
     cacerts: Vec<PathBuf>,
 }
 
+/// Run-time information of the TLS unit.
 struct TlsState {
+    /// The unit configuration.
     tls: Tls,
+
+    /// The name of the server.
     domain: DNSName,
+
+    /// The TLS configuration for connecting to the server.
     connector: TlsConnector,
+
+    /// The unit’s metrics.
+    metrics: Arc<RtrMetrics>,
 }
 
 impl Tls {
+    /// Runs the unit.
+    ///
+    /// This method will only ever return if the RTR client encounters a fatal
+    /// error.
     pub async fn run(
         self, component: Component, gate: Gate
     ) -> Result<(), Terminated> {
         let domain = self.get_domain_name(component.name())?;
         let connector = self.build_connector(component.name())?;
         let retry = self.retry;
+        let metrics = Arc::new(RtrMetrics::new(&gate));
         let state = Arc::new(TlsState {
-            tls: self, domain, connector
+            tls: self, domain, connector, metrics: metrics.clone(), 
         });
         RtrClient::run(
-            component, gate, retry,
+            component, gate, retry, metrics,
             move || {
                 Self::connect(state.clone())
             }
         ).await
     }
 
+    /// Converts the server address into the name for certificate validation.
     fn get_domain_name(
         &self, unit_name: &str
     ) -> Result<DNSName, Terminated> {
@@ -122,6 +157,7 @@ impl Tls {
         })
     }
 
+    /// Prepares the TLS configuration for connecting to the server.
     fn build_connector(
         &self, unit_name: &str
     ) -> Result<TlsConnector, Terminated> {
@@ -159,11 +195,18 @@ impl Tls {
         Ok(TlsConnector::from(Arc::new(config)))
     }
 
+    /// Connects to the server.
     async fn connect(
         state: Arc<TlsState>
-    ) -> Result<TlsStream<MyTcpStream>, io::Error> {
+    ) -> Result<TlsStream<RtrTcpStream>, io::Error> {
         let stream = TcpStream::connect(&state.tls.remote).await?;
-        state.connector.connect(state.domain.as_ref(), MyTcpStream { sock: stream }).await
+        state.connector.connect(
+            state.domain.as_ref(),
+            RtrTcpStream {
+                sock: stream,
+                metrics: state.metrics.clone(),
+            }
+        ).await
     }
 }
 
@@ -184,15 +227,20 @@ struct RtrClient<Connect> {
 
     /// Our current serial.
     serial: Serial,
+
+    /// The unit’s metrics.
+    metrics: Arc<RtrMetrics>,
 }
 
 impl<Connect> RtrClient<Connect> {
-    fn new(connect: Connect, retry: u64) -> Self {
+    /// Creates a new client from the connect closure and retry timeout.
+    fn new(connect: Connect, retry: u64, metrics: Arc<RtrMetrics>) -> Self {
         RtrClient {
             connect,
             retry,
             status: Default::default(),
             serial: Serial::default(),
+            metrics,
         }
     }
 }
@@ -203,16 +251,20 @@ where
     ConnectFut: Future<Output = Result<Socket, io::Error>>,
     Socket: AsyncRead + AsyncWrite + Unpin,
 {
+    /// Runs the client.
+    ///
+    /// This method will only ever return if the RTR client encounters a fatal
+    /// error.
     async fn run(
         mut component: Component,
         mut gate: Gate,
         retry: u64,
+        metrics: Arc<RtrMetrics>,
         connect: Connect,
     ) -> Result<(), Terminated> {
         let mut target = Target::new(component.name().clone());
-        let metrics = Arc::new(RtrMetrics::new(&gate));
         component.register_metrics(metrics.clone());
-        let mut this = Self::new(connect, retry);
+        let mut this = Self::new(connect, retry, metrics);
         gate.update_status(UnitStatus::Stalled).await;
         loop {
             debug!("Unit {}: Connecting ...", target.name);
@@ -269,6 +321,11 @@ where
         }
     }
 
+    /// Connects to the server.
+    ///
+    /// Upon succes, returns an RTR client that wraps the provided target.
+    /// Upon failure to connect, logs the reason and returns the target for
+    /// later retry.
     async fn connect(
         &mut self, target: Target, gate: &mut Gate,
     ) -> Result<Client<Socket, Target>, Target> {
@@ -304,17 +361,33 @@ where
         Ok(Client::new(sock, target, state))
     }
 
+    /// Updates the data set from upstream.
+    ///
+    /// Waits until it is time to ask for an update or the server sends a
+    /// notification and then asks for an update.
+    ///
+    /// This can fail fatally, in which case `Err(Terminated)` is returned and
+    /// the client should shut down. This can also fail normally, i.e., the
+    /// connections with the server fails or the server misbehaves. In this
+    /// case, `Ok(Err(_))` is returned and the client should wait and try
+    /// again.
+    ///
+    /// A successful update results in a (slightly passive-agressive)
+    /// `Ok(Ok(_))`. If the client’s data set has changed, this change is
+    /// returned, otherwise the fact that there are no changes is indicated
+    /// via `None`.
     async fn update(
         &mut self, client: &mut Client<Socket, Target>, gate: &mut Gate
     ) -> Result<Result<Option<payload::Update>, io::Error>, Terminated> {
         let next_serial = self.serial.add(1);
         let update_fut = async {
             let update = client.update().await?;
+            let state = client.state();
             if update.is_definitely_empty() {
-                return Ok(None)
+                return Ok((state, None))
             }
             match update.into_update(next_serial) {
-                Ok(res) => Ok(Some(res)),
+                Ok(res) => Ok((state, Some(res))),
                 Err(err) => {
                     client.send_error(err).await?;
                     Err(io::Error::new(io::ErrorKind::Other, err))
@@ -335,12 +408,33 @@ where
                     update_fut = next_fut;
                 }
                 Either::Right((res, _)) => {
+                    let res = match res {
+                        Ok((state, res)) => {
+                            if let Some(state) = state {
+                                self.metrics.session.store(
+                                    state.session().into(),
+                                    atomic::Ordering::Relaxed
+                                );
+                                self.metrics.serial.store(
+                                    state.serial().into(),
+                                    atomic::Ordering::Relaxed
+                                );
+                                self.metrics.updated.store(
+                                    Utc::now().timestamp(),
+                                    atomic::Ordering::Relaxed
+                                );
+                            }
+                            Ok(res)
+                        }
+                        Err(err) => Err(err)
+                    };
                     return Ok(res)
                 }
             }
         }
     }
 
+    /// Waits until we should retry connecting to the server.
     async fn retry_wait(
         &mut self, gate: &mut Gate
     ) -> Result<(), Terminated> {
@@ -363,15 +457,20 @@ where
 
 //------------ Target --------------------------------------------------------
 
+/// The RPKI data target for the RTR client.
 struct Target {
+    /// The current payload set.
     current: payload::Set,
 
+    /// The RTR client state.
     state: Option<State>,
 
+    /// The component name.
     name: Arc<str>,
 }
 
 impl Target {
+    /// Creates a new RTR target for the component with the given name.
     pub fn new(name: Arc<str>) -> Self {
         Target {
             current: Default::default(),
@@ -402,6 +501,7 @@ impl PayloadTarget for Target {
         _update: Self::Update,
         _timing: Timing
     ) -> Result<(), PayloadError> {
+        // This method is not used by the way we use the RTR client.
         unreachable!()
     }
 }
@@ -409,15 +509,23 @@ impl PayloadTarget for Target {
 
 //------------ TargetUpdate --------------------------------------------------
 
+/// An update of the RPKI data set being assembled by the RTR client.
 enum TargetUpdate {
+    /// This is a reset query producing the complete data set.
     Reset(payload::PackBuilder),
+
+    /// This is a serial query producing the difference to an earlier set.
     Serial {
+        /// The current data set the differences are to be applied to.
         set: payload::Set,
+
+        /// The differences as sent by the server.
         diff: payload::DiffBuilder,
     }
 }
 
 impl TargetUpdate {
+    /// Returns whether there are definitely no changes in the update.
     fn is_definitely_empty(&self) -> bool {
         match *self {
             TargetUpdate::Reset(_) => false,
@@ -425,6 +533,12 @@ impl TargetUpdate {
         }
     }
 
+    /// Converts the target update into a payload update.
+    ///
+    /// This will fail if the diff of a serial update doesn’t apply cleanly.
+    /// 
+    /// Upon success, the returned payload update will have the given serial
+    /// number.
     fn into_update(
         self, serial: Serial
     ) -> Result<payload::Update, PayloadError> {
@@ -466,47 +580,195 @@ impl PayloadUpdate for TargetUpdate {
 
 //------------ RtrMetrics ----------------------------------------------------
 
+/// The metrics for an RTR client.
 #[derive(Debug, Default)]
 struct RtrMetrics {
+    /// The gate metrics.
     gate: Arc<GateMetrics>,
+
+    /// The session ID of the last successful update.
+    ///
+    /// This is actually an `Option<u16>` with the value of `u32::MAX`
+    /// serving as `None`.
+    session: AtomicU32,
+
+    /// The serial number of the last successful update.
+    ///
+    /// This is actually an option with the value of `u32::MAX` serving as
+    /// `None`.
+    serial: AtomicU32,
+
+    /// The time the last successful update finished.
+    ///
+    /// This is an option of the unix timestamp. The value of `i64::MIN`
+    /// serves as a `None`.
+    updated: AtomicI64,
+
+    /// The number of bytes read.
+    bytes_read: AtomicU64,
+
+    /// The number of bytes written.
+    bytes_written: AtomicU64,
 }
 
 impl RtrMetrics {
     fn new(gate: &Gate) -> Self {
         RtrMetrics {
             gate: gate.metrics(),
+            session: u32::MAX.into(),
+            serial: u32::MAX.into(),
+            updated: i64::MIN.into(),
+            bytes_read: 0.into(),
+            bytes_written: 0.into(),
         }
     }
+
+    fn inc_bytes_read(&self, count: u64) {
+        self.bytes_read.fetch_add(count, atomic::Ordering::Relaxed);
+    }
+
+    fn inc_bytes_written(&self, count: u64) {
+        self.bytes_written.fetch_add(count, atomic::Ordering::Relaxed);
+    }
+}
+
+impl RtrMetrics {
+    const SESSION_METRIC: Metric = Metric::new(
+        "session_id", "the session ID of the last successful update",
+        MetricType::Text, MetricUnit::Info
+    );
+    const SERIAL_METRIC: Metric = Metric::new(
+        "serial", "the serial number of the last successful update",
+        MetricType::Counter, MetricUnit::Total
+    );
+    const UPDATED_AGO_METRIC: Metric = Metric::new(
+        "since_last_rtr_update",
+        "the number of seconds since last successful update",
+        MetricType::Counter, MetricUnit::Total
+    );
+    const UPDATED_METRIC: Metric = Metric::new(
+        "rtr_updated", "the time of the last successful update",
+        MetricType::Text, MetricUnit::Info
+    );
+    const BYTES_READ_METRIC: Metric = Metric::new(
+        "bytes_read", "the number of bytes read",
+        MetricType::Counter, MetricUnit::Total,
+    );
+    const BYTES_WRITTEN_METRIC: Metric = Metric::new(
+        "bytes_written", "the number of bytes written",
+        MetricType::Counter, MetricUnit::Total,
+    );
+
+    const ISO_DATE: &'static [chrono::format::Item<'static>] = &[
+        chrono::format::Item::Numeric(
+            chrono::format::Numeric::Year, chrono::format::Pad::Zero
+        ),
+        chrono::format::Item::Literal("-"),
+        chrono::format::Item::Numeric(
+            chrono::format::Numeric::Month, chrono::format::Pad::Zero
+        ),
+        chrono::format::Item::Literal("-"),
+        chrono::format::Item::Numeric(
+            chrono::format::Numeric::Day, chrono::format::Pad::Zero
+        ),
+        chrono::format::Item::Literal("T"),
+        chrono::format::Item::Numeric(
+            chrono::format::Numeric::Hour, chrono::format::Pad::Zero
+        ),
+        chrono::format::Item::Literal(":"),
+        chrono::format::Item::Numeric(
+            chrono::format::Numeric::Minute, chrono::format::Pad::Zero
+        ),
+        chrono::format::Item::Literal(":"),
+        chrono::format::Item::Numeric(
+            chrono::format::Numeric::Second, chrono::format::Pad::Zero
+        ),
+        chrono::format::Item::Literal("Z"),
+    ];
 }
 
 impl metrics::Source for RtrMetrics {
     fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
         self.gate.append(unit_name, target);
+
+        let session = self.session.load(atomic::Ordering::Relaxed);
+        if session != u32::MAX {
+            target.append_simple(
+                &Self::SESSION_METRIC, Some(unit_name), session
+            );
+        }
+
+        let serial = self.serial.load(atomic::Ordering::Relaxed);
+        if serial != u32::MAX {
+            target.append_simple(
+                &Self::SERIAL_METRIC, Some(unit_name), serial
+            )
+        }
+
+        let updated = self.updated.load(atomic::Ordering::Relaxed);
+        if updated != i64::MIN {
+            let updated = Utc.timestamp(updated, 0);
+            let ago = Utc::now().signed_duration_since(updated);
+            target.append_simple(
+                &Self::UPDATED_AGO_METRIC, Some(unit_name), ago.num_seconds()
+            );
+            target.append_simple(
+                &Self::UPDATED_METRIC, Some(unit_name),
+                updated.format_with_items(Self::ISO_DATE.iter())
+            );
+        }
+
+        target.append_simple(
+            &Self::BYTES_READ_METRIC, Some(unit_name),
+            self.bytes_read.load(atomic::Ordering::Relaxed)
+        );
+        target.append_simple(
+            &Self::BYTES_WRITTEN_METRIC, Some(unit_name),
+            self.bytes_written.load(atomic::Ordering::Relaxed)
+        );
     }
 }
 
 
+//------------ RtrTcpStream --------------------------------------------------
+
 pin_project! {
-    struct MyTcpStream { #[pin] sock: TcpStream }
+    /// A wrapper around a TCP socket producing metrics.
+    struct RtrTcpStream {
+        #[pin] sock: TcpStream,
+
+        metrics: Arc<RtrMetrics>,
+    }
 }
 
-impl AsyncRead for MyTcpStream {
+impl AsyncRead for RtrTcpStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>
     ) -> Poll<Result<(), io::Error>> {
-        self.as_mut().project().sock.poll_read(cx, buf)
+        let len = buf.filled().len();
+        let res = self.as_mut().project().sock.poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = res {
+            self.metrics.inc_bytes_read(
+                (buf.filled().len().saturating_sub(len)) as u64
+            )    
+        }
+        res
     }
 }
 
-impl AsyncWrite for MyTcpStream {
+impl AsyncWrite for RtrTcpStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8]
     ) -> Poll<Result<usize, io::Error>> {
-        self.as_mut().project().sock.poll_write(cx, buf)
+        let res = self.as_mut().project().sock.poll_write(cx, buf);
+        if let Poll::Ready(Ok(n)) = res {
+            self.metrics.inc_bytes_written(n as u64)
+        }
+        res
     }
 
     fn poll_flush(
