@@ -293,10 +293,14 @@ where
                         );
                         update
                     }
-                    Ok(Err(_)) => {
+                    Ok(Err(err)) => {
+                        warn!(
+                            "Unit {}: RTR client disconnected: {}",
+                            client.target().name, err,
+                        );
                         debug!(
-                            "Unit {}: RTR client disconnected.",
-                            client.target().name
+                            "Unit {}: awaiting reconnect.",
+                            client.target().name,
                         );
                         break;
                     }
