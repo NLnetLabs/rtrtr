@@ -1,5 +1,21 @@
-//! RIPE NCC Validator/Cloudflare/rpki-client JSON format.
+//! The semi-standard JSON format for validated RPKI data.
 //!
+//! There are multiple slightly different flavours around. This
+//! implementation tries to be able to read all of them and produces the
+//! flavour used by Routinator (because of course).
+//!
+//! Specifically, we expect the JSON file to be an object with one member
+//! called `"roa"` which contains a list of object. Each object represents
+//! one VRP and contains one member called `"prefix"` containing the prefix
+//! as a string in ‘slash notation,’ one member called `"asn"` with the AS
+//! number as either an integer or a string with or without the `AS` prefix,
+//! and one member called `maxLength` with the max length as an integer.
+//!
+//! Additional members are allowed both in the top-level object and the VRP
+//! objects. They are simply ignored.
+//!
+//! When creating a JSON file, this minimal format will be used. The ASN will
+//! be represented as a string with the `AS` prefix.
 
 use std::convert::TryFrom;
 use routecore::asn::Asn;
@@ -14,13 +30,15 @@ use crate::payload;
 
 //------------ Set -----------------------------------------------------------
 
+/// The content of a JSON formatted data set.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Set {
-    metadata: Option<Metadata>,
+    /// The list of VRPs.
     roas: Vec<Vrp>,
 }
 
 impl Set {
+    /// Converts the JSON formatted data set into a payload set.
     pub fn into_payload(self) -> payload::Set {
         let mut res = payload::PackBuilder::empty();
         for item in self.roas {
@@ -33,13 +51,16 @@ impl Set {
 
 //------------ Vrp -----------------------------------------------------------
 
+/// The content of a JSON formatted VRP.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(try_from = "JsonVrp", into = "JsonVrp")]
 struct Vrp {
+    /// The payload of the VRP.
     payload: RouteOrigin,
 }
 
 impl Vrp {
+    /// Converts the JSON VRP into regular payload.
     fn into_payload(self) -> Payload {
         Payload::Origin(self.payload)
     }
@@ -63,16 +84,22 @@ impl TryFrom<JsonVrp> for Vrp {
 
 //------------ JsonVrp -------------------------------------------------------
 
+/// A JSON formatted VRP.
+///
+/// This is a private helper type making the Serde impls easier.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct JsonVrp {
+    /// The prefix member.
     prefix: Prefix,
     
+    /// The ASN member.
     #[serde(
         serialize_with = "Asn::serialize_as_str",
         deserialize_with = "Asn::deserialize_from_any",
     )]
     asn: Asn,
 
+    /// The max-length member.
     #[serde(rename = "maxLength")]
     max_length: u8,
 }
@@ -88,31 +115,37 @@ impl From<Vrp> for JsonVrp {
 }
 
 
-//------------ Metadata ------------------------------------------------------
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Metadata {
-}
-
-
 //============ Output ========================================================
 
 //------------ OutputStream --------------------------------------------------
 
+/// A stream of JSON formatted output.
 pub struct OutputStream {
+    /// The iterator over the payload set.
     iter: payload::OwnedSetIter,
+
+    /// The current stream state.
     state: StreamState,
 }
 
+/// The state of the stream.
 #[derive(Clone, Copy, Debug)]
 enum StreamState {
+    /// We need to write the header next.
     Header,
+
+    /// We need to write the first element next.
     First,
+
+    /// We need to write more elements.
     Body,
+
+    /// We are done!
     Done
 }
 
 impl OutputStream {
+    /// Creates a new output stream for the given payload set.
     pub fn new(set: payload::Set) -> Self {
         OutputStream {
             iter: set.into_owned_iter(),
@@ -120,6 +153,7 @@ impl OutputStream {
         }
     }
 
+    /// Returns the next route origin in the payload set.
     pub fn next_origin(&mut self) -> Option<RouteOrigin> {
         loop {
             match self.iter.next() {
