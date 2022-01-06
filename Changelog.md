@@ -20,6 +20,8 @@ Bug Fixes
 
 * Corrected the RTR PDU type of the Cache Reset PDU from 7 to 8.
   ([rpki #151])
+* The `--config` command line option is now mandatory, resulting in a
+  proper error message when it is missing rather than a panic. ([#41])
 
 Other
 
@@ -30,6 +32,7 @@ Other
 [#31]: https://github.com/NLnetLabs/rtrtr/pull/31
 [#32]: https://github.com/NLnetLabs/rtrtr/pull/32
 [#34]: https://github.com/NLnetLabs/rtrtr/pull/34
+[#41]: https://github.com/NLnetLabs/rtrtr/pull/41
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
 
