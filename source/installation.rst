@@ -16,46 +16,48 @@ run with Docker or build from Cargo, Rust's build system and package manager.
 
 .. tabs::
 
-   .. group-tab:: Debian Packages
+   .. group-tab:: Debian
 
-       If you have a machine with an amd64/x86_64 architecture running a recent
-       Debian or Ubuntu distribution, you can install RTRTR from our `software
-       package repository <https://packages.nlnetlabs.nl>`_. To use it, add the
-       line below that corresponds to your distribution to either
-       :file:`/etc/apt/sources.list` or :file:`/etc/apt/sources.list.d/`.
-
-       .. list-table:: Debian
-          :widths: 1 15
-
-          *  -  9
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch main``
-          *  -  10
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ buster main``
-          *  -  11
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ bullseye main``
-
-       .. list-table:: Ubuntu
-          :widths: 1 15
-
-          *  -  16.x
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial main``
-          *  -  18.x
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic main``
-          *  -  20.x
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal main``
-
-       Then run the following commands to add the public key and update the
-       repository list:
-
-       .. code-block:: text
-
-          wget -qO- https://packages.nlnetlabs.nl/aptkey.asc | sudo apt-key add -
-          sudo apt update
-
-       You can then install RTRTR by running:
+       If you have a machine with an amd64/x86_64 architecture running Debian 9,
+       10 or 11, you can install RTRTR from our `software package
+       repository <https://packages.nlnetlabs.nl>`_. 
+       
+       First update the ``apt`` package index: 
 
        .. code-block:: bash
 
+          sudo apt update
+
+       Then install packages to allow ``apt`` to use a repository over HTTPS:
+
+       .. code-block:: bash
+
+          sudo apt install \
+            ca-certificates \
+            curl \
+            gnupg \
+            lsb-release
+
+       Add the GPG key from NLnet Labs:
+
+       .. code-block:: bash
+
+          curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/nlnetlabs-archive-keyring.gpg
+
+       Now, use the following command to set up the *main* repository:
+
+       .. code-block:: bash
+
+          echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
+          $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
+
+       After updating the ``apt`` package index you can then install RTRTR by
+       running:
+
+       .. code-block:: bash
+
+          sudo apt update
           sudo apt install rtrtr
 
        You can now configure RTRTR by editing :file:`/etc/rtrtr.conf` and start
@@ -73,12 +75,71 @@ run with Docker or build from Cargo, Rust's build system and package manager.
        
           sudo journalctl --unit=rtrtr
 
-   .. group-tab:: RPM Packages
+   .. group-tab:: Ubuntu
+
+       If you have a machine with an amd64/x86_64 architecture running Ubuntu
+       16.x, 18.x, or 20.x, you can install RTRTR from our `software
+       package repository <https://packages.nlnetlabs.nl>`_. 
+       
+       First update the ``apt`` package index: 
+
+       .. code-block:: bash
+
+          sudo apt update
+
+       Then install packages to allow ``apt`` to use a repository over HTTPS:
+
+       .. code-block:: bash
+
+          sudo apt install \
+            ca-certificates \
+            curl \
+            gnupg \
+            lsb-release
+
+       Add the GPG key from NLnet Labs:
+
+       .. code-block:: bash
+
+          curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/nlnetlabs-archive-keyring.gpg
+
+       Now, use the following command to set up the *main* repository:
+
+       .. code-block:: bash
+
+          echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/ubuntu \
+          $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
+
+       After updating the ``apt`` package index you can then install RTRTR by
+       running:
+
+       .. code-block:: bash
+
+          sudo apt update
+          sudo apt install rtrtr
+
+       You can now configure RTRTR by editing :file:`/etc/rtrtr.conf` and start
+       it with ``sudo systemctl enable --now rtrtr``. 
+       
+       You can check the status of RTRTR with:
+       
+       .. code-block:: bash 
+       
+          sudo systemctl status rtrtr
+       
+       You can view the logs with: 
+       
+       .. code-block:: bash
+       
+          sudo journalctl --unit=rtrtr
+
+   .. group-tab:: RHEL/CentOS
 
        If you have a machine with an amd64/x86_64 architecture running a
-       :abbr:`RHEL (Red Hat Enterprise Linux)`/CentOS 7 or 8 distribution, you
-       can install RTRTR from our `software package repository
-       <https://packages.nlnetlabs.nl>`_. 
+       :abbr:`RHEL (Red Hat Enterprise Linux)`/CentOS 7 or 8 distribution, or a
+       compatible OS such as Rocky Linux, you can install RTRTR from our
+       `software package repository <https://packages.nlnetlabs.nl>`_. 
        
        To use this repository, create a file named 
        :file:`/etc/yum.repos.d/nlnetlabs.repo`, enter this configuration and 
@@ -187,40 +248,19 @@ run with Docker or build from Cargo, Rust's build system and package manager.
           rustup update
           cargo install --locked --force rtrtr
 
-Installing Specific Versions
-----------------------------
-
-Before every new release of RTRTR, one or more release candidates are provided
-for testing through every installation method. You can also install a specific
-version, if needed.
+Updating
+--------
 
 .. tabs::
 
-   .. group-tab:: Debian Packages
+   .. group-tab:: Debian
 
-       To install release candidates of RTRTR, add the line below that
-       corresponds to your distribution to either :file:`/etc/apt/sources.list`
-       or :file:`/etc/apt/sources.list.d/`.
+       To update an existing RTRTR installation, first update the 
+       repository using:
 
-       .. list-table:: Debian
-          :widths: 1 15
+       .. code-block:: text
 
-          *  -  9
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch-proposed main``
-          *  -  10
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ buster-proposed main``
-          *  -  11
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ bullseye-proposed main``
-
-       .. list-table:: Ubuntu
-          :widths: 1 15
-
-          *  -  16.x
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial-proposed main``
-          *  -  18.x
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic-proposed main``
-          *  -  20.x
-             -  ``deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal-proposed main``
+          sudo apt update
 
        You can use this command to get an overview of the available versions:
 
@@ -228,17 +268,153 @@ version, if needed.
 
           sudo apt policy rtrtr
 
-       You can install a specific version using ``<package name>=<version>``,
-       e.g.:
+       You can upgrade an existing RTRTR installation to the latest version
+       using:
 
        .. code-block:: text
 
-          sudo apt install rtrtr=0.1.1
-          
-   .. group-tab:: RPM Packages
+          sudo apt --only-upgrade install rtrtr
 
-       To install release candidates of RTRTR, create an additional repo file
-       named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`, enter this
+   .. group-tab:: Ubuntu
+
+       To update an existing RTRTR installation, first update the 
+       repository using:
+
+       .. code-block:: text
+
+          sudo apt update
+
+       You can use this command to get an overview of the available versions:
+
+       .. code-block:: text
+
+          sudo apt policy rtrtr
+
+       You can upgrade an existing RTRTR installation to the latest version
+       using:
+
+       .. code-block:: text
+
+          sudo apt --only-upgrade install rtrtr
+
+   .. group-tab:: RHEL/CentOS
+
+       To update an existing RTRTR installation, you can use this command 
+       to get an overview of the available versions:
+        
+       .. code-block:: bash
+        
+          sudo yum --showduplicates list rtrtr
+          
+       You can update to the latest version using:
+         
+       .. code-block:: bash
+         
+          sudo yum update -y rtrtr
+             
+   .. group-tab:: Docker
+
+       Upgrading to the latest version of RTRTR can be done with:
+        
+       .. code-block:: text
+       
+          docker run -it nlnetlabs/rtrtr:latest
+               
+   .. group-tab:: Cargo
+
+       If you want to install the latest version of RTRTR using Cargo, it's
+       recommended to also update Rust to the latest version first. Use the 
+       ``--force`` option to  overwrite an existing version with the latest 
+       release:
+               
+       .. code-block:: text
+
+          rustup update
+          cargo install --locked --force rtrtr
+          
+Installing Specific Versions
+----------------------------
+
+Before every new release of RTRTR, one or more release candidates are 
+provided for testing through every installation method. You can also install
+a specific version, if needed.
+
+.. tabs::
+
+   .. group-tab:: Debian
+
+       If you would like to try out release candidates of RTRTR you can add
+       the *proposed* repository to the existing *main* repository described
+       earlier. 
+       
+       Assuming you already have followed the steps to install regular releases,
+       run this command to add the additional repository:
+
+       .. code-block:: bash
+
+          echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
+          $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
+
+       Make sure to update the ``apt`` package index:
+
+       .. code-block:: bash
+
+          sudo apt update
+       
+       You can now use this command to get an overview of the available 
+       versions:
+
+       .. code-block:: bash
+
+          sudo apt policy rtrtr
+
+       You can install a specific version using ``<package name>=<version>``,
+       e.g.:
+
+       .. code-block:: bash
+
+          sudo apt install rtrtr=0.1.1~rc2-1buster
+
+   .. group-tab:: Ubuntu
+
+       If you would like to try out release candidates of RTRTR you can add
+       the *proposed* repository to the existing *main* repository described
+       earlier. 
+       
+       Assuming you already have followed the steps to install regular releases,
+       run this command to add the additional repository:
+
+       .. code-block:: bash
+
+          echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/ubuntu \
+          $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
+
+       Make sure to update the ``apt`` package index:
+
+       .. code-block:: bash
+
+          sudo apt update
+       
+       You can now use this command to get an overview of the available 
+       versions:
+
+       .. code-block:: bash
+
+          sudo apt policy rtrtr
+
+       You can install a specific version using ``<package name>=<version>``,
+       e.g.:
+
+       .. code-block:: bash
+
+          sudo apt install rtrtr=0.1.1~rc2-1bionic
+          
+   .. group-tab:: RHEL/CentOS
+
+       To install release candidates of RTRTR, create an additional repo 
+       file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`, enter this
        configuration and save it:
        
        .. code-block:: text
@@ -263,27 +439,27 @@ version, if needed.
              
    .. group-tab:: Docker
 
-       All release versions of RTRTR, as well as release candidates and builds
-       based on the latest main branch are available on `Docker Hub
+       All release versions of RTRTR, as well as release candidates and
+       builds based on the latest main branch are available on `Docker Hub
        <https://hub.docker.com/r/nlnetlabs/rtrtr/tags?page=1&ordering=last_updated>`_. 
        
-       For example, installing RTRTR 0.1.2 is as simple as:
+       For example, installing RTRTR 0.1.1 is as simple as:
         
        .. code-block:: text
        
-          docker run -it nlnetlabs/rtrtr:v0.1.2
+          docker run -it nlnetlabs/rtrtr:v0.1.1
                
    .. group-tab:: Cargo
 
        All release versions of RTRTR, as well as release candidates, are
-       available on `crates.io <https://crates.io/crates/rtrtr/versions>`_, the
-       Rust package registry. If you want to install a specific version of RTRTR
-       using Cargo, explicitly use the ``--version`` option. If needed, use the
-       ``--force`` option to overwrite an existing version:
+       available on `crates.io <https://crates.io/crates/rtrtr/versions>`_,
+       the Rust package registry. If you want to install a specific version of
+       RTRTR using Cargo, explicitly use the ``--version`` option. If
+       needed, use the ``--force`` option to overwrite an existing version:
                
        .. code-block:: text
 
-          cargo install --locked --force rtrtr --version 0.1.2
+          cargo install --locked --force rtrtr --version 0.1.2-rc2
 
        All new features of RTRTR are built on a branch and merged via a
        `pull request <https://github.com/NLnetLabs/rtrtr/pulls>`_, allowing
