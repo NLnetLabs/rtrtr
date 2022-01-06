@@ -63,6 +63,7 @@ impl Config {
         let app = app.arg(Arg::with_name("config")
                 .short("c")
                  .long("config")
+                 .required(true)
                  .takes_value(true)
                  .value_name("PATH")
                  .help("Read base configuration from this file")
