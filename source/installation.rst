@@ -18,7 +18,7 @@ run with Docker or build from Cargo, Rust's build system and package manager.
 
 .. tabs::
 
-   .. group-tab:: Deb Packages
+   .. group-tab:: Debian Packages
 
        If you have a machine with an amd64/x86_64 architecture running a recent
        Debian or Ubuntu distribution, you can install RTRTR from our `software
@@ -198,7 +198,7 @@ version, if needed.
 
 .. tabs::
 
-   .. group-tab:: Deb Packages
+   .. group-tab:: Debian Packages
 
        To install release candidates of RTRTR, add the line below that
        corresponds to your distribution to either :file:`/etc/apt/sources.list`
