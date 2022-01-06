@@ -1,5 +1,3 @@
-.. _doc_rtrtr_introduction:
-
 Introduction
 ============
 

@@ -1,5 +1,3 @@
-.. _doc_rtrtr:
-
 RTRTR – *main* branch
 =====================
 
@@ -37,7 +35,6 @@ exchanging operational experiences we provide a `mailing list
    installation
    configuration
    example-scenario
-   
    manual-page
 
 .. history
