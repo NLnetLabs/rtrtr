@@ -30,6 +30,7 @@ impl Format {
 
 //------------ Stream --------------------------------------------------------
 
+/// A stream of formatted output.
 pub struct Stream(StreamInner);
 
 enum StreamInner {
@@ -37,6 +38,7 @@ enum StreamInner {
 }
 
 impl Stream {
+    /// Creates a new output stream from a format and a data set.
     fn new(format: Format, set: payload::Set) -> Self {
         Stream(match format {
             Format::Json => StreamInner::Json(json::OutputStream::new(set)),

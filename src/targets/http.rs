@@ -86,6 +86,7 @@ impl Target {
 
 //------------ Source --------------------------------------------------------
 
+/// The date source for an HTTP target.
 #[derive(Clone, Default)]
 struct Source {
     /// The current set of RTR data.
@@ -93,10 +94,12 @@ struct Source {
 }
 
 impl Source {
+    /// Updates the data source from the given update.
     fn update(&self, update: payload::Update) {
         self.data.store(Some(update.set().clone()).into())
     }
 
+    /// Returns the current payload set.
     fn set(&self) -> Option<payload::Set> {
         self.data.load().as_ref().as_ref().cloned()
     }
