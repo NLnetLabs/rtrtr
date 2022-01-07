@@ -10,17 +10,19 @@ memory and 1GB of disk space.
 Quick Start
 -----------
 
-Getting started with RTRTR is really easy by either installing a binary package
-for Debian and Ubuntu or for Red Hat Enterprise Linux and CentOS. You can also
-run with Docker or build from Cargo, Rust's build system and package manager.
+Getting started with RTRTR is really easy by installing a binary package
+for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL), CentOS and
+Rocky Linux. The `NLnet Labs software package repository
+<https://packages.nlnetlabs.nl>`_ currently has packages available for the
+``amd64``/``x86_64`` architecture only. Alternatively, you can run with Docker
+or build from Cargo, Rust's build system and package manager.
 
 .. tabs::
 
    .. group-tab:: Debian
 
-       If you have a machine with an amd64/x86_64 architecture running Debian 9,
-       10 or 11, you can install RTRTR from our `software package
-       repository <https://packages.nlnetlabs.nl>`_. 
+       Our software package repository has binary packages available for 
+       Debian 9 (stretch), 10 (buster) and 11 (bullseye).
        
        First update the ``apt`` package index: 
 
@@ -52,16 +54,24 @@ run with Docker or build from Cargo, Rust's build system and package manager.
           "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
           $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
 
-       After updating the ``apt`` package index you can then install RTRTR by
-       running:
+       Update the ``apt`` package index once more: 
 
        .. code-block:: bash
 
           sudo apt update
+
+       You can now install RTRTR with:
+
+       .. code-block:: bash
+
           sudo apt install rtrtr
 
-       You can now configure RTRTR by editing :file:`/etc/rtrtr.conf` and start
-       it with ``sudo systemctl enable --now rtrtr``. 
+       :doc:`Configure<configuration>` RTRTR by editing :file:`/etc/rtrtr.conf`
+       and start it with:
+       
+       .. code-block:: bash 
+       
+          sudo systemctl enable --now rtrtr 
        
        You can check the status of RTRTR with:
        
@@ -77,9 +87,8 @@ run with Docker or build from Cargo, Rust's build system and package manager.
 
    .. group-tab:: Ubuntu
 
-       If you have a machine with an amd64/x86_64 architecture running Ubuntu
-       16.x, 18.x, or 20.x, you can install RTRTR from our `software
-       package repository <https://packages.nlnetlabs.nl>`_. 
+       Our software package repository has binary packages available for Ubuntu
+       16.x (Xenial Xerus), 18.x (Bionic Beaver) and 20.x (Focal Fossa).
        
        First update the ``apt`` package index: 
 
@@ -111,16 +120,24 @@ run with Docker or build from Cargo, Rust's build system and package manager.
           "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/ubuntu \
           $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
 
-       After updating the ``apt`` package index you can then install RTRTR by
-       running:
+       Update the ``apt`` package index once more: 
 
        .. code-block:: bash
 
           sudo apt update
+
+       You can now install RTRTR with:
+
+       .. code-block:: bash
+
           sudo apt install rtrtr
 
-       You can now configure RTRTR by editing :file:`/etc/rtrtr.conf` and start
-       it with ``sudo systemctl enable --now rtrtr``. 
+       :doc:`Configure<configuration>` RTRTR by editing :file:`/etc/rtrtr.conf`
+       and start it with:
+
+       .. code-block:: bash 
+       
+          sudo systemctl enable --now rtrtr 
        
        You can check the status of RTRTR with:
        
@@ -136,14 +153,12 @@ run with Docker or build from Cargo, Rust's build system and package manager.
 
    .. group-tab:: RHEL/CentOS
 
-       If you have a machine with an amd64/x86_64 architecture running a
-       :abbr:`RHEL (Red Hat Enterprise Linux)`/CentOS 7 or 8 distribution, or a
-       compatible OS such as Rocky Linux, you can install RTRTR from our
-       `software package repository <https://packages.nlnetlabs.nl>`_. 
+       Our software package repository has binary packages available for
+       RHEL/CentOS 7 and 8, or a compatible operating system such as Rocky 
+       Linux. 
        
-       To use this repository, create a file named 
-       :file:`/etc/yum.repos.d/nlnetlabs.repo`, enter this configuration and 
-       save it:
+       First create a file named :file:`/etc/yum.repos.d/nlnetlabs.repo`, enter
+       this configuration and save it:
        
        .. code-block:: text
        
@@ -164,8 +179,12 @@ run with Docker or build from Cargo, Rust's build system and package manager.
           
           sudo yum install -y rtrtr
            
-       You can now configure RTRTR by editing :file:`/etc/rtrtr.conf` and start
-       it with ``sudo systemctl enable --now rtrtr``. 
+       :doc:`Configure<configuration>` RTRTR by editing :file:`/etc/rtrtr.conf`
+       and start it with:
+
+       .. code-block:: bash 
+       
+          sudo systemctl enable --now rtrtr 
        
        You can check the status of RTRTR with:
        
@@ -192,7 +211,7 @@ run with Docker or build from Cargo, Rust's build system and package manager.
           
        RTRTR will need network access to fetch and publish data according to the
        configured units and targets respectively. Explaining Docker networking
-       is beyond the scope of this quick start, however below are a couple of
+       is beyond the scope of this Quick Start, however below are a couple of
        examples to get you started.
        
        If you need an RTRTR unit to fetch data from a source port on the host
@@ -206,7 +225,7 @@ run with Docker or build from Cargo, Rust's build system and package manager.
           docker run --net=host ...
        
        If you're not using ``--net=host`` you will need to tell Docker to 
-       expoese the RTRTR target ports, either one by one using ``-p``, or you 
+       expose the RTRTR target ports, either one by one using ``-p``, or you 
        can publish the default ports exposed by the Docker container (and at the
        same time remap them to high numbered ports) using ``-P``:
        
@@ -222,31 +241,46 @@ run with Docker or build from Cargo, Rust's build system and package manager.
                
    .. group-tab:: Cargo
 
-       Assuming you have a newly installed Debian or Ubuntu machine, you will
-       need to install rsync, the C toolchain and Rust. You can then install
-       RTRTR:
+       In this Quick Start we'll assume that you have a newly installed, recent
+       Linux distribution. Full instructions are in the `Installing From
+       Source`_ section.
+       
+       First you will need to install the C toolchain and curl to fetch Rust:
 
        .. code-block:: bash
 
-          apt install curl rsync build-essential
+          sudo apt install \
+            build-essential \
+            curl
+
+       Rust is installed and managed by the ``rustup`` tool. To download Rustup
+       and install Rust, run the following command and follow the on-screen
+       instructions:
+
+       .. code-block:: bash
+
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-          source ~/.cargo/env
+
+       To configure your current shell, run:
+
+       .. code-block:: bash
+
+          source $HOME/.cargo/env
+
+       You can then proceed to install RTRTR:
+
+       .. code-block:: bash
+
           cargo install --locked rtrtr
 
-       Once RTRTR is installed, you need to create a :ref:`configuration file
-       <doc_rtrtr_configuration>` that suits your needs. The config file to use
-       needs to be passed to RTRTR via the :option:`-c` option, i.e.:
+       Once RTRTR is installed, you need to create a :doc:`configuration` file
+       that suits your needs. The config file to use needs to be passed to RTRTR
+       via the :option:`-c` option, i.e.:
        
        .. code-block:: text
        
           rtrtr -c rtrtr.conf
-       
-       If you have an older version of Rust and RTRTR, you can update via:
 
-       .. code-block:: text
-
-          rustup update
-          cargo install --locked --force rtrtr
 
 Updating
 --------
