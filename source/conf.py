@@ -52,14 +52,23 @@ if versionbanner:
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
+
 extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.ifconfig',
     'sphinx_tabs.tabs',
     'sphinx_copybutton',
+    'sphinx.ext.intersphinx',
+    'sphinx.ext.autosectionlabel'
 ]
 if versionbanner:
     extensions.append('versionwarning.extension')
+
+intersphinx_mapping = {
+    'routinator': ('https://routinator.docs.nlnetlabs.nl/en/stable/', None)
+}
+
+autosectionlabel_prefix_document = True
 
 # Add any paths that contain templates here, relative to this directory.
 
