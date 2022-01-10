@@ -4,7 +4,7 @@
 
 Breaking Changes
 
-* The minimum supported Rust version is now 1.52. ([#29])
+* The minimum supported Rust version is now 1.54. ([#45])
 
 New
 
@@ -30,13 +30,13 @@ Other
 
 * Upgraded to Tokio 1.0, Hyper 0.14, and Reqwest 0.11. ([#17]) 
 
-[#29]: https://github.com/NLnetLabs/rtrtr/pull/29
 [#30]: https://github.com/NLnetLabs/rtrtr/pull/30
 [#31]: https://github.com/NLnetLabs/rtrtr/pull/31
 [#32]: https://github.com/NLnetLabs/rtrtr/pull/32
 [#34]: https://github.com/NLnetLabs/rtrtr/pull/34
 [#40]: https://github.com/NLnetLabs/rtrtr/pull/40
 [#41]: https://github.com/NLnetLabs/rtrtr/pull/41
+[#45]: https://github.com/NLnetLabs/rtrtr/pull/45
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
 
