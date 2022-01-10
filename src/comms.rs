@@ -1,13 +1,13 @@
 //! Communication between components.
 //!
-//! The main purpose of communication is for a unit to announce updates to
+//! The main purpose of communication is for a unit is to announce updates to
 //! its data set and operational state to all other components that are
 //! interested. It also takes care of managing these communication lines.
 //!
-//! There are two three main types here: Each unit has a single [`Gate`] to
+//! There are three main types here: Each unit has a single [`Gate`] to
 //! which it hands its updates. The opposite end is called a [`Link`] and
-//! by any interested component. A [`GateAgent`] is a reference to a gate
-//! that can be used to create new links.
+//! is held by any interested component. A [`GateAgent`] is a reference to a
+//! gate that can be used to create new links.
 //!
 //! The type [`GateMetrics`] can be used by units to provide some obvious
 //! metrics such as the number of payload units in the data set or the time
@@ -40,11 +40,11 @@ const COMMAND_QUEUE_LEN: usize = 16;
 
 //------------ Gate ----------------------------------------------------------
 
-/// A communication gate representing the upstream entrance.
+/// A communication gate representing the source of data.
 ///
 /// Each unit receives exactly one gate. Whenever it has new data or its
 /// status changes, it sends these to (through?) the gate which takes care
-/// of distributing the information to whoever is interested.
+/// of distributing the information to whomever is interested.
 ///
 /// A gate may be active or dormant. It is active if there is at least one
 /// party interested in receiving data updates. Otherwise it is dormant.
@@ -97,7 +97,7 @@ impl Gate {
         (gate, agent)
     }
 
-    /// Returns a reference to the gate metrics.
+    /// Returns a shareable reference to the gate metrics.
     pub fn metrics(&self) -> Arc<GateMetrics> {
         self.metrics.clone()
     }
@@ -110,7 +110,7 @@ impl Gate {
     /// method is called again.
     ///
     /// The method will resolve into an error if the unit should terminate.
-    /// This is the case if all links and gate agents refering to the gate
+    /// This is the case if all links and gate agents referring to the gate
     /// have been dropped.
     pub async fn process(&mut self) -> Result<GateStatus, Terminated> {
         let status = self.get_gate_status();
@@ -163,7 +163,6 @@ impl Gate {
     /// This method will send out the update to all active links. It will
     /// also update the gate metrics based on the update.
     pub async fn update_data(&mut self, update: payload::Update) {
-        println!("{}", self.updates.len());
         for (_, item) in &mut self.updates {
             if item.suspended {
                 continue
@@ -244,7 +243,7 @@ impl Gate {
 
 //------------ GateAgent -----------------------------------------------------
 
-/// A reprensentative of a gate allowing creation of new links for it.
+/// A representative of a gate allowing creation of new links for it.
 ///
 /// The agent can be cloned and passed along. The method
 /// [`create_link`](Self::create_link) can be used to create a new link.
@@ -272,8 +271,7 @@ impl GateAgent {
 /// the unit and thus are common to all units.
 ///
 /// Gates provide access to values of this type via the [`Gate::metrics`]
-/// method. They will be stored behind an arc and can be kept and passed
-/// around freely.
+/// method. When stored behind an arc t can be kept and passed around freely.
 #[derive(Debug, Default)]
 pub struct GateMetrics {
     /// The current unit status.
@@ -430,7 +428,7 @@ impl Link {
     /// future can be dropped safely at any time.
     ///
     /// The future either resolves into a payload update or the connected
-    /// unit’s new status as the error variant.  The current status is also
+    /// unit’s new status as the error variant. The current status is also
     /// available via the `get_status` method.
     ///
     /// If the link is currently suspended, calling this method will lift the

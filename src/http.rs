@@ -19,7 +19,7 @@ use futures::pin_mut;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use hyper::server::accept::Accept;
 use hyper::service::{make_service_fn, service_fn};
-use log::error;
+use log::{debug, error};
 use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
@@ -42,19 +42,20 @@ impl Server {
     /// Runs the server.
     ///
     /// The method will start a new server listening on the sockets provided
-    /// via the configuration and spawns it onto the given `runtime`.
+    /// via the configuration and spawns it onto the given `runtime`. The
+    /// method should be run before `runtime` is started. It will
+    /// synchronously create and bind all required sockets before returning.
     ///
     /// The server will use `metrics` to produce information on its metrics
     /// related endpoints.
-    ///
-    /// (In a future version, this function will also take an object
-    /// reflecting additionally configured endpoints.)
     pub fn run(
         &self,
         metrics: metrics::Collection,
         resources: Resources,
         runtime: &Runtime,
     ) -> Result<(), ExitError> {
+        // Bind and collect all listeners first so we can error out
+        // if any of them fails.
         let mut listeners = Vec::new();
         for addr in &self.listen {
             // Binding needs to have happened before dropping privileges
@@ -73,8 +74,12 @@ impl Server {
                 );
                 return Err(ExitError);
             }
+            debug!("HTTP server listening on {}", addr);
             listeners.push(listener);
         }
+
+        // Now spawn the listeners onto the runtime. This way, they will start
+        // doing their thing as soon as the runtime is started.
         for listener in listeners {
             runtime.spawn(
                 Self::single_listener(
