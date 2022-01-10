@@ -5,6 +5,7 @@
 //! [`Tls`] uses TLS.
 
 use std::io;
+use std::convert::TryFrom;
 use std::fs::File;
 use std::future::Future;
 use std::path::PathBuf;
@@ -27,8 +28,10 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 use tokio::time::{timeout_at, Instant};
 use tokio_rustls::{
-    TlsConnector, client::TlsStream, rustls::ClientConfig, webpki::DNSName,
-    webpki::DNSNameRef
+    TlsConnector, client::TlsStream,
+    rustls::ClientConfig, rustls::OwnedTrustAnchor, rustls::RootCertStore,
+    rustls::client::ServerName, 
+    webpki::TrustAnchor,
 };
 use crate::metrics;
 use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
@@ -101,7 +104,7 @@ struct TlsState {
     tls: Tls,
 
     /// The name of the server.
-    domain: DNSName,
+    domain: ServerName,
 
     /// The TLS configuration for connecting to the server.
     connector: TlsConnector,
@@ -136,7 +139,7 @@ impl Tls {
     /// Converts the server address into the name for certificate validation.
     fn get_domain_name(
         &self, unit_name: &str
-    ) -> Result<DNSName, Terminated> {
+    ) -> Result<ServerName, Terminated> {
         let host = if let Some((host, port)) = self.remote.rsplit_once(':') {
             if port.parse::<u16>().is_ok() {
                 host
@@ -148,7 +151,7 @@ impl Tls {
         else {
             self.remote.as_ref()
         };
-        DNSNameRef::try_from_ascii_str(host).map(Into::into).map_err(|err| {
+        ServerName::try_from(host).map_err(|err| {
             error!(
                 "Unit {}: Invalid remote name '{}': {}'",
                 unit_name, host, err
@@ -161,10 +164,17 @@ impl Tls {
     fn build_connector(
         &self, unit_name: &str
     ) -> Result<TlsConnector, Terminated> {
-        let mut config = ClientConfig::new();
-        config.root_store.add_server_trust_anchors(
-            &webpki_roots::TLS_SERVER_ROOTS
-        );
+        let mut root_certs = RootCertStore::empty();
+        root_certs.add_server_trust_anchors(
+            webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+            |ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    ta.subject,
+                    ta.spki,
+                    ta.name_constraints,
+                )
+            },
+        ));
         for path in &self.cacerts {
             let mut file = io::BufReader::new(
                 File::open(path).map_err(|err| {
@@ -175,24 +185,44 @@ impl Tls {
                     Terminated
                 })?
             );
-            match config.root_store.add_pem_file(&mut file) {
-                Ok((good, bad)) => {
-                    info!(
-                        "Unit {}: cacert file '{}': \
-                        added {} and skipped {} certificates.",
-                        unit_name, path.display(), good, bad
-                    );
+            let certs = rustls_pemfile::certs(&mut file).map_err(|err| {
+                error!(
+                    "Unit {}: failed to read cacert file '{}': {}.",
+                    unit_name, path.display(), err,
+                );
+                Terminated
+            })?;
+            let trust_anchors = certs.iter().filter_map(|cert| {
+                match TrustAnchor::try_from_cert_der(&cert[..]) {
+                    Ok(ta) => {
+                        Some(
+                            OwnedTrustAnchor
+                                ::from_subject_spki_name_constraints(
+                                    ta.subject,
+                                    ta.spki,
+                                    ta.name_constraints,
+                                )
+                        )
+                    }
+                    Err(err) => {
+                        info!(
+                            "Unit {}: cecert file '{}' contained an invalid \
+                             certificate that was ignored ({})",
+                            unit_name, path.display(), err
+                        );
+                        None
+                    }
                 }
-                Err(_) => {
-                    error!(
-                        "Unit {}: failed to read cacert file '{}.",
-                        unit_name, path.display()
-                    );
-                    return Err(Terminated)
-                }
-            }
+            });
+            root_certs.add_server_trust_anchors(trust_anchors);
         }
-        Ok(TlsConnector::from(Arc::new(config)))
+
+        Ok(TlsConnector::from(Arc::new(
+            ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(root_certs)
+                .with_no_client_auth()
+        )))
     }
 
     /// Connects to the server.
@@ -201,7 +231,7 @@ impl Tls {
     ) -> Result<TlsStream<RtrTcpStream>, io::Error> {
         let stream = TcpStream::connect(&state.tls.remote).await?;
         state.connector.connect(
-            state.domain.as_ref(),
+            state.domain.clone(),
             RtrTcpStream {
                 sock: stream,
                 metrics: state.metrics.clone(),
