@@ -36,8 +36,7 @@ url             = { version = "2.2", features = ["serde"] }
 webpki-roots    = "0.21"
 
 [target.'cfg(unix)'.dependencies]
-libc            = "0.2.68"
-syslog          = "5.0.0"
+syslog          = "6.0"
 
 [dev-dependencies]
 rand_pcg        = "0.3"
