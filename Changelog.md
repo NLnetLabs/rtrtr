@@ -15,6 +15,9 @@ New
   on local exception files defined in [RFC 8416]. ([#31])
 * Added `"rtr-tls"` unit and target that send RTR data over TLS
   connections. ([#34])
+* New metrics for the `"rtr"` and `"rtr-tls"` units list the session ID,
+  serial number, and time of the last update, as well as total number of
+  bytes read from and sent to the server. ([#40])
 
 Bug Fixes
 
@@ -32,6 +35,7 @@ Other
 [#31]: https://github.com/NLnetLabs/rtrtr/pull/31
 [#32]: https://github.com/NLnetLabs/rtrtr/pull/32
 [#34]: https://github.com/NLnetLabs/rtrtr/pull/34
+[#40]: https://github.com/NLnetLabs/rtrtr/pull/40
 [#41]: https://github.com/NLnetLabs/rtrtr/pull/41
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
