@@ -12,7 +12,7 @@ readme = "README.md"
 [dependencies]
 arc-swap        = "1.0"
 chrono          = "0.4.11"
-clap            = "2.33"
+clap            = { version = "3.0", features = [ "cargo" ] }
 crossbeam-utils = "0.8.4"
 fern            = "0.6.0"
 futures         = "0.3"
