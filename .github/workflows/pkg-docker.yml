@@ -21,7 +21,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: nlnetlabs/routinator
+          images: nlnetlabs/rtrtr
           flavor: |
             latest=false
           tags: |
@@ -43,12 +43,12 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: nlnetlabs/routinator:sanitycheck
+          tags: nlnetlabs/rtrtr:sanitycheck
 
       # Do a basic sanity check of the created image using the test tag to select the image to run.
       - name: Sanity check
         run: |
-          docker run --rm nlnetlabs/routinator:sanitycheck --version
+          docker run --rm nlnetlabs/rtrtr:sanitycheck --version
 
       # Push the image and tags to Docker Hub.
       # The build uses the cached build outputs from the step above so we don't have to wait for the build again.
