@@ -59,14 +59,15 @@ impl Config {
     }
 
     /// Configures a clap app with the arguments to load the configuration.
-    pub fn config_args<'a: 'b, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let app = app.arg(Arg::with_name("config")
-                .short("c")
-                 .long("config")
-                 .required(true)
-                 .takes_value(true)
-                 .value_name("PATH")
-                 .help("Read base configuration from this file")
+    pub fn config_args(app: App) -> App {
+        let app = app.arg(
+            Arg::new("config")
+                .short('c')
+                .long("config")
+                .required(true)
+                .takes_value(true)
+                .value_name("PATH")
+                .help("Read base configuration from this file")
         );
         LogConfig::config_args(app)
     }
