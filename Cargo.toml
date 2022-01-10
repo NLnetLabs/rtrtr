@@ -22,13 +22,12 @@ log-reroute     = "0.1.5"
 pin-project-lite = "0.2.4"
 rand            = "0.8.3"
 reqwest         = { version = "0.11.3", default-features = false, features = ["blocking", "rustls-tls"] }
-routecore       = { git = "https://github.com/NLnetLabs/routecore.git", branch = "main" }
-rpki            = { git = "https://github.com/NLnetLabs/rpki-rs.git", branch = "main", features = ["rtr", "slurm"] }
+routecore       = "0.1.0"
+rpki            = { version = "0.14.0", features = ["rtr", "slurm"] }
 rustls-pemfile  = "0.2.1"
 serde           = { version = "1.0", features = ["derive"] }
 serde_json      = "1.0"
 slab            = "0.4.2"
-simple-logging  = "2.0.2"
 tokio           = { version = "1.6", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"]}
 tokio-rustls    = "0.22"
 tokio-stream    = { version = "0.1", features = ["net"] }
