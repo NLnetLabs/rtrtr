@@ -72,6 +72,8 @@ intersphinx_mapping = {
 
 autosectionlabel_prefix_document = True
 
+sphinx_tabs_disable_css_loading = True
+
 # Add any paths that contain templates here, relative to this directory.
 
 # The suffix(es) of source filenames.
