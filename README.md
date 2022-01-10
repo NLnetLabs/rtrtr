@@ -39,38 +39,107 @@ config file can be found in [`etc/rtrtr.conf`].
 
 ## Quick Start with Binary Packages
 
-On the NLnet Labs software package repository we provide RTRTR packages for
-amd64/x86_64 architectures running Debian and Ubuntu, as well as Red Hat 
-Enterprise Linux and CentOS.
+Getting started with RTRTR is really easy by installing a binary package for
+either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL), CentOS and
+Rocky Linux. The [NLnet Labs software package
+repository](https://packages.nlnetlabs.nl) currently has packages available for
+the `amd64`/`x86_64` architecture only. Alternatively, you can run with Docker
+or build from Cargo, Rust's build system and package manager.
 
-### Installing on Debian/Unbuntu
+### Debian
 
-Add the line below that corresponds to your operating system to your
-`/etc/apt/sources.list` or `/etc/apt/sources.list.d/`
+Our software package repository has binary packages available for Debian 9
+(stretch), 10 (buster) and 11 (bullseye).
 
-```bash
-deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch main
-deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ buster main
-deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial main
-deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic main
-deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal main
-```
-
-Then run the following commands to add the public key and update the repository 
-list
+First update the `apt` package index: 
 
 ```bash
-wget -qO- https://packages.nlnetlabs.nl/aptkey.asc | sudo apt-key add -
 sudo apt update
 ```
 
-You can then install RTRTR by running this command
+Then install packages to allow ``apt`` to use a repository over HTTPS:
+
+```bash
+sudo apt install \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+```
+
+Add the GPG key from NLnet Labs:
+
+```bash
+curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/nlnetlabs-archive-keyring.gpg
+```
+
+Now, use the following command to set up the *main* repository:
+
+```bash
+echo \
+"deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
+$(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
+```
+
+Update the ``apt`` package index once more: 
+
+```bash
+sudo apt update
+```
+
+You can now install RTRTR with:
+
+```bash
+sudo apt install rtrtr
+```
+### Ubuntu
+
+Our software package repository has binary packages available for Ubuntu 16.x
+(Xenial Xerus), 18.x (Bionic Beaver) and 20.x (Focal Fossa).
+
+First update the `apt` package index: 
+
+```bash
+sudo apt update
+```
+
+Then install packages to allow ``apt`` to use a repository over HTTPS:
+
+```bash
+sudo apt install \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+```
+
+Add the GPG key from NLnet Labs:
+
+```bash
+curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/nlnetlabs-archive-keyring.gpg
+```
+
+Now, use the following command to set up the *main* repository:
+
+```bash
+echo \
+"deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/ubuntu \
+$(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
+```
+
+Update the ``apt`` package index once more: 
+
+```bash
+sudo apt update
+```
+
+You can now install RTRTR with:
 
 ```bash
 sudo apt install rtrtr
 ```
 
-### Installing on RHEL/CentOS
+### RHEL/CentOS
 
 Create a file named `/etc/yum.repos.d/nlnetlabs.repo`, enter this configuration
 and save it:
