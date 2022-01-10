@@ -1,5 +1,5 @@
 # RTRTR User Manual
-The Official Routinator User Manual, published at [rtrtr.docs.nlnetlabs.nl](https://rtrtr.docs.nlnetlabs.nl)
+The Official [RTRTR](https://github.com/NLnetLabs/rtrtr) User Manual, published at [rtrtr.docs.nlnetlabs.nl](https://rtrtr.docs.nlnetlabs.nl)
 
 
 ## Style Guide
