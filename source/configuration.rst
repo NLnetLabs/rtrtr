@@ -58,14 +58,30 @@ RTR Unit
 The unit of the type ``rtr`` takes a feed of Validated ROA Payloads (VRPs) from
 a Relying Party software instance via the RTR protocol. Along with a unique
 name, the only required argument is the IP or hostname of the instance to
-connect to, along with the port. Because the RTR protocol uses sessions and
-state, we don't need to specify a refresh interval for this unit.
+connect to, along with the port. 
+
+Because the RTR protocol uses sessions and state, we don't need to specify a
+refresh interval for this unit. Should the server close the connection, by
+default RTRTR will retry every 60 seconds. This value is configurable wih the
+``retry`` option.
 
 .. code-block:: text
 
     [units.rtr-unit-name]
     type = "rtr"
     remote = "validator.example.net:3323"
+
+It's also possible to configure RTR over TLS, using the ``rtr-tls`` unit type.
+When using this unit type, there is an additional configuration option,
+``cacerts``, which specifies a list of paths to files that contain one or more
+PEM encoded certificates that should be trusted when verifying a TLS server
+certificate.
+
+The ``"rtr-tls"`` unit also uses the usual set of web trust anchors, so this
+option is only necessary when the RTR server doesn’t use a server certificate
+that would be trusted by web browser. This is, for instance, the case if the
+server uses a self-signed certificate in which case this certificate needs to be
+added via this option.
 
 JSON Unit
 +++++++++
@@ -152,6 +168,13 @@ from.
     type = "rtr"
     listen = [ "127.0.0.1:9001" ]
     unit = "source-unit-name"
+
+This target also supports TLS connections, via the ``rtr-tls`` type. This target
+has two additional configuration options. First, the ``certificate`` option, 
+which is a string value providing a path to a file containing the PEM-encoded 
+certificate to be used as the TLS server certificate. And secondly, there is
+the ``key`` option, which provides a path to a file containing the PEM-encoded
+certificate to be used as the private key by the TLS server.
 
 HTTP Target
 +++++++++++
