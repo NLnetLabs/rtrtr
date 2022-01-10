@@ -63,7 +63,7 @@ connect to, along with the port.
 Because the RTR protocol uses sessions and state, we don't need to specify a
 refresh interval for this unit. Should the server close the connection, by
 default RTRTR will retry every 60 seconds. This value is configurable wih the
-``retry`` option.
+:option:`retry` option.
 
 .. code-block:: text
 
@@ -73,11 +73,11 @@ default RTRTR will retry every 60 seconds. This value is configurable wih the
 
 It's also possible to configure RTR over TLS, using the ``rtr-tls`` unit type.
 When using this unit type, there is an additional configuration option,
-``cacerts``, which specifies a list of paths to files that contain one or more
-PEM encoded certificates that should be trusted when verifying a TLS server
+:option:`cacerts`, which specifies a list of paths to files that contain one or
+more PEM encoded certificates that should be trusted when verifying a TLS server
 certificate.
 
-The ``"rtr-tls"`` unit also uses the usual set of web trust anchors, so this
+The ``rtr-tls`` unit also uses the usual set of web trust anchors, so this
 option is only necessary when the RTR server doesn’t use a server certificate
 that would be trusted by web browser. This is, for instance, the case if the
 server uses a self-signed certificate in which case this certificate needs to be
@@ -134,8 +134,8 @@ Number Resource Management with the RPKI)` standard specified in :RFC:`8416`.
 
 You can refer to the JSON file you created with a unit of the type ``slurm``. As
 the source to which the exceptions should be applied, you must specify any of
-the other units you have created. Note that the ``files`` attribute is an array
-and can take multiple values as input.
+the other units you have created. Note that the :option:`files` attribute is an
+array and can take multiple values as input.
 
 .. code-block:: text
 
@@ -170,11 +170,11 @@ from.
     unit = "source-unit-name"
 
 This target also supports TLS connections, via the ``rtr-tls`` type. This target
-has two additional configuration options. First, the ``certificate`` option, 
-which is a string value providing a path to a file containing the PEM-encoded 
-certificate to be used as the TLS server certificate. And secondly, there is
-the ``key`` option, which provides a path to a file containing the PEM-encoded
-certificate to be used as the private key by the TLS server.
+has two additional configuration options. First, the :option:`certificate`
+option, which is a string value providing a path to a file containing the
+PEM-encoded certificate to be used as the TLS server certificate. And secondly,
+there is the :option:`key` option, which provides a path to a file containing
+the PEM-encoded certificate to be used as the private key by the TLS server.
 
 HTTP Target
 +++++++++++
