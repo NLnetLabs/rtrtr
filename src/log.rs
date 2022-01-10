@@ -242,18 +242,14 @@ impl LogConfig {
     fn syslog_logger(
         &self
     ) -> Result<Box<dyn Log>, Failed> {
-        let process = std::env::current_exe().ok().and_then(|path|
-            path.file_name()
-                .and_then(std::ffi::OsStr::to_str)
-                .map(ToString::to_string)
-        ).unwrap_or_else(|| String::from("routinator"));
-        let pid = unsafe { libc::getpid() };
-        let formatter = syslog::Formatter3164 {
+        let mut formatter = syslog::Formatter3164 {
             facility: self.log_facility.0,
-            hostname: None,
-            process,
-            pid
+            .. Default::default()
         };
+        if formatter.hostname.is_none() {
+            formatter.hostname = Some("routinator".into());
+        }
+        let formatter = formatter;
         let logger = syslog::unix(formatter.clone()).or_else(|_| {
             syslog::tcp(formatter.clone(), ("127.0.0.1", 601))
         }).or_else(|_| {
