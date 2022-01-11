@@ -7,7 +7,6 @@
 use std::io;
 use std::fs::File;
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic;
@@ -32,6 +31,7 @@ use tokio_rustls::{
 };
 use crate::metrics;
 use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
+use crate::config::ConfigPath;
 use crate::manager::Component;
 use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::payload;
@@ -92,7 +92,7 @@ pub struct Tls {
     ///
     /// The files should contain one or more PEM-encoded certificates.
     #[serde(default)]
-    cacerts: Vec<PathBuf>,
+    cacerts: Vec<ConfigPath>,
 }
 
 /// Run-time information of the TLS unit.

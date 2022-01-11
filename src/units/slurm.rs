@@ -10,6 +10,7 @@ use rpki::slurm::{SlurmFile, ValidationOutputFilters};
 use serde::Deserialize;
 use crate::payload;
 use crate::comms::{Gate, Link, Terminated, UnitStatus};
+use crate::config::ConfigPath;
 use crate::manager::Component;
 
 
@@ -28,14 +29,16 @@ pub struct LocalExceptions {
     source: Link,
 
     /// A list of paths to the SLURM files.
-    files: Vec<PathBuf>,
+    files: Vec<ConfigPath>,
 }
 
 impl LocalExceptions {
     pub async fn run(
         mut self, _component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
-        let files = ExceptionSet::new(self.files);
+        let files = ExceptionSet::new(
+            self.files.into_iter().map(Into::into).collect()
+        );
         loop {
             let update = match select(
                 self.source.query().boxed(), gate.process().boxed()
