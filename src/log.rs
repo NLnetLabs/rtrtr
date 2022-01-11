@@ -145,7 +145,7 @@ impl LogConfig {
             }
             else {
                 self.log_target = LogTarget::File;
-                self.log_file = cur_dir.join(file);
+                self.log_file = cur_dir.join(file).into();
             }
         }
         Ok(())
