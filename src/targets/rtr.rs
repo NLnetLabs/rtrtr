@@ -18,9 +18,7 @@ use rpki::rtr::state::{Serial, State};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{Accept, TlsAcceptor};
-use tokio_rustls::rustls::{
-    Certificate, NoClientAuth, PrivateKey, ServerConfig
-};
+use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 use tokio_rustls::server::TlsStream;
 use tokio_stream::wrappers::TcpListenerStream;
 use crate::payload;
@@ -189,12 +187,14 @@ impl Tls {
             Ok(PrivateKey(certs.pop().unwrap()))
         })?;
 
-        let mut res = ServerConfig::new(NoClientAuth::new());
-        res.set_single_cert(certs, key).map_err(|err| {
-            error!("Failed to create TLS server config: {}", err);
-            ExitError
-        })?;
-        Ok(res)
+        ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|err| {
+                error!("Failed to create TLS server config: {}", err);
+                ExitError
+            })
     }
 
     /// Spawns a single listener onto the current runtime.
