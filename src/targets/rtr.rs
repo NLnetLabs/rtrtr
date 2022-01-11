@@ -5,7 +5,6 @@ use std::fs::File;
 use std::sync::Arc;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
@@ -26,6 +25,7 @@ use tokio_rustls::server::TlsStream;
 use tokio_stream::wrappers::TcpListenerStream;
 use crate::payload;
 use crate::comms::Link;
+use crate::config::ConfigPath;
 use crate::log::ExitError;
 use crate::manager::Component;
 
@@ -105,8 +105,8 @@ impl Tcp {
 pub struct Tls {
     listen: Vec<SocketAddr>,
     unit: Link,
-    certificate: PathBuf,
-    key: PathBuf,
+    certificate: ConfigPath,
+    key: ConfigPath,
 }
 
 impl Tls {

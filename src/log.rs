@@ -8,11 +8,12 @@
 //! return quietly.
 use std::{fmt, io, process};
 use std::convert::TryFrom;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use clap::{App, Arg, ArgMatches};
 use log::{error, LevelFilter, Log};
 use serde::Deserialize;
+use crate::config::ConfigPath;
 
 
 //------------ LogConfig -----------------------------------------------------
@@ -28,7 +29,7 @@ pub struct LogConfig {
     ///
     /// This isn’t part of `log_target` for deserialization reasons.
     #[serde(default)]
-    pub log_file: PathBuf,
+    pub log_file: ConfigPath,
 
     /// The syslog facility when logging to syslog.
     ///
@@ -122,7 +123,7 @@ impl LogConfig {
             }
             else {
                 self.log_target = LogTarget::File;
-                self.log_file = cur_dir.join(file);
+                self.log_file = cur_dir.join(file).into();
             }
         }
         Ok(())

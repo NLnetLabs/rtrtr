@@ -6,7 +6,8 @@
 //! file referred to in command line options.
 
 use std::{borrow, error, fmt, fs, io, ops};
-use std::path::Path;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use clap::{App, Arg, ArgMatches};
 use serde::Deserialize;
@@ -54,8 +55,15 @@ impl Config {
     }
 
     /// Creates a configuration from a bytes slice with TOML data.
-    pub fn from_toml(slice: &[u8]) -> Result<Self, toml::de::Error> {
-        toml::de::from_slice(slice)
+    pub fn from_toml(
+        slice: &[u8], base_dir: Option<impl AsRef<Path>>,
+    ) -> Result<Self, toml::de::Error> {
+        if let Some(ref base_dir) = base_dir {
+            ConfigPath::set_base_path(base_dir.as_ref().into())
+        }
+        let res = toml::de::from_slice(slice);
+        ConfigPath::clear_base_path();
+        res
     }
 
     /// Configures a clap app with the arguments to load the configuration.
@@ -121,13 +129,13 @@ struct Source {
     /// The optional path of a config file.
     ///
     /// If this in `None`, the source is an interactive session.
-    path: Option<Arc<str>>,
+    path: Option<Arc<Path>>,
 }
 
 impl<'a, T: AsRef<Path>> From<&'a T> for Source {
     fn from(path: &'a T) -> Source {
         Source {
-            path: Some(format!("{}", path.as_ref().display()).into())
+            path: Some(path.as_ref().into())
         }
     }
 }
@@ -195,9 +203,9 @@ impl<T> Marked<T> {
         );
         match (source, self.pos) {
             (Some(source), Some(pos)) => {
-                write!(f, "{}:{}:{}", source, pos.line, pos.col)
+                write!(f, "{}:{}:{}", source.display(), pos.line, pos.col)
             }
-            (Some(source), None) => write!(f, "{}", source),
+            (Some(source), None) => write!(f, "{}", source.display()),
             (None, Some(pos)) => write!(f, "{}:{}", pos.line, pos.col),
             (None, None) => Ok(())
         }
@@ -299,11 +307,12 @@ impl ConfigFile {
         })
     }
 
-    pub fn path(&self) -> &str {
-        match self.source.path {
-            Some(ref path) => path.as_ref(),
-            None => ""
-        }
+    pub fn path(&self) -> Option<&Path> {
+        self.source.path.as_ref().map(|path| path.as_ref())
+    }
+
+    pub fn dir(&self) -> Option<&Path> {
+        self.source.path.as_ref().and_then(|path| path.parent())
     }
 
     pub fn bytes(&self) -> &[u8] {
@@ -354,4 +363,76 @@ impl fmt::Display for ConfigError {
 }
 
 impl error::Error for ConfigError { }
+
+
+//------------ ConfigPath ----------------------------------------------------
+
+/// A path that encountered in a config file.
+///
+/// This is a basically a `PathBuf` that, when, deserialized resolves all
+/// relative paths from a certain base path so that all relative paths
+/// encountered in a config file are automatically resolved relative to the
+/// location of the config file.
+#[derive(
+    Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd
+)]
+#[serde(from = "String")]
+pub struct ConfigPath(PathBuf);
+
+impl ConfigPath {
+    thread_local!(
+        static BASE_PATH: RefCell<Option<PathBuf>> = RefCell::new(None)
+    );
+
+    fn set_base_path(path: PathBuf) {
+        Self::BASE_PATH.with(|base_path| {
+            base_path.replace(Some(path));
+        })
+    }
+
+    fn clear_base_path() {
+        Self::BASE_PATH.with(|base_path| {
+            base_path.replace(None);
+        })
+    }
+}
+
+impl From<PathBuf> for ConfigPath {
+    fn from(path: PathBuf) -> Self {
+        Self(path)
+    }
+}
+
+impl From<ConfigPath> for PathBuf {
+    fn from(path: ConfigPath) -> Self {
+        path.0
+    }
+}
+
+impl From<String> for ConfigPath {
+    fn from(path: String) -> Self {
+        Self::BASE_PATH.with(|base_path| {
+            ConfigPath(
+                match base_path.borrow().as_ref() {
+                    Some(base_path) => base_path.join(path.as_str()),
+                    None => path.into()
+                }
+            )
+        })
+    }
+}
+
+impl ops::Deref for ConfigPath {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<Path> for ConfigPath {
+    fn as_ref(&self) -> &Path {
+        self.0.as_ref()
+    }
+}
 

@@ -125,10 +125,13 @@ impl Manager {
         });
 
         // Now load the config file.
-        let config = match Config::from_toml(file.bytes()) {
+        let config = match Config::from_toml(file.bytes(), file.dir()) {
             Ok(config) => config,
             Err(err) => {
-                error!("{}: {}", file.path(), err);
+                match file.path() {
+                    Some(path) => error!("{}: {}", path.display(), err),
+                    None => error!("{}", err)
+                }
                 return Err(Failed)
             }
         };
