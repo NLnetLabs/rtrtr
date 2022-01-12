@@ -1,6 +1,8 @@
 # Change Log
 
-## Unreleased next version
+## 0.2.0-rc1
+
+Released 2022-01-12.
 
 Breaking Changes
 

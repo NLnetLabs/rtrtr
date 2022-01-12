@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "rtrtr"
-version = "0.2.0-dev"
+version = "0.2.0-rc1"
 dependencies = [
  "arc-swap",
  "chrono",
