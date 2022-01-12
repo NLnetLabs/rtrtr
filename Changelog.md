@@ -20,6 +20,8 @@ New
 * New metrics for the `"rtr"` and `"rtr-tls"` units list the session ID,
   serial number, and time of the last update, as well as total number of
   bytes read from and sent to the server. ([#40])
+* Metrics are now sorted alphabetically (with a few exceptions) in output.
+  ([#53])
 
 Bug Fixes
 
@@ -41,6 +43,7 @@ Other
 [#45]: https://github.com/NLnetLabs/rtrtr/pull/45
 [#49]: https://github.com/NLnetLabs/rtrtr/pull/49
 [#50]: https://github.com/NLnetLabs/rtrtr/pull/50
+[#53]: https://github.com/NLnetLabs/rtrtr/pull/53
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
 
