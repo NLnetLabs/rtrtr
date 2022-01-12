@@ -34,8 +34,9 @@ pub struct LocalExceptions {
 
 impl LocalExceptions {
     pub async fn run(
-        mut self, _component: Component, mut gate: Gate
+        mut self, mut component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
+        component.register_metrics(gate.metrics());
         let files = ExceptionSet::new(
             self.files.into_iter().map(Into::into).collect()
         );
