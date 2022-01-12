@@ -46,6 +46,7 @@ struct JsonRunner {
     gate: Gate,
     serial: Serial,
     status: UnitStatus,
+    current: Option<payload::Set>,
 }
 
 impl JsonRunner {
@@ -56,6 +57,7 @@ impl JsonRunner {
             json, component, gate,
             serial: Serial::default(),
             status: UnitStatus::Stalled,
+            current: Default::default(),
         }
     }
 
@@ -71,19 +73,28 @@ impl JsonRunner {
     async fn step(&mut self) -> Result<(), Terminated> {
         match self.load_json().await? {
             Some(res) => {
-                self.serial = self.serial.add(1);
-                if self.status != UnitStatus::Healthy {
-                    self.status = UnitStatus::Healthy;
-                    self.gate.update_status(self.status).await
+                let res = res.into_payload();
+                if self.current.as_ref() != Some(&res) {
+                    self.serial = self.serial.add(1);
+                    self.current = Some(res.clone());
+                    if self.status != UnitStatus::Healthy {
+                        self.status = UnitStatus::Healthy;
+                        self.gate.update_status(self.status).await
+                    }
+                    self.gate.update_data(
+                        payload::Update::new(self.serial, res, None)
+                    ).await;
+                    debug!(
+                        "Unit {}: successfully updated.",
+                        self.component.name()
+                    );
                 }
-                self.gate.update_data(
-                    payload::Update::new(
-                        self.serial, res.into_payload(), None
-                    )
-                ).await;
-                debug!(
-                    "Unit {}: successfully updated.", self.component.name()
-                );
+                else {
+                    debug!(
+                        "Unit {}: update without changes.",
+                        self.component.name()
+                    );
+                }
             }
             None => {
                 if self.status != UnitStatus::Stalled {
