@@ -29,6 +29,8 @@ Bug Fixes
   ([rpki #151])
 * The `--config` command line option is now mandatory, resulting in a
   proper error message when it is missing rather than a panic. ([#41])
+* The `"json"` unit will not trigger an update if the data source hasn’t
+  changed. ([#51])
 
 Other
 
@@ -43,6 +45,7 @@ Other
 [#45]: https://github.com/NLnetLabs/rtrtr/pull/45
 [#49]: https://github.com/NLnetLabs/rtrtr/pull/49
 [#50]: https://github.com/NLnetLabs/rtrtr/pull/50
+[#51]: https://github.com/NLnetLabs/rtrtr/pull/51
 [#53]: https://github.com/NLnetLabs/rtrtr/pull/53
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
