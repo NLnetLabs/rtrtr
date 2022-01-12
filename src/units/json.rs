@@ -46,7 +46,7 @@ struct JsonRunner {
     gate: Gate,
     serial: Serial,
     status: UnitStatus,
-    current: payload::Set,
+    current: Option<payload::Set>,
 }
 
 impl JsonRunner {
@@ -74,9 +74,9 @@ impl JsonRunner {
         match self.load_json().await? {
             Some(res) => {
                 let res = res.into_payload();
-                if res != self.current {
+                if self.current.as_ref() != Some(&res) {
                     self.serial = self.serial.add(1);
-                    self.current = res.clone();
+                    self.current = Some(res.clone());
                     if self.status != UnitStatus::Healthy {
                         self.status = UnitStatus::Healthy;
                         self.gate.update_status(self.status).await
