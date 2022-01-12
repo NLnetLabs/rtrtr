@@ -76,6 +76,7 @@ impl Collection {
         new_sources.push(
             RegisteredSource { name, source }
         );
+        new_sources.sort_by(|l, r| l.name.as_ref().cmp(r.name.as_ref()));
         self.sources.store(new_sources.into());
         drop(lock);
     }
