@@ -1,6 +1,6 @@
 [package]
 name = "rtrtr"
-version = "0.2.0-rc1"
+version = "0.2.0-dev"
 edition = "2018"
 authors = ["The NLnet Labs RPKI Team <rpki-team@nlnetlabs.nl>"]
 description = "A versatile tool for managing route filters"
