@@ -1,9 +1,11 @@
 //! JSON clients.
 
 use std::{io, thread};
+use std::convert::TryFrom;
 use std::fs::File;
+use std::str::FromStr;
 use std::time::Duration;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use reqwest::Url;
 use rpki::rtr::Serial;
 use serde::Deserialize;
@@ -11,6 +13,7 @@ use tokio::sync::oneshot;
 use tokio::time::{Instant, timeout_at};
 use crate::payload;
 use crate::comms::{Gate, Terminated, UnitStatus};
+use crate::config::ConfigPath;
 use crate::formats::json::Set as JsonSet;
 use crate::manager::Component;
 
@@ -20,7 +23,7 @@ use crate::manager::Component;
 #[derive(Debug, Deserialize)]
 pub struct Json {
     /// The URI of the JSON source.
-    uri: Url,
+    uri: SourceUri,
 
     /// How many seconds to wait before refreshing the data.
     refresh: u64,
@@ -66,106 +69,56 @@ impl JsonRunner {
     }
 
     async fn step(&mut self) -> Result<(), Terminated> {
-        if self.json.uri.scheme() == "file" {
-            self.step_file().await
-        }
-        else if
-            self.json.uri.scheme() == "http"
-            || self.json.uri.scheme() == "https"
-        {
-            self.step_http().await
-        }
-        else {
-            error!(
-                "{}: Cannot resolve URI '{}'",
-                self.component.name(), self.json.uri
-            );
-            Err(Terminated)
-        }
-    }
-
-    async fn step_file(&mut self) -> Result<(), Terminated> {
-        debug!("Unit {}: Updating from {}",
-            self.component.name(), self.json.uri
-        );
-        let uri = self.json.uri.clone();
-        if let Err(err) = self.step_generic(
-            move || File::open(uri.path())
-        ).await? {
-            warn!("{}: cannot open file '{}': {}",
-                self.component.name(),
-                self.json.uri.path(),
-                err
-            );
-        }
-        Ok(())
-    }
-
-    async fn step_http(&mut self) -> Result<(), Terminated> {
-        debug!("Unit {}: Updating from {}",
-            self.component.name(), self.json.uri
-        );
-        let request = self.component.http_client().get(self.json.uri.clone());
-        if let Err(err) = self.step_generic(move || request.send()).await? {
-            warn!("{}: failed to fetch from '{}': {}",
-                self.component.name(),
-                self.json.uri,
-                err
-            );
-        }
-        Ok(())
-    }
-
-    async fn step_generic<F, R, E>(
-        &mut self, op: F
-    ) -> Result<Result<(), E>, Terminated>
-    where
-        F: FnOnce() -> Result<R, E> + Send + 'static,
-        R: io::Read,
-        E: Send + 'static,
-    {
-        let (tx, rx) = oneshot::channel();
-        let _ = thread::spawn(move || {
-            let reader = match op() {
-                Ok(reader) => reader,
-                Err(err)=> {
-                    let _ = tx.send(Err(err));
-                    return;
+        match self.load_json().await? {
+            Some(res) => {
+                self.serial = self.serial.add(1);
+                if self.status != UnitStatus::Healthy {
+                    self.status = UnitStatus::Healthy;
+                    self.gate.update_status(self.status).await
                 }
-            };
-            let res = serde_json::from_reader::<_, JsonSet>(reader);
-            let _ = tx.send(Ok(res));
-        });
-
-        // XXX I think awaiting rx should never produce an error, so
-        //     unwrapping is the right thing to do. But is it really?
-        let res = match self.gate.process_until(rx).await?.unwrap() {
-            Ok(Ok(res)) => res,
-            Ok(Err(err)) => {
+                self.gate.update_data(
+                    payload::Update::new(
+                        self.serial, res.into_payload(), None
+                    )
+                ).await;
+                debug!(
+                    "Unit {}: successfully updated.", self.component.name()
+                );
+            }
+            None => {
                 if self.status != UnitStatus::Stalled {
                     self.status = UnitStatus::Stalled;
                     self.gate.update_status(self.status).await
                 }
+                debug!("Unit {}: marked as stalled.", self.component.name());
+            }
+        };
+        Ok(())
+    }
+
+    async fn load_json(&mut self) -> Result<Option<JsonSet>, Terminated> {
+        let (tx, rx) = oneshot::channel();
+        let reader = match self.json.uri.reader(&self.component) {
+            Some(reader) => reader,
+            None => return Ok(None)
+        };
+        let _ = thread::spawn(move || {
+            let _ = tx.send(serde_json::from_reader::<_, JsonSet>(reader));
+        });
+
+        // XXX I think awaiting rx should never produce an error, so
+        //     unwrapping is the right thing to do. But is it really?
+        match self.gate.process_until(rx).await?.unwrap() {
+            Ok(res) => Ok(Some(res)),
+            Err(err) => {
                 warn!(
-                    "{}: Failed reading source: {}",
+                    "{}: Failed parsing source: {}",
                     self.component.name(),
                     err
                 );
-                return Ok(Ok(()))
+                Ok(None)
             }
-            Err(err) => return Ok(Err(err))
-        };
-        
-        self.serial = self.serial.add(1);
-        if self.status != UnitStatus::Healthy {
-            self.status = UnitStatus::Healthy;
-            self.gate.update_status(self.status).await
         }
-        self.gate.update_data(
-            payload::Update::new(self.serial, res.into_payload(), None)
-        ).await;
-        debug!("Unit {}: successfully updated.", self.component.name());
-        Ok(Ok(()))
     }
 
     async fn wait(&mut self) -> Result<(), Terminated> {
@@ -182,6 +135,99 @@ impl JsonRunner {
 
         Ok(())
     }
+}
 
+
+//------------ SourceUri ----------------------------------------------------
+
+/// The URI of the unit’s source.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(try_from = "String")]
+enum SourceUri {
+    Http(Url),
+    File(ConfigPath),
+}
+
+impl SourceUri {
+    fn reader(&self, component: &Component) -> Option<JsonReader> {
+        match *self {
+            SourceUri::Http(ref uri) => {
+                Some(JsonReader::HttpRequest(
+                    Some(component.http_client().get(uri.clone()))
+                ))
+            }
+            SourceUri::File(ref path) => {
+                match File::open(path).map(JsonReader::File) {
+                    Ok(some) => Some(some),
+                    Err(err) => {
+                        warn!(
+                            "{}: Failed reading open {}: {}",
+                            component.name(),
+                            path.display(),
+                            err
+                        );
+                        None
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<String> for SourceUri {
+    type Error = <Url as FromStr>::Err;
+
+    fn try_from(mut src: String) -> Result<Self, Self::Error> {
+        if src.starts_with("file:") {
+            let src = src.split_off(5);
+            Ok(SourceUri::File(src.into()))
+        }
+        else {
+            Url::from_str(&src).map(SourceUri::Http)
+        }
+    }
+}
+
+
+//------------ JsonReader ----------------------------------------------------
+
+/// A reader producing the JSON source.
+enum JsonReader {
+    File(File),
+    HttpRequest(Option<reqwest::blocking::RequestBuilder>),
+    Http(reqwest::blocking::Response),
+}
+
+impl io::Read for JsonReader {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+        let http = match *self {
+            JsonReader::File(ref mut inner) => {
+                return inner.read(buf)
+            }
+            JsonReader::Http(ref mut inner) => {
+                return inner.read(buf)
+            }
+            JsonReader::HttpRequest(ref mut inner) => {
+                match inner.take() {
+                    Some(inner) => {
+                        inner.send().map_err(|err| {
+                            io::Error::new(
+                                io::ErrorKind::Other,
+                                err
+                            )
+                        })?
+                    }
+                    None => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "already failed to send request"
+                        ))
+                    }
+                }
+            }
+        };
+        *self = JsonReader::Http(http);
+        self.read(buf)
+    }
 }
 
