@@ -9,7 +9,7 @@ Breaking Changes
 New
 
 * Relative paths in config files are now resolved relative to the
-  directory the config file is stored in. ([#49])
+  directory the config file is stored in. ([#49], [#50])
 * The `"json"` unit now supports the modified JSON format used by newer
   versions of rpki-client. That is, it accepts ASNs as numbers or
   strings and ignores any fields that aren’t essential. ([#30], [#32])
@@ -40,6 +40,7 @@ Other
 [#41]: https://github.com/NLnetLabs/rtrtr/pull/41
 [#45]: https://github.com/NLnetLabs/rtrtr/pull/45
 [#49]: https://github.com/NLnetLabs/rtrtr/pull/49
+[#50]: https://github.com/NLnetLabs/rtrtr/pull/50
 [rpki #151]: https://github.com/NLnetLabs/rpki-rs/pull/151
 [RFC 8416]: https://tools.ietf.org/html/rfc8416
 
