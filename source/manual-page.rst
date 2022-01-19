@@ -9,16 +9,15 @@ Synopsis
 Description
 -----------
 
-RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads
-from one or more sources in multiple formats and dispatch it onwards. It 
-provides the means to implement multiple distribution architectures for
-RPKI such as centralised RPKI validators that dispatch data to local caching
-RTR servers.
+RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads from
+one or more sources in multiple formats and dispatch it onwards. It provides
+the means to implement multiple distribution architectures for RPKI such as
+centralised RPKI validators that dispatch data to local caching RTR servers.
 
 RTRTR can read RPKI data from multiple RPKI Relying Party packages via RTR
-and JSON and, in turn, provide an RTR service for routers to connect to. 
-The HTTP server provides the validated data set in JSON format, as well as
-a monitoring endpoint in plain text and Prometheus format.
+and JSON and, in turn, provide an RTR service for routers to connect to. The
+HTTP server provides the validated data set in JSON format, as well as a
+monitoring endpoint in plain text and Prometheus format.
 
 Options
 -------
@@ -33,14 +32,15 @@ Options
 
 .. option:: -v, --verbose
 
-      Print more information. If given twice, even more information is printed.
+      Print more information. If given twice, even more information is
+      printed.
 
-      More specifically, a single :option:`-v` increases the log level from the
-      default of warn to *info*, specifying it more than once increases it to
-      *debug*.
+      More specifically, a single :option:`-v` increases the log level from
+      the default of warn to *info*, specifying it more than once increases
+      it to *debug*.
       
-      See `LOGGING`_ below for more information on what information is logged at
-      the different levels.
+      See `LOGGING`_ below for more information on what information is logged
+      at the different levels.
 
 .. option:: -q, --quiet
 
@@ -53,8 +53,8 @@ Options
 
       Redirect logging output to syslog.
 
-      This option is implied if a command is used that causes Routinator to run
-      in daemon mode.
+      This option is implied if a command is used that causes Routinator to
+      run in daemon mode.
 
 .. option:: --syslog-facility=facility
 
@@ -81,10 +81,10 @@ The configuration file describes how and from where RTRTR is collecting data,
 how it processes it and how it should provide access to the resulting data
 set or data sets.
 
-The configuration file is a file in TOML format. It consists of a
-sequence of key-value pairs, each on its own line. Strings are to be enclosed in
-double quotes. Lists can be given by enclosing a comma-separated list of values
-in square brackets. The file contains multiple sections, each started with a
+The configuration file is a file in TOML format. It consists of a sequence of
+key-value pairs, each on its own line. Strings are to be enclosed in double
+quotes. Lists can be given by enclosing a comma-separated list of values in
+square brackets. The file contains multiple sections, each started with a
 name enclosed in square brackets.
 
 The first section without a name at the beginning of the file provides
@@ -105,11 +105,11 @@ its class. I.e., a unit named ``foo`` would have a section name of
 ``[unit.foo]`` while a target ``bar`` would have a section name of
 ``[target.bar]``.
 
-The following reference lists all configuration options for the global section
-as well as all options for each currently defined unit and target type. For
-each option it states the name, type, and purpose. Any relative path given as
-a configuration value is interpreted relative to the directory the
-configuration file is located in.
+The following reference lists all configuration options for the global
+section as well as all options for each currently defined unit and target
+type. For each option it states the name, type, and purpose. Any relative
+path given as a configuration value is interpreted relative to the directory
+the configuration file is located in.
 
 Global Options
 --------------
@@ -148,9 +148,9 @@ log
       The default if this value is missing is, unsurprisingly, default.
 
 log-file
-      A string value containing the path to a file to which log messages will be
-      appended if the log configuration value is set to file. In this case, the
-      value is mandatory.
+      A string value containing the path to a file to which log messages will
+      be appended if the log configuration value is set to file. In this
+      case, the value is mandatory.
 
 syslog-facility
       A string value specifying the syslog facility to use for logging to
@@ -185,14 +185,14 @@ retry
 
 cacerts
       Only used with the ``"rtr-tls"`` type, a list of paths to files that
-      contain one or more PEM encoded certificates that should be trusted when
-      verifying a TLS server certificate.
+      contain one or more PEM encoded certificates that should be trusted
+      when verifying a TLS server certificate.
 
       The ``"rtr-tls"`` unit also uses the usual set of web trust anchors, so
       this option is only necessary when the RTR server doesn’t use a server
-      certificate that would be trusted by web browser. This is, for instance,
-      the case if the server uses a self-signed certificate in which case this
-      certificate needs to be added via this option.
+      certificate that would be trusted by web browser. This is, for
+      instance, the case if the server uses a self-signed certificate in
+      which case this certificate needs to be added via this option.
 
 
 JSON Unit
@@ -232,7 +232,8 @@ and can therefore be used to fall back to a different unit if one fails.
 The ``"any"`` unit has the following configuration options:
 
 sources
-      A list of strings each containing the name of a unit to use as a source.
+      A list of strings each containing the name of a unit to use as a
+      source.
 
 random
       A boolean value specifying whether the unit should pick a source unit
@@ -244,9 +245,9 @@ SLURM Unit
 ----------
 
 A unit of type ``"slurm"`` will apply local exception rules to a data set
-provided by another unit. These rules are defined through local JSON files
-as described in :rfc:`8416`. They allow to both filter out existing entries
-in a data set as well as add new entries.
+provided by another unit. These rules are defined through local JSON files as
+described in :rfc:`8416`. They allow to both filter out existing entries in a
+data set as well as add new entries.
 
 The ``"slurm"`` unit has the following configuration options:
 
@@ -278,7 +279,8 @@ unit
        A string value specifying the name of the unit that provides the data
        set for the RTR target to offer.
 
-The ``"rtr-tls"`` target has the following *additional* configuration options:
+The ``"rtr-tls"`` target has the following *additional* configuration
+options:
 
 certificate
       A string value providing a path to a file containing the PEM-encoded
@@ -325,8 +327,8 @@ The log levels represent the following information:
 
 error
       Information  related to events that prevent RTRTR from continuing to
-      operate at all as well as all issues related to local configuration even
-      if RTRTR will continue to run.
+      operate at all as well as all issues related to local configuration
+      even if RTRTR will continue to run.
 
 warn
       Information  about  events  and  data that influences the data sets
