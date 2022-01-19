@@ -1,10 +1,10 @@
 # Change Log
 
-## Unreleased next version
+## 0.2.0 ‘Arts and Crafts and Tactical Gear’
 
-Bug Fixes
+Released 2022-01-19.
 
-Other Changes
+There have been no changes since 0.2.0-rc1.
 
 
 ## 0.2.0-rc1
