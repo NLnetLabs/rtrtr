@@ -270,8 +270,7 @@ jobs:
         case ${OS_NAME} in
           debian|ubuntu)
             case ${{ github.event_name }} in
-              pull_request)
-              workflow_dispatch)
+              pull_request | workflow_dispatch)
                 MAINTAINER="${{ github.event.sender.login }} <pkg@nlnetlabs.nl>"
                 ;;
               push)
