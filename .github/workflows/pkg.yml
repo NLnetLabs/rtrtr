@@ -87,7 +87,7 @@ jobs:
           - "centos:8"
         target:
           - 'x86_64'
-       include:
+        include:
           # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
           # Raspbian 11 is based.
           - image: 'debian:bullseye'
