@@ -1,30 +1,10 @@
 Manual Page
 ===========
 
-.. only:: html
+Synopsis
+--------
 
-    :command:`rtrtr` – RPKI data proxy
-
-    :Date: 2022-01-04
-    :Author: Martin Hoffmann
-    :Copyright: 2021-2022 – NLnet Labs
-    :Version: 0.1.2
-
-    Synopsis
-    --------
-
-    .. raw:: html
-
-        <p><strong class="command">rtrtr</strong> <code class="xref std
-        std-option docutils literal notranslate"><span
-        class="pre">options</span></code></p>
-
-.. only:: man
-
-    Synopsis
-    --------
-
-    :command:`rtrtr` [options]
+:command:`rtrtr` [``options``]
 
 Description
 -----------

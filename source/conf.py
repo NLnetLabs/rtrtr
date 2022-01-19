@@ -33,9 +33,9 @@ copyright = f'2019–{year}, NLnet Labs'
 author = 'NLnet Labs'
 
 # The short X.Y version
-version = '0.2.0'
+version = ''
 # The full version, including alpha/beta/rc tags
-release = '0.2.0-dev'
+release = ''
 
 # -- Version Warning Banner configuration ------------------------------------
 if versionbanner:
