@@ -1,0 +1,11 @@
+[Unit]
+Description=RTRTR
+Documentation=https://nlnetlabs.nl/projects/rpki/rtrtr/
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/rtrtr --config=/etc/rtrtr.conf
+User=rtrtr
+
+[Install]
+WantedBy=multi-user.target
