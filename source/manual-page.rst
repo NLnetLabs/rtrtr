@@ -26,7 +26,7 @@ Options
 .. option:: -c path, --config=path
 
     Provides the path to a file containing the configuration for RTRTR. See
-    `Configuration File`_ below for more information on the format and
+    `CONFIGURATION FILE`_ below for more information on the format and
     contents of the file.
 
     This option is required.
@@ -39,7 +39,7 @@ Options
       default of warn to *info*, specifying it more than once increases it to
       *debug*.
       
-      See `Logging`_ below for more information on what information is logged at
+      See `LOGGING`_ below for more information on what information is logged at
       the different levels.
 
 .. option:: -q, --quiet
