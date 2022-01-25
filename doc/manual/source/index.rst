@@ -3,10 +3,10 @@ RTRTR |version|
 
 .. only:: html
 
-    |docsupdated| |license| |discord|
+    |lastcommit| |license| |discord|
 
-    .. |docsupdated| image:: https://readthedocs.org/projects/rtrtr/badge/?version=stable
-                :target: https://rtrtr.docs.nlnetlabs.nl/en/stable/?badge=stable
+    .. |lastcommit| image:: https://img.shields.io/github/last-commit/nlnetlabs/rtrtr
+                :target: https://github.com/NLnetLabs/rtrtr
 
     .. |license| image:: https://img.shields.io/github/license/nlnetlabs/rtrtr
                 :target: https://github.com/NLnetLabs/rtrtr/blob/main/LICENSE
