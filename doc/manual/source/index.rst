@@ -3,30 +3,40 @@ RTRTR |version|
 
 .. only:: html
 
-    |docsupdated| |discord|
+    |docsupdated| |license| |discord|
 
-    .. |docsupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/rtrtr-manual.svg?label=docs%20updated
-                :target: https://github.com/NLnetLabs/routinator-manual/commits/main
+    .. |docsupdated| image:: https://readthedocs.org/projects/rtrtr/badge/?version=stable
+                :target: https://rtrtr.docs.nlnetlabs.nl/en/stable/?badge=stable
+
+    .. |license| image:: https://img.shields.io/github/license/nlnetlabs/rtrtr
+                :target: https://github.com/NLnetLabs/rtrtr/blob/main/LICENSE
 
     .. |discord| image:: https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord
                 :target: https://discord.gg/8dvKB5Ykhy
 
-RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads from one
-or more sources in multiple formats and dispatch it onwards. It provides the
-means to implement multiple distribution architectures for RPKI such as
-centralised RPKI validators that dispatch data to local caching RTR servers.
+A versatile toolbox
+   RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads
+   from one or more sources in multiple formats and dispatch it onwards. It
+   provides the means to implement multiple distribution architectures for
+   RPKI such as centralised RPKI validators that dispatch data to local
+   caching RTR servers.
 
-RTRTR can read RPKI data from multiple RPKI Relying Party packages via RTR and
-JSON and, in turn, provide an RTR service for routers to connect to. The HTTP
-server provides the validated data set in JSON format, as well as a monitoring
-endpoint in plain text and Prometheus format.
+Secure and redundant RTR connections
+   RTRTR can read RPKI data from multiple RPKI Relying Party packages via RTR
+   and JSON and, in turn, provide an RTR service for routers to connect to.
+   The HTTP server provides the validated data set in JSON format, as well as
+   a monitoring endpoint in plain text and Prometheus format. TLS is
+   supported on all connections.
 
-If you run into a problem with RTRTR or you have a feature request, please
-`create an issue on Github <https://github.com/NLnetLabs/rtrtr/issues>`_.
-We are also happy to accept your pull requests. For general discussion and
-exchanging operational experiences we provide a `mailing list
-<https://lists.nlnetlabs.nl/mailman/listinfo/rpki>`_ and a `Discord server
-<https://discord.gg/8dvKB5Ykhy>`_. 
+Open source with community and professional support
+   NLnet Labs offers `professional support services
+   <https://www.nlnetlabs.nl/services/contracts/>`_ with a service-level
+   agreement. We also provide a `mailing list
+   <https://lists.nlnetlabs.nl/mailman/listinfo/rpki>`_ and `Discord server
+   <https://discord.gg/8dvKB5Ykhy>`_  for community support and to exchange
+   operational experiences. RTRTR is liberally licensed under the `BSD
+   3-Clause license
+   <https://github.com/NLnetLabs/rtrtr/blob/main/LICENSE>`_.
 
 .. toctree::
    :maxdepth: 2
