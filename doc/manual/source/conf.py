@@ -16,6 +16,7 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+import toml
 import datetime
 import sphinx_rtd_theme
 try:
@@ -32,10 +33,12 @@ year = datetime.datetime.now().year
 copyright = f'2019–{year}, NLnet Labs'
 author = 'NLnet Labs'
 
+semver = toml.load('../../../Cargo.toml')
+
 # The short X.Y version
-version = ''
+version = semver.get('package').get('version')
 # The full version, including alpha/beta/rc tags
-release = ''
+release = version
 
 # -- Version Warning Banner configuration ------------------------------------
 if versionbanner:
