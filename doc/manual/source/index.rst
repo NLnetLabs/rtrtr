@@ -40,6 +40,7 @@ Open source with community and professional support
 
 .. toctree::
    :maxdepth: 2
+   :hidden:
 
    installation
    configuration
