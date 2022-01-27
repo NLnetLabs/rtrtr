@@ -144,6 +144,9 @@ array and can take multiple values as input.
     source = "source-unit-name"
     files = [ "/var/lib/rtrtr/local-expections.json" ]
 
+The :doc:`routinator:local-exceptions` page in the Routinator documentation
+has more information on the format and syntax of SLURM files. 
+
 Targets
 -------
 
