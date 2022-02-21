@@ -408,7 +408,7 @@ jobs:
           - "ubuntu:bionic"   # ubuntu/18.04
           - "ubuntu:focal"    # ubuntu/20.04
           - "debian:stretch"  # debian/9
-          #- "debian:buster"   # debian/10 (disabled, see issue #26)
+          - "debian:buster"   # debian/10 (disabled, see issue #26)
           - "debian:bullseye" # debian/11
           - "centos:7"
           - "centos:8"
