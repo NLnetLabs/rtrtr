@@ -277,7 +277,7 @@ struct RegisteredResource {
 pub trait ProcessRequest: Send + Sync {
     /// Processes an HTTP request.
     ///
-    /// If the processor feels responsible for the reuqest, it should return
+    /// If the processor feels responsible for the request, it should return
     /// some response. This can be an error response. Otherwise it should
     /// return `None`.
     fn process_request(
