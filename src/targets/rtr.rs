@@ -35,13 +35,22 @@ use crate::manager::Component;
 pub struct Tcp {
     listen: Vec<SocketAddr>,
     unit: Link,
+
+    #[serde(default = "Tcp::default_history_size")]
+    #[serde(rename = "history-size")]
+    history_size: usize,
 }
 
 impl Tcp {
+    /// The default for the `history_size` value.
+    const fn default_history_size() -> usize {
+        10
+    }
+
     /// Runs the target.
     pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let mut notify = NotifySender::new();
-        let target = Source::default();
+        let target = Source::new(self.history_size);
         for &addr in &self.listen {
             self.spawn_listener(addr, target.clone(), notify.clone())?;
         }
@@ -105,6 +114,9 @@ pub struct Tls {
     unit: Link,
     certificate: ConfigPath,
     key: ConfigPath,
+
+    #[serde(default = "Tcp::default_history_size")]
+    history_size: usize,
 }
 
 impl Tls {
@@ -112,7 +124,7 @@ impl Tls {
     pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let acceptor = TlsAcceptor::from(Arc::new(self.create_tls_config()?));
         let mut notify = NotifySender::new();
-        let target = Source::default();
+        let target = Source::new(self.history_size);
         for &addr in &self.listen {
             self.spawn_listener(
                 addr, acceptor.clone(), target.clone(), notify.clone()
@@ -242,13 +254,20 @@ impl Tls {
 
 //------------ Source --------------------------------------------------------
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct Source {
     data: Arc<ArcSwap<SourceData>>,
-    diff_num: usize,
+    history_size: usize,
 }
 
 impl Source {
+    fn new(history_size: usize) -> Self {
+        Source {
+            data: Default::default(),
+            history_size
+        }
+    }
+
     fn update(&self, update: payload::Update) {
         let data = self.data.load();
 
@@ -272,11 +291,11 @@ impl Source {
                     return
                 }
                 let mut diffs = Vec::with_capacity(
-                    cmp::min(data.diffs.len() + 1, self.diff_num)
+                    cmp::min(data.diffs.len() + 1, self.history_size)
                 );
                 diffs.push((data.state.serial(), diff.clone()));
                 for (serial, old_diff) in &data.diffs {
-                    if diffs.len() == self.diff_num {
+                    if diffs.len() >= self.history_size {
                         break
                     }
                     diffs.push((

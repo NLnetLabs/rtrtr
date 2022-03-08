@@ -27,30 +27,29 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "RTRTR" "1" "Jan 19, 2022" "0.2.0" "RTRTR"
+.TH "RTRTR" "1" "Mar 08, 2022" "0.2.1-dev" "RTRTR"
 .SH NAME
 rtrtr \- RPKI data proxy
 .SH SYNOPSIS
 .sp
-\fBrtrtr\fP [options]
+\fBrtrtr\fP [\fBoptions\fP]
 .SH DESCRIPTION
 .sp
-RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads
-from one or more sources in multiple formats and dispatch it onwards. It
-provides the means to implement multiple distribution architectures for
-RPKI such as centralised RPKI validators that dispatch data to local caching
-RTR servers.
+RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads from
+one or more sources in multiple formats and dispatch it onwards. It provides
+the means to implement multiple distribution architectures for RPKI such as
+centralised RPKI validators that dispatch data to local caching RTR servers.
 .sp
 RTRTR can read RPKI data from multiple RPKI Relying Party packages via RTR
-and JSON and, in turn, provide an RTR service for routers to connect to.
-The HTTP server provides the validated data set in JSON format, as well as
-a monitoring endpoint in plain text and Prometheus format.
+and JSON and, in turn, provide an RTR service for routers to connect to. The
+HTTP server provides the validated data set in JSON format, as well as a
+monitoring endpoint in plain text and Prometheus format.
 .SH OPTIONS
 .INDENT 0.0
 .TP
 .B \-c path, \-\-config=path
 Provides the path to a file containing the configuration for RTRTR. See
-\fI\%Configuration File\fP below for more information on the format and
+\fI\%CONFIGURATION FILE\fP below for more information on the format and
 contents of the file.
 .sp
 This option is required.
@@ -58,14 +57,15 @@ This option is required.
 .INDENT 0.0
 .TP
 .B \-v, \-\-verbose
-Print more information. If given twice, even more information is printed.
+Print more information. If given twice, even more information is
+printed.
 .sp
-More specifically, a single \fI\%\-v\fP increases the log level from the
-default of warn to \fIinfo\fP, specifying it more than once increases it to
-\fIdebug\fP\&.
+More specifically, a single \fI\%\-v\fP increases the log level from
+the default of warn to \fIinfo\fP, specifying it more than once increases
+it to \fIdebug\fP\&.
 .sp
-See \fI\%Logging\fP below for more information on what information is logged at
-the different levels.
+See \fI\%LOGGING\fP below for more information on what information is logged
+at the different levels.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -80,8 +80,8 @@ A single \fI\%\-q\fP will drop the log level to \fIerror\fP\&. Repeating
 .B \-\-syslog
 Redirect logging output to syslog.
 .sp
-This option is implied if a command is used that causes Routinator to run
-in daemon mode.
+This option is implied if a command is used that causes Routinator to
+run in daemon mode.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -110,10 +110,10 @@ The configuration file describes how and from where RTRTR is collecting data,
 how it processes it and how it should provide access to the resulting data
 set or data sets.
 .sp
-The configuration file is a file in TOML format. It consists of a
-sequence of key\-value pairs, each on its own line. Strings are to be enclosed in
-double quotes. Lists can be given by enclosing a comma\-separated list of values
-in square brackets. The file contains multiple sections, each started with a
+The configuration file is a file in TOML format. It consists of a sequence of
+key\-value pairs, each on its own line. Strings are to be enclosed in double
+quotes. Lists can be given by enclosing a comma\-separated list of values in
+square brackets. The file contains multiple sections, each started with a
 name enclosed in square brackets.
 .sp
 The first section without a name at the beginning of the file provides
@@ -134,11 +134,11 @@ its class. I.e., a unit named \fBfoo\fP would have a section name of
 \fB[unit.foo]\fP while a target \fBbar\fP would have a section name of
 \fB[target.bar]\fP\&.
 .sp
-The following reference lists all configuration options for the global section
-as well as all options for each currently defined unit and target type. For
-each option it states the name, type, and purpose. Any relative path given as
-a configuration value is interpreted relative to the directory the
-configuration file is located in.
+The following reference lists all configuration options for the global
+section as well as all options for each currently defined unit and target
+type. For each option it states the name, type, and purpose. Any relative
+path given as a configuration value is interpreted relative to the directory
+the configuration file is located in.
 .SH GLOBAL OPTIONS
 .INDENT 0.0
 .TP
@@ -178,9 +178,9 @@ the log\-file configuration file entry.
 The default if this value is missing is, unsurprisingly, default.
 .TP
 .B log\-file
-A string value containing the path to a file to which log messages will be
-appended if the log configuration value is set to file. In this case, the
-value is mandatory.
+A string value containing the path to a file to which log messages will
+be appended if the log configuration value is set to file. In this
+case, the value is mandatory.
 .TP
 .B syslog\-facility
 A string value specifying the syslog facility to use for logging to
@@ -214,14 +214,14 @@ If this option is missing, the default of 60 seconds is used.
 .TP
 .B cacerts
 Only used with the \fB"rtr\-tls"\fP type, a list of paths to files that
-contain one or more PEM encoded certificates that should be trusted when
-verifying a TLS server certificate.
+contain one or more PEM encoded certificates that should be trusted
+when verifying a TLS server certificate.
 .sp
 The \fB"rtr\-tls"\fP unit also uses the usual set of web trust anchors, so
 this option is only necessary when the RTR server doesn’t use a server
-certificate that would be trusted by web browser. This is, for instance,
-the case if the server uses a self\-signed certificate in which case this
-certificate needs to be added via this option.
+certificate that would be trusted by web browser. This is, for
+instance, the case if the server uses a self\-signed certificate in
+which case this certificate needs to be added via this option.
 .UNINDENT
 .SH JSON UNIT
 .sp
@@ -260,7 +260,8 @@ The \fB"any"\fP unit has the following configuration options:
 .INDENT 0.0
 .TP
 .B sources
-A list of strings each containing the name of a unit to use as a source.
+A list of strings each containing the name of a unit to use as a
+source.
 .TP
 .B random
 A boolean value specifying whether the unit should pick a source unit
@@ -270,9 +271,9 @@ picked in the order given.
 .SH SLURM UNIT
 .sp
 A unit of type \fB"slurm"\fP will apply local exception rules to a data set
-provided by another unit. These rules are defined through local JSON files
-as described in \fI\%RFC 8416\fP\&. They allow to both filter out existing entries
-in a data set as well as add new entries.
+provided by another unit. These rules are defined through local JSON files as
+described in \fI\%RFC 8416\fP\&. They allow to both filter out existing entries in a
+data set as well as add new entries.
 .sp
 The \fB"slurm"\fP unit has the following configuration options:
 .INDENT 0.0
@@ -304,9 +305,18 @@ colon. IPv6 address should be enclosed in square brackets.
 .B unit
 A string value specifying the name of the unit that provides the data
 set for the RTR target to offer.
+.TP
+.B history\-size
+An integer value specifying the number of diffs the target should keep
+in order to process RTR serial queries, i.e., the number of updates to
+the data set a client may fall behind before having to fetch the full
+data set again.
+.sp
+If this value is missing, it defaults to 10.
 .UNINDENT
 .sp
-The \fB"rtr\-tls"\fP target has the following \fIadditional\fP configuration options:
+The \fB"rtr\-tls"\fP target has the following \fIadditional\fP configuration
+options:
 .INDENT 0.0
 .TP
 .B certificate
@@ -353,8 +363,8 @@ The log levels represent the following information:
 .TP
 .B error
 Information  related to events that prevent RTRTR from continuing to
-operate at all as well as all issues related to local configuration even
-if RTRTR will continue to run.
+operate at all as well as all issues related to local configuration
+even if RTRTR will continue to run.
 .TP
 .B warn
 Information  about  events  and  data that influences the data sets
@@ -370,8 +380,8 @@ Information about the internal state of RTRTR that may be useful for
 debugging.
 .UNINDENT
 .SH AUTHOR
-NLnet Labs (CC-BY 3.0)
+NLnet Labs
 .SH COPYRIGHT
-2018-2021, NLnet Labs
+2019–2022, NLnet Labs
 .\" Generated by docutils manpage writer.
 .

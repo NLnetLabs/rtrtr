@@ -322,7 +322,7 @@ impl ConfigFile {
     fn resolve_pos(&self, pos: usize) -> LineCol {
         let line = self.line_starts.iter().find(|&&start|
             start < pos
-        ).copied().unwrap_or_else(|| self.line_starts.len());
+        ).copied().unwrap_or(self.line_starts.len());
         let line = line - 1;
         let col = self.line_starts[line] - pos;
         LineCol { line, col }
