@@ -33,9 +33,13 @@ use crate::manager::Component;
 /// An RTR server atop unencrypted, plain TCP.
 #[derive(Debug, Deserialize)]
 pub struct Tcp {
+    /// The socket addresses to listen on.
     listen: Vec<SocketAddr>,
+
+    /// The unit whose data set we should serve.
     unit: Link,
 
+    /// The maximum number of deltas we should keep.
     #[serde(default = "Tcp::default_history_size")]
     #[serde(rename = "history-size")]
     history_size: usize,
@@ -110,13 +114,15 @@ impl Tcp {
 /// An RTR server atop TLS.
 #[derive(Debug, Deserialize)]
 pub struct Tls {
-    listen: Vec<SocketAddr>,
-    unit: Link,
-    certificate: ConfigPath,
-    key: ConfigPath,
+    /// The configuration values shared with [`Tcp`].
+    #[serde(flatten)]
+    tcp: Tcp,
 
-    #[serde(default = "Tcp::default_history_size")]
-    history_size: usize,
+    /// The path to the server certificate to present to clients.
+    certificate: ConfigPath,
+
+    /// The path to the private key to use for encryption.
+    key: ConfigPath,
 }
 
 impl Tls {
@@ -124,15 +130,15 @@ impl Tls {
     pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let acceptor = TlsAcceptor::from(Arc::new(self.create_tls_config()?));
         let mut notify = NotifySender::new();
-        let target = Source::new(self.history_size);
-        for &addr in &self.listen {
+        let target = Source::new(self.tcp.history_size);
+        for &addr in &self.tcp.listen {
             self.spawn_listener(
                 addr, acceptor.clone(), target.clone(), notify.clone()
             )?;
         }
 
         loop {
-            if let Ok(update) = self.unit.query().await {
+            if let Ok(update) = self.tcp.unit.query().await {
                 debug!(
                     "Target {}: Got update ({} entries)",
                     component.name(), update.set().len()
