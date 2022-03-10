@@ -279,6 +279,14 @@ unit
        A string value specifying the name of the unit that provides the data
        set for the RTR target to offer.
 
+history-size
+       An integer value specifying the number of diffs the target should keep
+       in order to process RTR serial queries, i.e., the number of updates to
+       the data set a client may fall behind before having to fetch the full
+       data set again.
+
+       If this value is missing, it defaults to 10.
+
 The ``"rtr-tls"`` target has the following *additional* configuration
 options:
 

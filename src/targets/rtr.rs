@@ -33,15 +33,28 @@ use crate::manager::Component;
 /// An RTR server atop unencrypted, plain TCP.
 #[derive(Debug, Deserialize)]
 pub struct Tcp {
+    /// The socket addresses to listen on.
     listen: Vec<SocketAddr>,
+
+    /// The unit whose data set we should serve.
     unit: Link,
+
+    /// The maximum number of deltas we should keep.
+    #[serde(default = "Tcp::default_history_size")]
+    #[serde(rename = "history-size")]
+    history_size: usize,
 }
 
 impl Tcp {
+    /// The default for the `history_size` value.
+    const fn default_history_size() -> usize {
+        10
+    }
+
     /// Runs the target.
     pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let mut notify = NotifySender::new();
-        let target = Source::default();
+        let target = Source::new(self.history_size);
         for &addr in &self.listen {
             self.spawn_listener(addr, target.clone(), notify.clone())?;
         }
@@ -101,9 +114,14 @@ impl Tcp {
 /// An RTR server atop TLS.
 #[derive(Debug, Deserialize)]
 pub struct Tls {
-    listen: Vec<SocketAddr>,
-    unit: Link,
+    /// The configuration values shared with [`Tcp`].
+    #[serde(flatten)]
+    tcp: Tcp,
+
+    /// The path to the server certificate to present to clients.
     certificate: ConfigPath,
+
+    /// The path to the private key to use for encryption.
     key: ConfigPath,
 }
 
@@ -112,15 +130,15 @@ impl Tls {
     pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let acceptor = TlsAcceptor::from(Arc::new(self.create_tls_config()?));
         let mut notify = NotifySender::new();
-        let target = Source::default();
-        for &addr in &self.listen {
+        let target = Source::new(self.tcp.history_size);
+        for &addr in &self.tcp.listen {
             self.spawn_listener(
                 addr, acceptor.clone(), target.clone(), notify.clone()
             )?;
         }
 
         loop {
-            if let Ok(update) = self.unit.query().await {
+            if let Ok(update) = self.tcp.unit.query().await {
                 debug!(
                     "Target {}: Got update ({} entries)",
                     component.name(), update.set().len()
@@ -242,13 +260,20 @@ impl Tls {
 
 //------------ Source --------------------------------------------------------
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct Source {
     data: Arc<ArcSwap<SourceData>>,
-    diff_num: usize,
+    history_size: usize,
 }
 
 impl Source {
+    fn new(history_size: usize) -> Self {
+        Source {
+            data: Default::default(),
+            history_size
+        }
+    }
+
     fn update(&self, update: payload::Update) {
         let data = self.data.load();
 
@@ -272,11 +297,11 @@ impl Source {
                     return
                 }
                 let mut diffs = Vec::with_capacity(
-                    cmp::min(data.diffs.len() + 1, self.diff_num)
+                    cmp::min(data.diffs.len() + 1, self.history_size)
                 );
                 diffs.push((data.state.serial(), diff.clone()));
                 for (serial, old_diff) in &data.diffs {
-                    if diffs.len() == self.diff_num {
+                    if diffs.len() >= self.history_size {
                         break
                     }
                     diffs.push((
