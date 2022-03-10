@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crossbeam_utils::atomic::AtomicCell;
 use futures::future::{select, select_all, Either, FutureExt};
 use rand::{thread_rng, Rng};
+use rpki::rtr::Serial;
 use serde::Deserialize;
 use crate::metrics;
 use crate::metrics::{Metric, MetricType, MetricUnit};
@@ -121,157 +122,6 @@ impl Any {
 }
 
 
-/*
-impl Any {
-    pub async fn run(
-        mut self, mut component: Component, mut gate: Gate
-    ) -> Result<(), Terminated> {
-        if self.sources.is_empty() {
-            gate.update_status(UnitStatus::Gone).await;
-            return Err(Terminated)
-        }
-        let metrics = Arc::new(AnyMetrics::new(&gate));
-        component.register_metrics(metrics.clone());
-
-        let mut gate = [gate];
-        let mut curr_idx = None;
-        loop {
-            // Pick the next healthy source, if there is one.
-            curr_idx = self.pick(curr_idx);
-            metrics.current_index.store(curr_idx);
-
-            println!("current index: {:?}", curr_idx);
-
-            match curr_idx {
-                Some(curr_idx) => self.run_healthy(&mut gate, curr_idx).await,
-                None => self.run_stalled(&mut gate).await
-            }
-        }
-    }
-
-    /// Collects updates from a healthy source until it stalls.
-    async fn run_healthy(&mut self, gate: &mut [Gate], curr_idx: usize) {
-        loop {
-            let res = {
-                select_all(
-                    self.sources.iter_mut().enumerate().map(|(idx, link)| {
-                        if idx == curr_idx {
-                            AnySource::Active(link).run().boxed()
-                        }
-                        else {
-                            AnySource::Suspended(link).run().boxed()
-                        }
-                    }).chain(gate.iter_mut().map(|gate| {
-                        AnySource::Gate(gate).run().boxed()
-                    }))
-                ).await.0
-            };
-            match res {
-                Ok(Some(update)) => {
-                    // Update from the current source.
-                    gate[0].update_data(update).await
-                }
-                Ok(None) => {
-                    // Status change we don’t care about.
-                }
-                Err(()) => {
-                    // Current source has stalled.
-                    break;
-                }
-            }
-        }
-    }
-
-    /// Waits for any source becoming healthy.
-    async fn run_stalled(&mut self, gate: &mut [Gate]) {
-        loop {
-            let res = {
-                select_all(
-                    self.sources.iter_mut().map(|link| {
-                        AnySource::Suspended(link).run_stalled().boxed()
-                    }).chain(gate.iter_mut().map(|gate| {
-                        AnySource::Gate(gate).run_stalled().boxed()
-                    }))
-                ).await.0
-            };
-            println!("Back to healthy: {}", res);
-            if res {
-                break
-            }
-        }
-    }
-
-    /// Pick the next healthy source.
-    ///
-    /// This will return `None`, if no healthy source is currently available.
-    fn pick(&self, curr: Option<usize>) -> Option<usize> {
-        // Here’s what we do in case of random picking: We only pick the next
-        // source at random and then loop around. That’s not truly random but
-        // deterministic.
-        let mut next = if self.random {
-            thread_rng().gen_range(0, self.sources.len())
-        }
-        else if let Some(curr) = curr {
-            (curr + 1) % self.sources.len()
-        }
-        else {
-            0
-        };
-        for _ in 0..self.sources.len() {
-            if self.sources[next].get_status() == UnitStatus::Healthy {
-                return Some(next)
-            }
-            next = (next + 1) % self.sources.len()
-        }
-        None
-    }
-}
-
-enum AnySource<'a> {
-    Active(&'a mut Link),
-    Suspended(&'a mut Link),
-    Gate(&'a mut Gate)
-}
-
-impl<'a> AnySource<'a> {
-    async fn run(self) -> Result<Option<payload::Update>, ()> {
-        match self {
-            AnySource::Active(link) => {
-                match link.query().await {
-                    Ok(update) => Ok(Some(update)),
-                    Err(UnitStatus::Healthy) => Ok(None),
-                    Err(UnitStatus::Stalled) | Err(UnitStatus::Gone) => {
-                        Err(())
-                    }
-                }
-            }
-            AnySource::Suspended(link) => {
-                 let _  = link.query_suspended().await;
-                 Ok(None)
-            }
-            AnySource::Gate(gate) => {
-                let _ = gate.process().await;
-                Ok(None)
-            }
-        }
-    }
-
-    async fn run_stalled(self) -> bool {
-        match self {
-            AnySource::Active(_) => unreachable!(),
-            AnySource::Suspended(link) => {
-                 matches!(link.query_suspended().await, UnitStatus::Healthy)
-            }
-            AnySource::Gate(gate) => {
-                let _ = gate.process().await;
-                false
-            }
-        }
-    }
-}
-*/
-
-
 //------------ AnyMetrics ----------------------------------------------------
 
 #[derive(Debug, Default)]
@@ -303,6 +153,65 @@ impl metrics::Source for AnyMetrics {
             self.current_index.load().map(|v| v as isize).unwrap_or(-1)
         );
         self.gate.append(unit_name, target);
+    }
+}
+
+
+//------------ Merge ---------------------------------------------------------
+
+/// A unit merging the data sets of all upstream units.
+#[derive(Debug, Deserialize)]
+pub struct Merge {
+    /// The set of units whose data set should be merged.
+    sources: Vec<Link>,
+}
+
+impl Merge {
+    pub async fn run(
+        mut self, mut component: Component, mut gate: Gate
+    ) -> Result<(), Terminated> {
+        if self.sources.is_empty() {
+            gate.update_status(UnitStatus::Gone).await;
+            return Err(Terminated)
+        }
+        let metrics = gate.metrics();
+        component.register_metrics(metrics.clone());
+        let mut updates: Vec<Option<payload::Update>> = vec![
+            None; self.sources.len()
+        ];
+        let mut serial = Serial::from(0);
+
+        loop {
+            let (res, idx, _) = {
+                let res = select(
+                    select_all(
+                        self.sources.iter_mut().map(|link|
+                            link.query().boxed()
+                        )
+                    ),
+                    gate.process().boxed()
+                ).await;
+
+                match res {
+                    // The select_all
+                    Either::Left((res, _)) => { res }
+
+                    // The gate.process
+                    Either::Right(_) => continue,
+                }
+            };
+
+            if let Ok(update) = res {
+                updates[idx] = Some(update);
+            }
+
+            let mut output = payload::Set::default();
+            for update in updates.iter().filter_map(|item| item.as_ref()) {
+                output = output.merge(update.set())
+            }
+            serial = serial.add(1);
+            gate.update_data(payload::Update::new(serial, output, None)).await;
+        }
     }
 }
 
