@@ -4,11 +4,21 @@
 
 Breaking Changes
 
-New
-
 Bug Fixes
 
+* Fixed an issue that resulted in the `"rtr"` and `"rtr-tls"` targets
+  keeping an endlessly growing list of diffs and continuously increasing
+  memory consumption. ([#65])
+
+New
+
+* The number of diffs kept by the `"rtr"` and `"rtr-tls"` units can now
+  be configured via the new `"history-size"` config option. This new
+  option is optional and defaults to 10. ([#65])
+
 Other Changes
+
+[#65]: https://github.com/NLnetLabs/rtrtr/pull/65
 
 
 ## 0.2.0 ‘Arts and Crafts and Tactical Gear’
