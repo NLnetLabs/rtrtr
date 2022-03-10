@@ -81,7 +81,7 @@ impl Tcp {
 
 //------------ Tls -----------------------------------------------------------
 
-/// An RTR client using an unencrypted plain TCP socket.
+/// An RTR client using a TLS encrypted TCP socket.
 #[derive(Debug, Deserialize)]
 pub struct Tls {
     /// The remote address to connect to.
