@@ -7,22 +7,33 @@ System Requirements
 When choosing a system to run RTRTR on, make sure you have 1GB of available
 memory and 1GB of disk space. 
 
-Quick Start
------------
+Binary Packages
+---------------
 
 Getting started with RTRTR is really easy by installing a binary package
-for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL), CentOS and
-Rocky Linux. The `NLnet Labs software package repository
-<https://packages.nlnetlabs.nl>`_ currently has packages available for the
-``amd64``/``x86_64`` architecture only. Alternatively, you can run with Docker
-or build from Cargo, Rust's build system and package manager.
+for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL) and
+compatible systems such as Rocky Linux. Alternatively, you can run with
+Docker. 
+
+You can also build RTRTR from the source code using Cargo, Rust's build
+system and package manager. Cargo lets you to run Routinator on almost any
+operating system and CPU architecture. Refer to the :doc:`building` section
+to get started.
 
 .. tabs::
 
    .. group-tab:: Debian
 
-       Our software package repository has binary packages available for 
-       Debian 9 (stretch), 10 (buster) and 11 (bullseye).
+       To install an RTRTR package, you need the 64-bit version of one of
+       these Debian versions:
+
+         -  Debian Bullseye 11
+         -  Debian Buster 10
+         -  Debian Stretch 9
+
+       Packages for the ``amd64``/``x86_64`` architecture are available for
+       all listed versions. In addition, we offer ``armhf`` architecture
+       packages for Debian/Raspbian Bullseye, and ``arm64`` for Buster.
        
        First update the ``apt`` package index: 
 
@@ -87,8 +98,14 @@ or build from Cargo, Rust's build system and package manager.
 
    .. group-tab:: Ubuntu
 
-       Our software package repository has binary packages available for Ubuntu
-       16.x (Xenial Xerus), 18.x (Bionic Beaver) and 20.x (Focal Fossa).
+       To install a Routinator package, you need the 64-bit version of one of
+       these Ubuntu versions:
+
+         - Ubuntu Focal 20.04 (LTS)
+         - Ubuntu Bionic 18.04 (LTS)
+         - Ubuntu Xenial 16.04 (LTS)
+
+       Packages are available for the ``amd64``/``x86_64`` architecture only.
        
        First update the ``apt`` package index: 
 
@@ -153,9 +170,9 @@ or build from Cargo, Rust's build system and package manager.
 
    .. group-tab:: RHEL/CentOS
 
-       Our software package repository has binary packages available for
-       RHEL/CentOS 7 and 8, or a compatible operating system such as Rocky 
-       Linux. 
+       To install a Routinator package, you need Red Hat Enterprise Linux
+       (RHEL) 7 or 8, or compatible operating system such as Rocky Linux.
+       Packages are available for the ``amd64``/``x86_64`` architecture only.
        
        First create a file named :file:`/etc/yum.repos.d/nlnetlabs.repo`, enter
        this configuration and save it:
@@ -200,6 +217,9 @@ or build from Cargo, Rust's build system and package manager.
        
    .. group-tab:: Docker
 
+       RTRTR Docker images are built with Alpine Linux for
+       ``amd64``/``x86_64`` architecture.
+
        To run RTRTR with Docker you will first need to create an
        :file:`rtrtr.conf` file somewhere on your host computer and make that
        available to the Docker container when you run it. For example if your
@@ -238,49 +258,6 @@ or build from Cargo, Rust's build system and package manager.
        .. code-block:: bash
 
           docker run -P ...
-               
-   .. group-tab:: Cargo
-
-       In this Quick Start we'll assume that you have a newly installed, recent
-       Linux distribution. Full instructions are in the `Installing From
-       Source`_ section.
-       
-       First you will need to install the C toolchain and curl to fetch Rust:
-
-       .. code-block:: bash
-
-          sudo apt install \
-            build-essential \
-            curl
-
-       Rust is installed and managed by the ``rustup`` tool. To download Rustup
-       and install Rust, run the following command and follow the on-screen
-       instructions:
-
-       .. code-block:: bash
-
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-       To configure your current shell, run:
-
-       .. code-block:: bash
-
-          source $HOME/.cargo/env
-
-       You can then proceed to install RTRTR:
-
-       .. code-block:: bash
-
-          cargo install --locked rtrtr
-
-       Once RTRTR is installed, you need to create a :doc:`configuration` file
-       that suits your needs. The config file to use needs to be passed to RTRTR
-       via the :option:`-c` option, i.e.:
-       
-       .. code-block:: text
-       
-          rtrtr -c rtrtr.conf
-
 
 Updating
 --------
@@ -353,19 +330,7 @@ Updating
        .. code-block:: text
        
           docker run -it nlnetlabs/rtrtr:latest
-               
-   .. group-tab:: Cargo
 
-       If you want to install the latest version of RTRTR using Cargo, it's
-       recommended to also update Rust to the latest version first. Use the 
-       ``--force`` option to  overwrite an existing version with the latest 
-       release:
-               
-       .. code-block:: text
-
-          rustup update
-          cargo install --locked --force rtrtr
-          
 Installing Specific Versions
 ----------------------------
 
@@ -482,89 +447,3 @@ a specific version, if needed.
        .. code-block:: text
        
           docker run -it nlnetlabs/rtrtr:v0.1.1
-               
-   .. group-tab:: Cargo
-
-       All release versions of RTRTR, as well as release candidates, are
-       available on `crates.io <https://crates.io/crates/rtrtr/versions>`_,
-       the Rust package registry. If you want to install a specific version of
-       RTRTR using Cargo, explicitly use the ``--version`` option. If
-       needed, use the ``--force`` option to overwrite an existing version:
-               
-       .. code-block:: text
-
-          cargo install --locked --force rtrtr --version 0.1.2-rc2
-
-       All new features of RTRTR are built on a branch and merged via a
-       `pull request <https://github.com/NLnetLabs/rtrtr/pulls>`_, allowing
-       you to easily try them out using Cargo. If you want to try the a specific
-       branch from the repository you can use the ``--git`` and ``--branch``
-       options:
-
-       .. code-block:: text
-
-          cargo install --git https://github.com/NLnetLabs/rtrtr.git --branch main
-          
-       For more installation options refer to the `Cargo book
-       <https://doc.rust-lang.org/cargo/commands/cargo-install.html#install-options>`_.
-
-Installing From Source
-----------------------
-
-You need a C toolchain and Rust to install and run RTRTR. You can install RTRTR
-on any system where you can fulfil these requirements.
-
-C Toolchain
-"""""""""""
-
-Some of the libraries RTRTR depends on require a C toolchain to be present.
-Your system probably has some easy way to install the minimum set of packages to
-build from C sources. For example, this command will install everything you need
-on Debian/Ubuntu:
-
-.. code-block:: text
-
-   apt install build-essential
-
-If you are unsure, try to run :command:`cc` on a command line. If there is a
-complaint about missing input files, you are probably good to go.
-
-Rust
-""""
-
-The Rust compiler runs on, and compiles to, a great number of platforms, though
-not all of them are equally supported. The official `Rust Platform Support
-<https://doc.rust-lang.org/nightly/rustc/platform-support.html>`_ page provides
-an overview of the various support levels.
-
-While some system distributions include Rust as system packages, RTRTR relies on
-a relatively new version of Rust, currently 1.54 or newer. We therefore suggest
-to use the canonical Rust installation via a tool called :command:`rustup`.
-
-To install :command:`rustup` and Rust, simply do:
-
-.. code-block:: text
-
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-Alternatively, visit the `official Rust website
-<https://www.rust-lang.org/tools/install>`_ for other installation methods.
-
-You can update your Rust installation later by running:
-
-.. code-block:: text
-
-   rustup update
-
-Building
-""""""""
-
-The easiest way to get RTRTR is to leave it to Cargo by saying:
-
-.. code-block:: text
-
-   cargo install --locked rtrtr
-
-The command will build RTRTR and install it in the same directory that
-Cargo itself lives in, likely ``$HOME/.cargo/bin``. This means RTRTR will
-be in your path, too.

@@ -38,6 +38,7 @@ Open source with community and professional support
    :hidden:
 
    installation
+   building
    configuration
    example-scenario
    manual-page
