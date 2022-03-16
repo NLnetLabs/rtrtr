@@ -16,7 +16,7 @@ compatible systems such as Rocky Linux. Alternatively, you can run with
 Docker. 
 
 You can also build RTRTR from the source code using Cargo, Rust's build
-system and package manager. Cargo lets you to run Routinator on almost any
+system and package manager. Cargo lets you to run RTRTR on almost any
 operating system and CPU architecture. Refer to the :doc:`building` section
 to get started.
 
@@ -98,7 +98,7 @@ to get started.
 
    .. group-tab:: Ubuntu
 
-       To install a Routinator package, you need the 64-bit version of one of
+       To install ab RTRTR package, you need the 64-bit version of one of
        these Ubuntu versions:
 
          - Ubuntu Focal 20.04 (LTS)
@@ -170,7 +170,7 @@ to get started.
 
    .. group-tab:: RHEL/CentOS
 
-       To install a Routinator package, you need Red Hat Enterprise Linux
+       To install an RTRTR package, you need Red Hat Enterprise Linux
        (RHEL) 7 or 8, or compatible operating system such as Rocky Linux.
        Packages are available for the ``amd64``/``x86_64`` architecture only.
        
