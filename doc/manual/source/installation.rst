@@ -98,7 +98,7 @@ to get started.
 
    .. group-tab:: Ubuntu
 
-       To install ab RTRTR package, you need the 64-bit version of one of
+       To install an RTRTR package, you need the 64-bit version of one of
        these Ubuntu versions:
 
          - Ubuntu Focal 20.04 (LTS)
