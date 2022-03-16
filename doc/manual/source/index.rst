@@ -1,19 +1,6 @@
 RTRTR |version|
 ===============
 
-.. only:: html
-
-    |lastcommit| |license| |discord|
-
-    .. |lastcommit| image:: https://img.shields.io/github/last-commit/nlnetlabs/rtrtr
-                :target: https://github.com/NLnetLabs/rtrtr
-
-    .. |license| image:: https://img.shields.io/github/license/nlnetlabs/rtrtr
-                :target: https://github.com/NLnetLabs/rtrtr/blob/main/LICENSE
-
-    .. |discord| image:: https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord
-                :target: https://discord.gg/8dvKB5Ykhy
-
 A versatile toolbox
    RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads
    from one or more sources in multiple formats and dispatch it onwards. It
@@ -37,6 +24,14 @@ Open source with community and professional support
    operational experiences. RTRTR is liberally licensed under the `BSD
    3-Clause license
    <https://github.com/NLnetLabs/rtrtr/blob/main/LICENSE>`_.
+
+   .. only:: html
+
+      |discord|
+      
+      .. |discord| image:: https://img.shields.io/discord/818584154278199396   
+         :alt: Discord
+         :target: https://discord.gg/8dvKB5Ykhy
 
 .. toctree::
    :maxdepth: 2
