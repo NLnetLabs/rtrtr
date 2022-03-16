@@ -10,7 +10,7 @@ use std::{fmt, io, process};
 use std::convert::TryFrom;
 use std::path::Path;
 use std::str::FromStr;
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
 use log::{error, LevelFilter, Log};
 use serde::Deserialize;
 use crate::config::ConfigPath;
@@ -45,7 +45,7 @@ pub struct LogConfig {
 
 impl LogConfig {
     /// Configures a clap app with the options for logging.
-    pub fn config_args(app: App) -> App {
+    pub fn config_args(app: Command) -> Command {
         app
         .arg(Arg::new("verbose")
              .short('v')
