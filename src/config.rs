@@ -9,7 +9,7 @@ use std::{borrow, error, fmt, fs, io, ops};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
 use serde::Deserialize;
 use toml::Spanned;
 use crate::http;
@@ -67,7 +67,7 @@ impl Config {
     }
 
     /// Configures a clap app with the arguments to load the configuration.
-    pub fn config_args(app: App) -> App {
+    pub fn config_args(app: Command) -> Command {
         let app = app.arg(
             Arg::new("config")
                 .short('c')

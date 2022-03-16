@@ -1,6 +1,6 @@
 use std::env::current_dir;
 use std::process::exit;
-use clap::{App, crate_authors, crate_version};
+use clap::{Command, crate_authors, crate_version};
 use futures::future::pending;
 use log::error;
 use tokio::runtime;
@@ -12,7 +12,7 @@ use rtrtr::manager::Manager;
 fn _main() -> Result<(), ExitError> {
     Config::init()?;
     let matches = Config::config_args(
-        App::new("rtrtr")
+        Command::new("rtrtr")
         .version(crate_version!())
         .author(crate_authors!())
         .about("collecting, processing and distributing route filtering data")
