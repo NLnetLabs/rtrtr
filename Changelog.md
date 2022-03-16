@@ -1,8 +1,8 @@
 # Change Log
 
-## Unreleased future version
+## 0.2.1-rc1
 
-Breaking Changes
+Released 2022-03-16.
 
 Bug Fixes
 
@@ -15,8 +15,6 @@ New
 * The number of diffs kept by the `"rtr"` and `"rtr-tls"` units can now
   be configured via the new `"history-size"` config option. This new
   option is optional and defaults to 10. ([#65])
-
-Other Changes
 
 [#65]: https://github.com/NLnetLabs/rtrtr/pull/65
 
