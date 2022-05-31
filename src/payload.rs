@@ -48,6 +48,11 @@ impl Pack {
     pub fn owned_iter(&self) -> OwnedBlockIter {
         OwnedBlockIter::new(self.clone().into())
     }
+
+    /// Returns whether the given value is included in the pack.
+    pub fn contains(&self, payload: &Payload) -> bool {
+        self.items.binary_search(payload).is_ok()
+    }
 }
 
 
@@ -603,8 +608,9 @@ pub struct OwnedSetIter {
 
 impl OwnedSetIter {
     fn new(set: Set) -> Self {
+        let item = set.blocks.get(0).map(|block| block.start()).unwrap_or(0);
         OwnedSetIter {
-            set, block: 0, item: 0
+            set, block: 0, item
         }
     }
 
@@ -632,7 +638,11 @@ impl PayloadSet for OwnedSetIter {
         else {
             self.block += 1;
             self.item = self.set.blocks.get(self.block)?.start();
-            self.set.blocks.get(self.block)?.get_from_pack(self.item)
+            let res = self.set.blocks.get(
+                self.block
+            )?.get_from_pack(self.item)?;
+            self.item +=1;
+            Some(res)
         }
     }
 }
@@ -1161,6 +1171,15 @@ pub(crate) mod testrig {
         }
     }
 
+    /// Creates a set from a vec of blocks.
+    pub fn set(values: Vec<Block>) -> Set {
+        let len = values.iter().map(|item| item.len()).sum();
+        Set {
+            blocks: Arc::from(values.into_boxed_slice()),
+            len
+        }
+    }
+
     /// Create a block of payload from a slice of `u32`s.
     pub fn block(values: &[u32], range: Range<usize>) -> Block {
         Block {
@@ -1361,6 +1380,127 @@ mod test {
         // Now merge the two diffs and see if that still works.
         assert!(
             d2.extend(&d3).unwrap().apply(&s1).unwrap().iter().eq(s3.iter())
+        );
+    }
+
+    #[test]
+    fn owned_block_iter() {
+        fn test_iter(payload: &[Payload], block: Block) {
+            let mut piter = payload.iter();
+            let mut oiter = block.owned_iter();
+
+            while let Some(p_item) = piter.next() {
+                assert_eq!(p_item, oiter.peek().unwrap());
+                assert_eq!(p_item, oiter.next().unwrap());
+            }
+            assert!(oiter.peek().is_none());
+            assert!(oiter.next().is_none());
+        }
+
+        // Empty set.
+        test_iter(
+            &[],
+            block(&[], 0..0)
+        );
+
+        // Empty range over a non-empty block.
+        test_iter(
+            &[],
+            block(&[7, 8, 10, 12, 18, 19], 3..3)
+        );
+
+        // Blocks with a range.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[7, 8, 10, 12, 18, 19], 0..6)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[2, 3, 7, 8, 10, 12, 18, 19], 2..8)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[7, 8, 10, 12, 18, 19, 21, 22], 0..6)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8)
+        );
+        test_iter(
+            &[p(7)],
+            block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[7, 8, 10, 12, 18, 19], 0..6)
+        );
+    }
+
+    #[test]
+    fn set_iters() {
+        fn test_iter(payload: &[Payload], set: Set) {
+            let mut piter = payload.iter();
+            let mut iter = set.iter();
+            let mut oiter = set.owned_iter();
+
+            while let Some(p_item) = piter.next() {
+                assert_eq!(p_item, iter.next().unwrap());
+                assert_eq!(p_item, oiter.peek().unwrap());
+                assert_eq!(p_item, oiter.next().unwrap());
+            }
+            assert!(iter.next().is_none());
+            assert!(oiter.peek().is_none());
+            assert!(oiter.next().is_none());
+        }
+
+        // Empty set.
+        test_iter(
+            &[],
+            Set::from(pack(&[]))
+        );
+
+        // Complete single pack.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(pack(&[7, 8, 10, 12, 18, 19]))
+        );
+
+        // Empty range over a non-empty block.
+        test_iter(
+            &[],
+            Set::from(block(&[7, 8, 10, 12, 18, 19], 3..3))
+        );
+
+        // Blocks with a range.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[7, 8, 10, 12, 18, 19], 0..6))
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19], 2..8))
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[7, 8, 10, 12, 18, 19, 21, 22], 0..6))
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8))
+        );
+        test_iter(
+            &[p(7)],
+            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3))
+        );
+
+        // Multiple blocks.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            set(vec![
+                block(&[2, 7, 8, 10], 1..3),
+                block(&[10], 0..1),
+                block(&[2, 12, 18, 19], 1..4)
+            ])
         );
     }
 }
