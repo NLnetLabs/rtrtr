@@ -1,3 +1,52 @@
+//! Collections of data being processed by RTRTR.
+//!
+//! This module provides types for storing the data processed by units
+//! and sent out by targets. This data consists of payload item represented
+//! by the [rpki] crate’s [`Payload`] type. This module provides ways to
+//! collect sets of unique payload items in a way that allows units
+//! to manipulate the sets without having to clone items too much.
+//!
+//! There are three basic types: [`Pack`], [`Block`], and [`Set`].
+//!
+//! The most basic collection of items is a [`Pack`]. It provides a sorted
+//! slice of unique items behind an arc. This means that cloning a pack is
+//! cheap but it also means that a pack is immutable.
+//!
+//! A [`Block`] is a reference to a consecutive part of a pack. In practical
+//! terms: it holds a pack and a range indicating the items in that pack that
+//! are part of the block. Because a block contains a pack, it, too, can be
+//! cloned cheaply. It also is immutable and contains a sorted slice of
+//! unique items.
+//!
+//! Finally, a [`Set`] is an sequence of blocks ordered in such a way that
+//! the sequence of payload items it represents is ordered and unique. The
+//! set keeps this sequence of blocks behind an arc, too, and thus also can
+//! be cloned cheaply.
+//!
+//! When using these types, you typically create a pack when receiving data
+//! from the outside. The [`PackBuilder`] type allows you to do this more
+//! easily by not requiring items to be added in the correct order. Once your
+//! data is complete, you convert the pack into a set and keep that around.
+//!
+//! [`Set`] provides a few methods to manipulate data, producing new sets:
+//! [`merge`][Set::merge] merges two sets, [`filter`][Set::filter] allows
+//! creating a new set containing a subset of items.
+//!
+//! For more complex operations, you can create a [`Diff`] by way of a
+//! [`DiffBuilder`]. A diff contains two packs: One with all the items to be
+//! added to a set – called the announced pack – and one with all the items
+//! to be removed – the withdrawn pack. A diff can be applied to a set via
+//! the [`apply`][Diff::apply] or [`apply_relaxed`][Diff::apply_relaxed]
+//! methods. The difference between the two is that the former will return
+//! an error if the diff cannot be applied cleanly, i.e., items already in
+//! the set are announced or items to be withdrawn are not present, while
+//! the latter happily ignores such inconsistencies.
+//!
+//! The module also provides iterators for blocks, sets, and diffs. Apart from
+//! the normal iterators there are owned operators that hold a clone of the
+//! base type yet returns references to the items. For now, these need to
+//! separate because the `Iterator` trait requires the returned items to have
+//! the same lifetime as the iterator type itself. 
 use std::slice;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
