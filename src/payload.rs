@@ -1,4 +1,4 @@
-use std::slice;
+use std::{mem, slice};
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -201,6 +201,62 @@ impl Block {
         }
     }
 
+    /* XXX Can be removed if unused.
+    /// Splits the block just before the given item.
+    ///
+    /// Moves the beginning of the block to the first item that compares
+    /// greater or equal to the given item. If there have been items in the
+    /// block that compared less to the given item, returns a new block with
+    /// those items.
+    ///
+    /// Note that this operation may result in `self` becoming an empty block.
+    fn split_off_before(&mut self, item: &Payload) -> Option<Block> {
+        // First, we quickly check the border cases. This is because
+        // `[T]::binary_search` doesn’t check and we can avoid some work here.
+
+        // The block is empty or starts after item; no splitting necessary.
+        match self.first() {
+            Some(first) => {
+                if first >= item {
+                    return None
+                }
+            }
+            None => return None
+        }
+
+        // The block ends before item; split off everything.
+        if self.last().unwrap() < item { // there was a first, there is a last
+            let res = self.clone();
+            self.range.start = self.range.end;
+            return Some(res)
+        }
+
+        // Now for the general case. It actually covers the two above because
+        // that’s better than panicking.
+
+        let mid = self.binary_search(item).unwrap_or_else(|idx| idx);
+        if mid == 0 {
+            None
+        }
+        else {
+            Some(self.split_off_at(self.range.start + mid))
+        }
+    }
+    */
+
+    /// Splits off the part of the block before the given pack index.
+    ///
+    /// Moves the start of this block to the given index and returns a block
+    /// from the original start to the new start.
+    fn split_off_at(&mut self, pack_index: usize) -> Block {
+        assert!(pack_index >= self.range.start);
+        assert!(pack_index <= self.range.end);
+        let mut res = self.clone();
+        res.range.end = pack_index;
+        self.range.start = res.range.end;
+        res
+    }
+
     /// Returns an owned iterator-like for the block.
     pub fn owned_iter(&self) -> OwnedBlockIter {
         OwnedBlockIter::new(self.clone())
@@ -264,6 +320,15 @@ impl AsRef<[Payload]> for Block {
 impl Borrow<[Payload]> for Block {
     fn borrow(&self) ->&[Payload] {
         self.as_slice()
+    }
+}
+
+
+//--- PartialEq and Eq
+
+impl<T: AsRef<[Payload]>> PartialEq<T> for Block {
+    fn eq(&self, other: &T) -> bool {
+        self.as_ref() == other.as_ref()
     }
 }
 
@@ -364,15 +429,6 @@ impl Set {
         OwnedSetIter::new(self)
     }
 
-    /// Returns a set which has this set and the other set merged.
-    ///
-    /// The two sets may overlap.
-    pub fn merge(&self, other: &Set) -> Set {
-        let mut res = self.to_builder();
-        res.insert_set(other.clone());
-        res.finalize()
-    }
-
     /// Returns a set with the indicated elements removed.
     ///
     /// Each element in the current set is presented to the closure and only
@@ -422,6 +478,108 @@ impl Set {
         Set {
             blocks: res.into(),
             len: res_len
+        }
+    }
+
+    /// Returns a set merging the elements from this and another set.
+    pub fn merge(&self, other: &Set) -> Set {
+        let mut left_tail = self.blocks.iter().cloned();
+        let mut right_tail = other.blocks.iter().cloned();
+        let mut left_head = left_tail.next();
+        let mut right_head = right_tail.next();
+        let mut target = Vec::new();
+        let mut target_len = 0;
+
+        // Merge potentially overlapping blocks.
+        loop {
+            // Skip over empty blocks. If either side runs out of block, we
+            // are done with this difficult part.
+            let left = loop {
+                match left_head.as_mut() {
+                    Some(block) if block.is_empty() => { }
+                    Some(block) => break Some(block),
+                    None => break None,
+                }
+                left_head = left_tail.next();
+            };
+            let right = loop {
+                match right_head.as_mut() {
+                    Some(block) if block.is_empty() => { }
+                    Some(block) => break Some(block),
+                    None => break None,
+                }
+                right_head = right_tail.next();
+            };
+            let (left, right) = match (left, right) {
+                (Some(left), Some(right)) => (left, right),
+                _ => break,
+            };
+
+            // Make left the block that starts first. Since neither block is
+            // empty, we can unwrap.
+            if right.first().unwrap() < left.first().unwrap() {
+                mem::swap(left, right);
+            }
+
+            // Find out how much of left we can add.
+            //
+            // First, find the part of left that is before right.
+            let first_right = right.first().unwrap();
+            let mut left_idx = left.range.start;
+            while let Some(item) = left.get_from_pack(left_idx) {
+                if item >= first_right {
+                    break;
+                }
+                left_idx += 1;
+            }
+
+            // Now progress left_idx as long as elements are equal with right.
+            let mut right_idx = right.range.start;
+            while let (Some(left_item), Some(right_item)) = (
+                left.get_from_pack(left_idx), right.get_from_pack(right_idx)
+            ) {
+                if left_item == right_item {
+                    left_idx += 1;
+                    right_idx += 1;
+                }
+                else {
+                    break
+                }
+            }
+
+            // left_idx now is the end of the range in left we need to add to
+            // the target.
+            let new = left.split_off_at(left_idx);
+            target_len += new.len();
+            target.push(new);
+
+            // Finally, right to its new start.
+            right.range.start = right_idx;
+        }
+
+        // At least one of the two iterators is now exhausted. So we can now
+        // just push whatever is left on either to the target. Don’t forget
+        // the heads, though, only one of which at most should not be empty.
+        if let Some(block) = left_head {
+            if !block.is_empty() {
+                target_len += block.len();
+                target.push(block);
+            }
+        }
+        if let Some(block) = right_head {
+            if !block.is_empty() {
+                target_len += block.len();
+                target.push(block);
+            }
+        }
+        for block in left_tail.chain(right_tail) {
+            target_len += block.len();
+            target.push(block)
+        }
+
+        Set {
+            blocks: target.into(),
+            len: target_len
         }
     }
 
@@ -1169,6 +1327,15 @@ pub(crate) mod testrig {
         }
     }
 
+    /// Create a set from a slice of blocks.
+    pub fn set(blocks: &[Block]) -> Set {
+        let len = blocks.iter().map(|item| item.len()).sum();
+        Set {
+            blocks: blocks.into(),
+            len
+        }
+    }
+
     /// Checks that a pack fulfils all invariants.
     pub fn check_pack(pack: &Pack) {
         // Empty pack is allowed.
@@ -1217,6 +1384,30 @@ pub(crate) mod testrig {
 mod test {
     use super::*;
     use super::testrig::*;
+
+    #[test]
+    fn set_merge() {
+        assert!(
+            set(&[block(&[1, 3, 4], 0..3)]).merge(
+                &set(&[block(&[1, 3, 4], 0..3)])
+            ).iter().eq(set(&[block(&[1, 3, 4], 0..3)]).iter())
+        );
+        assert!(
+            set(&[block(&[1, 3, 4, 5], 0..4)]).merge(
+                &set(&[block(&[1, 3, 4], 0..3)])
+            ).iter().eq(set(&[block(&[1, 3, 4, 5], 0..4)]).iter())
+        );
+        assert!(
+            set(&[block(&[1, 3, 5], 0..3)]).merge(
+                &set(&[block(&[1, 3, 4], 0..3)])
+            ).iter().eq(set(&[block(&[1, 3, 4, 5], 0..4)]).iter())
+        );
+        assert!(
+            set(&[block(&[1, 3, 5], 0..3), block(&[10, 11], 0..2)]).merge(
+                &set(&[block(&[3, 4], 0..2)])
+            ).iter().eq(set(&[block(&[1, 3, 4, 5, 10, 11], 0..6)]).iter())
+        );
+    }
 
     #[test]
     fn set_iter() {
@@ -1328,6 +1519,13 @@ mod test {
         let s = s.finalize();
 
         assert!(s.iter().eq(v.iter()));
+
+        let s1 = Set::from(p1.clone());
+        let s2 = Set::from(p2.clone());
+        let s3 = Set::from(p3.clone());
+
+        // Now merge via the merge method.
+        assert!(s1.merge(&s2).merge(&s3).iter().eq(v.iter()));
 
         // Now make diffs and see if they are correct.
         let h1 = v1.iter().cloned().collect::<HashSet<_>>();

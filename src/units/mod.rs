@@ -36,6 +36,9 @@ pub enum Unit {
     #[serde(rename = "any")]
     Any(combine::Any),
 
+    #[serde(rename = "merge")]
+    Merge(combine::Merge),
+
     #[serde(rename = "rtr")]
     RtrTcp(rtr::Tcp),
 
@@ -55,6 +58,7 @@ impl Unit {
     )  {
         let _ = match self {
             Unit::Any(unit) => unit.run(component, gate).await,
+            Unit::Merge(unit) => unit.run(component, gate).await,
             Unit::RtrTcp(unit) => unit.run(component, gate).await,
             Unit::RtrTls(unit) => unit.run(component, gate).await,
             Unit::Json(unit) => unit.run(component, gate).await,
