@@ -172,24 +172,23 @@ impl Iterator for OutputStream {
         match self.state {
             StreamState::Header => {
                 self.state = StreamState::First;
-                Some(b"{{\n  \"roas\": [\n".to_vec())
+                Some(b"{\n  \"roas\": [\n".to_vec())
             }
             StreamState::First => {
                 match self.next_origin() {
                     Some(payload) => {
                         self.state = StreamState::Body;
                         Some(format!(
-                            "    {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
+                            "    {{ \"asn\": \"AS{}\", \"prefix\": \"{}\", \
                             \"maxLength\": {}, \"ta\": \"N/A\" }}",
                             payload.asn,
                             payload.prefix.prefix(),
-                            payload.prefix.prefix_len(),
                             payload.prefix.resolved_max_len(),
                         ).into_bytes())
                     }
                     None => {
                         self.state = StreamState::Done;
-                        Some(b"\n  ]\n}}".to_vec())
+                        Some(b"\n  ]\n}".to_vec())
                     }
                 }
             }
@@ -198,17 +197,16 @@ impl Iterator for OutputStream {
                     Some(payload) => {
                         Some(format!(
                             ",\n    \
-                            {{ \"asn\": \"AS{}\", \"prefix\": \"{}/{}\", \
+                            {{ \"asn\": \"AS{}\", \"prefix\": \"{}\", \
                             \"maxLength\": {}, \"ta\": \"N/A\" }}",
                             payload.asn,
                             payload.prefix.prefix(),
-                            payload.prefix.prefix_len(),
                             payload.prefix.resolved_max_len(),
                         ).into_bytes())
                     }
                     None => {
                         self.state = StreamState::Done;
-                        Some(b"\n  ]\n}}".to_vec())
+                        Some(b"\n  ]\n}".to_vec())
                     }
                 }
             }
