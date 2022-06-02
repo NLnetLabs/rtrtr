@@ -1,10 +1,8 @@
 # Change Log
 
-## Unreleased future version
+## 0.2.2-rc1
 
-Breaking Changes
-
-New
+Released 2022-06-02.
 
 Bug Fixes
 
