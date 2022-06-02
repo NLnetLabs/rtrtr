@@ -8,7 +8,18 @@ New
 
 Bug Fixes
 
+* Fix a bug that cause targets to produce duplicate items in their output.
+  ([#73])
+* Fix a formatting bug in JSON output that caused the prefix length to
+  appear twice. ([#74])
+
 Other Changes
+
+* Added support for packaging for Ubuntu 22.04 Jammy Jellyfish. ([#70])
+
+[#70]: https://github.com/NLnetLabs/rtrtr/pull/70
+[#73]: https://github.com/NLnetLabs/rtrtr/pull/73
+[#74]: https://github.com/NLnetLabs/rtrtr/pull/73
 
 
 ## 0.2.1
