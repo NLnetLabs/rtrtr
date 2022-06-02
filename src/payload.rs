@@ -1,3 +1,52 @@
+//! Collections of data being processed by RTRTR.
+//!
+//! This module provides types for storing the data processed by units
+//! and sent out by targets. This data consists of payload item represented
+//! by the [rpki] crate’s [`Payload`] type. This module provides ways to
+//! collect sets of unique payload items in a way that allows units
+//! to manipulate the sets without having to clone items too much.
+//!
+//! There are three basic types: [`Pack`], [`Block`], and [`Set`].
+//!
+//! The most basic collection of items is a [`Pack`]. It provides a sorted
+//! slice of unique items behind an arc. This means that cloning a pack is
+//! cheap but it also means that a pack is immutable.
+//!
+//! A [`Block`] is a reference to a consecutive part of a pack. In practical
+//! terms: it holds a pack and a range indicating the items in that pack that
+//! are part of the block. Because a block contains a pack, it, too, can be
+//! cloned cheaply. It also is immutable and contains a sorted slice of
+//! unique items.
+//!
+//! Finally, a [`Set`] is an sequence of blocks ordered in such a way that
+//! the sequence of payload items it represents is ordered and unique. The
+//! set keeps this sequence of blocks behind an arc, too, and thus also can
+//! be cloned cheaply.
+//!
+//! When using these types, you typically create a pack when receiving data
+//! from the outside. The [`PackBuilder`] type allows you to do this more
+//! easily by not requiring items to be added in the correct order. Once your
+//! data is complete, you convert the pack into a set and keep that around.
+//!
+//! [`Set`] provides a few methods to manipulate data, producing new sets:
+//! [`merge`][Set::merge] merges two sets, [`filter`][Set::filter] allows
+//! creating a new set containing a subset of items.
+//!
+//! For more complex operations, you can create a [`Diff`] by way of a
+//! [`DiffBuilder`]. A diff contains two packs: One with all the items to be
+//! added to a set – called the announced pack – and one with all the items
+//! to be removed – the withdrawn pack. A diff can be applied to a set via
+//! the [`apply`][Diff::apply] or [`apply_relaxed`][Diff::apply_relaxed]
+//! methods. The difference between the two is that the former will return
+//! an error if the diff cannot be applied cleanly, i.e., items already in
+//! the set are announced or items to be withdrawn are not present, while
+//! the latter happily ignores such inconsistencies.
+//!
+//! The module also provides iterators for blocks, sets, and diffs. Apart from
+//! the normal iterators there are owned operators that hold a clone of the
+//! base type yet returns references to the items. For now, these need to
+//! separate because the `Iterator` trait requires the returned items to have
+//! the same lifetime as the iterator type itself. 
 use std::slice;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
@@ -47,6 +96,11 @@ impl Pack {
     /// Returns an owned iterator-like for the block.
     pub fn owned_iter(&self) -> OwnedBlockIter {
         OwnedBlockIter::new(self.clone().into())
+    }
+
+    /// Returns whether the given value is included in the pack.
+    pub fn contains(&self, payload: &Payload) -> bool {
+        self.items.binary_search(payload).is_ok()
     }
 }
 
@@ -603,8 +657,9 @@ pub struct OwnedSetIter {
 
 impl OwnedSetIter {
     fn new(set: Set) -> Self {
+        let item = set.blocks.get(0).map(|block| block.start()).unwrap_or(0);
         OwnedSetIter {
-            set, block: 0, item: 0
+            set, block: 0, item
         }
     }
 
@@ -632,7 +687,11 @@ impl PayloadSet for OwnedSetIter {
         else {
             self.block += 1;
             self.item = self.set.blocks.get(self.block)?.start();
-            self.set.blocks.get(self.block)?.get_from_pack(self.item)
+            let res = self.set.blocks.get(
+                self.block
+            )?.get_from_pack(self.item)?;
+            self.item +=1;
+            Some(res)
         }
     }
 }
@@ -1161,6 +1220,15 @@ pub(crate) mod testrig {
         }
     }
 
+    /// Creates a set from a vec of blocks.
+    pub fn set(values: Vec<Block>) -> Set {
+        let len = values.iter().map(|item| item.len()).sum();
+        Set {
+            blocks: Arc::from(values.into_boxed_slice()),
+            len
+        }
+    }
+
     /// Create a block of payload from a slice of `u32`s.
     pub fn block(values: &[u32], range: Range<usize>) -> Block {
         Block {
@@ -1361,6 +1429,127 @@ mod test {
         // Now merge the two diffs and see if that still works.
         assert!(
             d2.extend(&d3).unwrap().apply(&s1).unwrap().iter().eq(s3.iter())
+        );
+    }
+
+    #[test]
+    fn owned_block_iter() {
+        fn test_iter(payload: &[Payload], block: Block) {
+            let mut piter = payload.iter();
+            let mut oiter = block.owned_iter();
+
+            while let Some(p_item) = piter.next() {
+                assert_eq!(p_item, oiter.peek().unwrap());
+                assert_eq!(p_item, oiter.next().unwrap());
+            }
+            assert!(oiter.peek().is_none());
+            assert!(oiter.next().is_none());
+        }
+
+        // Empty set.
+        test_iter(
+            &[],
+            block(&[], 0..0)
+        );
+
+        // Empty range over a non-empty block.
+        test_iter(
+            &[],
+            block(&[7, 8, 10, 12, 18, 19], 3..3)
+        );
+
+        // Blocks with a range.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[7, 8, 10, 12, 18, 19], 0..6)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[2, 3, 7, 8, 10, 12, 18, 19], 2..8)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[7, 8, 10, 12, 18, 19, 21, 22], 0..6)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8)
+        );
+        test_iter(
+            &[p(7)],
+            block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3)
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            block(&[7, 8, 10, 12, 18, 19], 0..6)
+        );
+    }
+
+    #[test]
+    fn set_iters() {
+        fn test_iter(payload: &[Payload], set: Set) {
+            let mut piter = payload.iter();
+            let mut iter = set.iter();
+            let mut oiter = set.owned_iter();
+
+            while let Some(p_item) = piter.next() {
+                assert_eq!(p_item, iter.next().unwrap());
+                assert_eq!(p_item, oiter.peek().unwrap());
+                assert_eq!(p_item, oiter.next().unwrap());
+            }
+            assert!(iter.next().is_none());
+            assert!(oiter.peek().is_none());
+            assert!(oiter.next().is_none());
+        }
+
+        // Empty set.
+        test_iter(
+            &[],
+            Set::from(pack(&[]))
+        );
+
+        // Complete single pack.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(pack(&[7, 8, 10, 12, 18, 19]))
+        );
+
+        // Empty range over a non-empty block.
+        test_iter(
+            &[],
+            Set::from(block(&[7, 8, 10, 12, 18, 19], 3..3))
+        );
+
+        // Blocks with a range.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[7, 8, 10, 12, 18, 19], 0..6))
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19], 2..8))
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[7, 8, 10, 12, 18, 19, 21, 22], 0..6))
+        );
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8))
+        );
+        test_iter(
+            &[p(7)],
+            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3))
+        );
+
+        // Multiple blocks.
+        test_iter(
+            &[p(7), p(8), p(10), p(12), p(18), p(19)],
+            set(vec![
+                block(&[2, 7, 8, 10], 1..3),
+                block(&[10], 0..1),
+                block(&[2, 12, 18, 19], 1..4)
+            ])
         );
     }
 }
