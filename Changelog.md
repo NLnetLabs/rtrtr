@@ -1,13 +1,13 @@
 # Change Log
 
-## Unreleased next version
+## 0.2.2
+
+Released 2022-07-13.
 
 Bug Fixes
 
 * Fix a formatting bug in JSON output that caused ASNs to be prefixed with
   `ASAS`. ([#77])
-
-Other Changes
 
 [#77]: https://github.com/NLnetLabs/rtrtr/pull/77
 
