@@ -4,7 +4,12 @@
 
 Bug Fixes
 
+* Fix a formatting bug in JSON output that caused ASNs to be prefixed with
+  `ASAS`. ([#77])
+
 Other Changes
+
+[#77]: https://github.com/NLnetLabs/rtrtr/pull/77
 
 
 ## 0.2.2-rc1
@@ -24,7 +29,7 @@ Other Changes
 
 [#70]: https://github.com/NLnetLabs/rtrtr/pull/70
 [#73]: https://github.com/NLnetLabs/rtrtr/pull/73
-[#74]: https://github.com/NLnetLabs/rtrtr/pull/73
+[#74]: https://github.com/NLnetLabs/rtrtr/pull/74
 
 
 ## 0.2.1
