@@ -179,7 +179,7 @@ impl Iterator for OutputStream {
                     Some(payload) => {
                         self.state = StreamState::Body;
                         Some(format!(
-                            "    {{ \"asn\": \"AS{}\", \"prefix\": \"{}\", \
+                            "    {{ \"asn\": \"{}\", \"prefix\": \"{}\", \
                             \"maxLength\": {}, \"ta\": \"N/A\" }}",
                             payload.asn,
                             payload.prefix.prefix(),
@@ -197,7 +197,7 @@ impl Iterator for OutputStream {
                     Some(payload) => {
                         Some(format!(
                             ",\n    \
-                            {{ \"asn\": \"AS{}\", \"prefix\": \"{}\", \
+                            {{ \"asn\": \"{}\", \"prefix\": \"{}\", \
                             \"maxLength\": {}, \"ta\": \"N/A\" }}",
                             payload.asn,
                             payload.prefix.prefix(),
