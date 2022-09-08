@@ -93,10 +93,7 @@ assets = [
     { source = "pkg/common/service.preset", dest = "/lib/systemd/system-preset/50-rtrtr.preset", mode = "644" },
     { source = "pkg/rpm/postinst", dest = "/usr/share/rtrtr/rpm/postinst", mode = "755" },
 ]
-# These get set using cargo-generate-rpm --set-metadata at package build time.
-#post_install_script = ...
-#pre_uninstall_script = ...
-#post_uninstall_script = ...
+post_install_script = "/usr/share/rtrtr/rpm/postinst $*"
 
 # ensure that the useradd tool is present by depending on its package
 [package.metadata.generate-rpm.requires]
