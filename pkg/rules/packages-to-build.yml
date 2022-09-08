@@ -1,0 +1,45 @@
+---
+# matrix field notes:
+#   platform:    used by Docker to use the right architecture base image.
+#                the set of supported values can be seen at:
+#                  https://go.dev/doc/install/source#environment
+#                  from: https://github.com/docker-library/official-images#architectures-other-than-amd64
+#                  from: https://docs.docker.com/desktop/multi-arch/
+#                one must also take any "normalization" into account, e.g. arm64v8 -> arm64, see:
+#                  https://github.com/containerd/containerd/blob/v1.4.3/platforms/database.go#L83
+#                see also:
+#                  https://stackoverflow.com/a/70889505
+#   shortname:   used by us to tag the architecture specific "manifest" image.
+#   crosstarget: (optional) used to download the correct cross-compiled binary that was produced earlier by the
+#                'cross' job above.
+#   mode:        (optional) set to 'copy' for cross-compiled targets.
+#   cargo_args:  (optional) can be used when testing, e.g. set to '--no-default-features' to speed up the Krill
+#                build.
+image: # can't use complex values here, only primitive values are allowed
+  - "ubuntu:xenial"   # ubuntu/16.04
+  - "ubuntu:bionic"   # ubuntu/18.04
+  - "ubuntu:focal"    # ubuntu/20.04
+  - "ubuntu:jammy"    # ubuntu/22.04
+  - "debian:stretch"  # debian/9
+  - "debian:buster"   # debian/10
+  - "debian:bullseye" # debian/11
+  - "centos:7"
+  - 'rockylinux:8'    # compatible with EOL centos:8
+target:
+  - 'x86_64'
+include:
+  - image: "centos:7"
+    systemd_service_unit_file: pkg/common/rtrtr-minimal.rtrtr.service
+
+  - image: 'rockylinux:8'
+    systemd_service_unit_file: pkg/common/rtrtr.rtrtr.service
+    os: 'centos:8'
+
+  # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
+  # Raspbian 11 is based.
+  - image: 'debian:bullseye'
+    target: 'armv7-unknown-linux-musleabihf'
+
+  # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is based.
+  - image: 'debian:buster'
+    target: 'aarch64-unknown-linux-musl'
