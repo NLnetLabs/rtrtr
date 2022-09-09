@@ -15,7 +15,7 @@
 #   mode:        (optional) set to 'copy' for cross-compiled targets.
 #   cargo_args:  (optional) can be used when testing, e.g. set to '--no-default-features' to speed up the Krill
 #                build.
-packages:
+pkg:
   - "rtrtr"
 image: # can't use complex values here, only primitive values are allowed
   - "ubuntu:xenial"   # ubuntu/16.04
