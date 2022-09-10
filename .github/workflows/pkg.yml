@@ -16,8 +16,8 @@ jobs:
   package:
     uses: NLnetLabs/.github/.github/workflows/pkg-rust.yml@v0
     secrets:
-      DOCKER_HUB_ID: ximoneighteen
-      DOCKER_HUB_TOKEN: ${{ secrets.TEST_DOCKER_HUB_TOKEN }}
+      DOCKER_HUB_ID: nlnetlabs
+      DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
     with:
       #docker_org: nlnetlabs
       #docker_repo: rtrtr
