@@ -91,7 +91,6 @@ assets = [
     { source = "doc/rtrtr.1", dest = "/usr/share/man/man1/rtrtr.1", mode = "644", doc = true },
     { source = "etc/rtrtr.conf.system-service", dest = "/etc/rtrtr.conf", mode = "644", config = true },
     { source = "pkg/common/service.preset", dest = "/lib/systemd/system-preset/50-rtrtr.preset", mode = "644" },
-    { source = "pkg/rpm/postinst", dest = "/usr/share/rtrtr/rpm/postinst", mode = "755" },
 ]
 # These get set using cargo-generate-rpm --set-metadata at package build time.
 #post_install_script = ...
