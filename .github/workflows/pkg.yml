@@ -16,13 +16,11 @@ jobs:
   package:
     uses: NLnetLabs/.github/.github/workflows/pkg-rust.yml@v0
     secrets:
-      DOCKER_HUB_ID: nlnetlabs
+      DOCKER_HUB_ID: ${{ secrets.DOCKER_HUB_ID }}
       DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
     with:
-      #docker_org: nlnetlabs
-      #docker_repo: rtrtr
-      docker_org: ximoneighteen
-      docker_repo: ximontest
+      docker_org: nlnetlabs
+      docker_repo: rtrtr
 
       cross_build_rules_path: pkg/rules/cross-targets.yml
       docker_build_rules_path: pkg/rules/docker-images-to-build.yml
