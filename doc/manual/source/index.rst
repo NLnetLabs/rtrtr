@@ -27,11 +27,15 @@ Open source with community and professional support
 
    .. only:: html
 
-      |discord|
+      |discord| |mastodon|
       
       .. |discord| image:: https://img.shields.io/discord/818584154278199396   
          :alt: Discord
          :target: https://discord.gg/8dvKB5Ykhy
+
+      .. |mastodon| image:: https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social
+         :alt: Mastodon
+         :target: https://fosstodon.org/@nlnetlabs
 
 .. toctree::
    :maxdepth: 2
