@@ -2,7 +2,7 @@
 name = "rtrtr"
 version = "0.2.3-dev"
 edition = "2018"
-authors = ["The NLnet Labs RPKI Team <rpki-team@nlnetlabs.nl>"]
+authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A versatile tool for managing route filters"
 repository = "https://github.com/NLnetLabs/rtrtr"
 keywords = ["rpki", "routing-security", "bgp"]
