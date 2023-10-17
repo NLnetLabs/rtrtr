@@ -18,9 +18,9 @@
 //! be represented as a string with the `AS` prefix.
 
 use std::convert::TryFrom;
-use routecore::asn::Asn;
-use routecore::addr::{MaxLenError, MaxLenPrefix, Prefix};
-use rpki::rtr::payload::{RouteOrigin, Payload};
+use rpki::resources::asn::Asn;
+use rpki::resources::addr::{MaxLenError, MaxLenPrefix, Prefix};
+use rpki::rtr::payload::{RouteOrigin, Payload, PayloadRef};
 use rpki::rtr::server::PayloadSet;
 use serde::{Deserialize, Serialize};
 use crate::payload;
@@ -157,7 +157,7 @@ impl OutputStream {
     pub fn next_origin(&mut self) -> Option<RouteOrigin> {
         loop {
             match self.iter.next() {
-                Some(Payload::Origin(value)) => return Some(*value),
+                Some(PayloadRef::Origin(value)) => return Some(value),
                 None => return None,
                 _ => {}
             }

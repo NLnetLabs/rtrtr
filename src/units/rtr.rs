@@ -30,8 +30,8 @@ use tokio_rustls::{
     TlsConnector, client::TlsStream,
     rustls::ClientConfig, rustls::OwnedTrustAnchor, rustls::RootCertStore,
     rustls::client::ServerName, 
-    webpki::TrustAnchor,
 };
+use webpki::TrustAnchor;
 use crate::metrics;
 use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
 use crate::config::ConfigPath;
@@ -165,8 +165,8 @@ impl Tls {
         &self, unit_name: &str
     ) -> Result<TlsConnector, Terminated> {
         let mut root_certs = RootCertStore::empty();
-        root_certs.add_server_trust_anchors(
-            webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+        root_certs.add_trust_anchors(
+            webpki_roots::TLS_SERVER_ROOTS.iter().map(
             |ta| {
                 OwnedTrustAnchor::from_subject_spki_name_constraints(
                     ta.subject,
@@ -214,7 +214,7 @@ impl Tls {
                     }
                 }
             });
-            root_certs.add_server_trust_anchors(trust_anchors);
+            root_certs.add_trust_anchors(trust_anchors);
         }
 
         Ok(TlsConnector::from(Arc::new(
@@ -410,6 +410,7 @@ where
     /// `Ok(Ok(_))`. If the client’s data set has changed, this change is
     /// returned, otherwise the fact that there are no changes is indicated
     /// via `None`.
+    #[allow(clippy::needless_pass_by_ref_mut)] // false positive
     async fn update(
         &mut self, client: &mut Client<Socket, Target>, gate: &mut Gate
     ) -> Result<Result<Option<payload::Update>, io::Error>, Terminated> {
@@ -741,15 +742,17 @@ impl metrics::Source for RtrMetrics {
 
         let updated = self.updated.load(atomic::Ordering::Relaxed);
         if updated != i64::MIN {
-            let updated = Utc.timestamp(updated, 0);
-            let ago = Utc::now().signed_duration_since(updated);
-            target.append_simple(
-                &Self::UPDATED_AGO_METRIC, Some(unit_name), ago.num_seconds()
-            );
-            target.append_simple(
-                &Self::UPDATED_METRIC, Some(unit_name),
-                updated.format_with_items(Self::ISO_DATE.iter())
-            );
+            if let Some(updated) = Utc.timestamp_opt(updated, 0).single() {
+                let ago = Utc::now().signed_duration_since(updated);
+                target.append_simple(
+                    &Self::UPDATED_AGO_METRIC, Some(unit_name),
+                    ago.num_seconds()
+                );
+                target.append_simple(
+                    &Self::UPDATED_METRIC, Some(unit_name),
+                    updated.format_with_items(Self::ISO_DATE.iter())
+                );
+            }
         }
 
         target.append_simple(

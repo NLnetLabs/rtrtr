@@ -569,11 +569,12 @@ impl From<String> for Link {
 //------------ GateStatus ----------------------------------------------------
 
 /// The status of a gate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum GateStatus {
     /// The gate is connected to at least one active link.
     ///
     /// The unit owning this gate should produce updates.
+    #[default]
     Active,
 
     /// The gate is not connected to any active links.
@@ -584,17 +585,11 @@ pub enum GateStatus {
     Dormant,
 }
 
-impl Default for GateStatus {
-    fn default() -> GateStatus {
-        GateStatus::Active
-    }
-}
-
 
 //------------ UnitStatus ----------------------------------------------------
 
 /// The operational status of a unit.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum UnitStatus {
     /// The unit is ready to produce data updates.
     ///
@@ -602,6 +597,7 @@ pub enum UnitStatus {
     /// actually producing updates, only that it could. That is, if a unit’s
     /// gate is dormant and the unit ceases operation because nobody cares,
     /// it is still in healthy status.
+    #[default]
     Healthy,
 
     /// The unit had to temporarily suspend operation.
@@ -616,12 +612,6 @@ pub enum UnitStatus {
     /// This status indicates that the unit will not become healthy ever
     /// again. Links to the unit can safely be dropped.
     Gone,
-}
-
-impl Default for UnitStatus {
-    fn default() -> Self {
-        UnitStatus::Healthy
-    }
 }
 
 impl fmt::Display for UnitStatus {
