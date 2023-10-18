@@ -55,7 +55,7 @@ use std::iter::Peekable;
 use std::ops::{Deref, Range};
 use std::sync::Arc;
 use rpki::rtr::client::PayloadError;
-use rpki::rtr::payload::{Action, Payload};
+use rpki::rtr::payload::{Action, Payload, PayloadRef};
 use rpki::rtr::server::{PayloadDiff, PayloadSet};
 use rpki::rtr::state::Serial;
 
@@ -677,12 +677,12 @@ impl OwnedSetIter {
 }
 
 impl PayloadSet for OwnedSetIter {
-    fn next(&mut self) -> Option<&Payload> {
+    fn next(&mut self) -> Option<PayloadRef> {
         if let Some(item) =
             self.set.blocks.get(self.block)?.get_from_pack(self.item)
         {
             self.item += 1;
-            Some(item)
+            Some(item.as_ref())
         }
         else {
             self.block += 1;
@@ -691,7 +691,7 @@ impl PayloadSet for OwnedSetIter {
                 self.block
             )?.get_from_pack(self.item)?;
             self.item +=1;
-            Some(res)
+            Some(res.as_ref())
         }
     }
 }
@@ -1013,21 +1013,29 @@ impl OwnedDiffIter {
 }
 
 impl PayloadDiff for OwnedDiffIter {
-    fn next(&mut self) -> Option<(&Payload, Action)> {
+    fn next(&mut self) -> Option<(PayloadRef, Action)> {
         match (self.announced.peek(), self.withdrawn.peek()
         ) {
             (Some(_), None) => {
-                self.announced.next().map(|some| (some, Action::Announce))
+                self.announced.next().map(|some| {
+                    (some.as_ref(), Action::Announce)
+                })
             }
             (None, Some(_)) => {
-                self.withdrawn.next().map(|some| (some, Action::Withdraw))
+                self.withdrawn.next().map(|some| {
+                    (some.as_ref(), Action::Withdraw)
+                })
             }
             (Some(announced), Some(withdrawn)) => {
                 if announced < withdrawn {
-                    self.announced.next().map(|some| (some, Action::Announce))
+                    self.announced.next().map(|some| {
+                        (some.as_ref(), Action::Announce)
+                    })
                 }
                 else {
-                    self.withdrawn.next().map(|some| (some, Action::Withdraw))
+                    self.withdrawn.next().map(|some| {
+                        (some.as_ref(), Action::Withdraw)
+                    })
                 }
             }
             (None, None) => None,
@@ -1192,6 +1200,7 @@ impl Update {
 pub(crate) mod testrig {
     use super::*;
     use std::net::IpAddr;
+    use rpki::resources::addr::{MaxLenPrefix, Prefix};
 
     
     //-------- Scaffolding ---------------------------------------------------
@@ -1204,8 +1213,8 @@ pub(crate) mod testrig {
     /// arbitrary way.
     pub fn p(value: u32) -> Payload {
         Payload::origin(
-            routecore::addr::MaxLenPrefix::new(
-                routecore::addr::Prefix::new_v4(value.into(), 32).unwrap(),
+            MaxLenPrefix::new(
+                Prefix::new_v4(value.into(), 32).unwrap(),
                 Some(32)
             ).unwrap(),
             0.into()
@@ -1435,10 +1444,10 @@ mod test {
     #[test]
     fn owned_block_iter() {
         fn test_iter(payload: &[Payload], block: Block) {
-            let mut piter = payload.iter();
+            let piter = payload.iter();
             let mut oiter = block.owned_iter();
 
-            while let Some(p_item) = piter.next() {
+            for p_item in piter {
                 assert_eq!(p_item, oiter.peek().unwrap());
                 assert_eq!(p_item, oiter.next().unwrap());
             }
@@ -1488,14 +1497,14 @@ mod test {
     #[test]
     fn set_iters() {
         fn test_iter(payload: &[Payload], set: Set) {
-            let mut piter = payload.iter();
+            let piter = payload.iter();
             let mut iter = set.iter();
             let mut oiter = set.owned_iter();
 
-            while let Some(p_item) = piter.next() {
+            for p_item in piter {
                 assert_eq!(p_item, iter.next().unwrap());
                 assert_eq!(p_item, oiter.peek().unwrap());
-                assert_eq!(p_item, oiter.next().unwrap());
+                assert_eq!(p_item.as_ref(), oiter.next().unwrap());
             }
             assert!(iter.next().is_none());
             assert!(oiter.peek().is_none());
