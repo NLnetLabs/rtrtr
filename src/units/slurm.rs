@@ -48,7 +48,7 @@ impl LocalExceptions {
         // Whether we are ready to submit an update to our gate.
         //
         // This will stay at false until we have received our first
-        // notification from the exception set inidcating that it loaded all
+        // notification from the exception set indicating that it loaded all
         // files.
         let mut ready = false;
         loop {
