@@ -1,7 +1,8 @@
 [package]
 name = "rtrtr"
-version = "0.2.3-dev"
-edition = "2018"
+version = "0.3.0-dev"
+edition = "2021"
+rust-version = "1.70"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A versatile tool for managing route filters"
 repository = "https://github.com/NLnetLabs/rtrtr"
@@ -11,7 +12,7 @@ readme = "README.md"
 
 [dependencies]
 arc-swap        = "1.0"
-chrono          = "0.4.11"
+chrono          = "0.4.31"
 clap            = { version = "3.0", features = [ "cargo" ] }
 crossbeam-utils = "0.8.4"
 fern            = "0.6.0"
@@ -22,18 +23,18 @@ log-reroute     = "0.1.5"
 pin-project-lite = "0.2.4"
 rand            = "0.8.3"
 reqwest         = { version = "0.11.3", default-features = false, features = ["blocking", "rustls-tls"] }
-routecore       = "0.1.1"
-rpki            = { version = "0.14.2", features = ["rtr", "slurm"] }
+rpki            = { version = "0.17.2", features = ["crypto", "rtr", "slurm"] }
 rustls-pemfile  = "1.0"
+rustls-webpki   = "0.101.6"
 serde           = { version = "1.0", features = ["derive"] }
 serde_json      = "1.0"
 slab            = "0.4.2"
 tokio           = { version = "1.6", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"]}
-tokio-rustls    = "0.23.2"
+tokio-rustls    = "0.24.1"
 tokio-stream    = { version = "0.1", features = ["net"] }
 toml            = "0.5.6"
 url             = { version = "2.2", features = ["serde"] }
-webpki-roots    = "0.22.3"
+webpki-roots    = "0.25.2"
 
 [target.'cfg(unix)'.dependencies]
 syslog          = "6.0"

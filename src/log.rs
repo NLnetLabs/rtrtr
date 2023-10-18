@@ -319,10 +319,11 @@ impl LogConfig {
 //------------ LogTarget -----------------------------------------------------
 
 /// The target to log to.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub enum LogTarget {
     /// Use the system default.
     #[serde(rename = "default")]
+    #[default]
     Default,
 
     /// Syslog.
@@ -337,15 +338,6 @@ pub enum LogTarget {
     /// A file.
     #[serde(rename = "file")]
     File
-}
-
-
-//--- Default
-
-impl Default for LogTarget {
-    fn default() -> Self {
-        LogTarget::Default
-    }
 }
 
 
