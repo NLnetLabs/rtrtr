@@ -6,6 +6,7 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime};
 use arc_swap::ArcSwap;
 use futures::future::{select, Either, FutureExt};
+use log::debug;
 use rpki::slurm::{SlurmFile, ValidationOutputFilters};
 use serde::Deserialize;
 use crate::payload;
@@ -48,7 +49,7 @@ impl LocalExceptions {
                 Either::Left((Err(UnitStatus::Gone), _)) => return Ok(()),
                 _ => continue
             };
-            gate.update_data(files.apply(update)).await;
+            gate.update_data(files.apply(component.name(), update)).await;
         }
     }
 }
@@ -58,6 +59,9 @@ impl LocalExceptions {
 
 /// A collection of all the local exception files we are using.
 struct ExceptionSet {
+    /// The paths to the various files.
+    paths: Arc<Vec<PathBuf>>,
+
     /// The content of the various files.
     ///
     /// This lives behind an `ArcSwap` so we can cheaply swap out the content
@@ -72,11 +76,14 @@ struct ExceptionSet {
 }
 
 impl ExceptionSet {
-    fn new(files: Vec<PathBuf>) -> Self {
+    fn new(paths: Vec<PathBuf>) -> Self {
+        let paths = Arc::new(paths);
+
         // Doing things in this order avoids the need for type annotations.
         let res = ExceptionSet {
+            paths: paths.clone(),
             files: Arc::new(
-                files.iter().map(|_| Default::default()).collect()
+                paths.iter().map(|_| Default::default()).collect()
             ),
             alive: Arc::new(()),
         };
@@ -84,18 +91,18 @@ impl ExceptionSet {
         let alive = Arc::downgrade(&res.alive);
 
         thread::spawn(move || {
-            Self::update_thread(files, content, alive)
+            Self::update_thread(paths, content, alive)
         });
 
         res
     }
 
-    fn apply(&self, update: payload::Update) -> payload::Update {
+    fn apply(&self, unit: &str, update: payload::Update) -> payload::Update {
         let serial = update.serial();
         let mut set = update.into_set();
 
-        for file in self.files.iter() {
-            set = file.load().apply(set);
+        for (path, file) in self.paths.iter().zip(self.files.iter()) {
+            set = file.load().apply(unit, path, set);
             
         }
 
@@ -103,7 +110,7 @@ impl ExceptionSet {
     }
 
     fn update_thread(
-        paths: Vec<PathBuf>,
+        paths: Arc<Vec<PathBuf>>,
         content: Arc<Vec<ArcSwap<Content>>>,
         alive: Weak<()>,
     ) {
@@ -146,6 +153,7 @@ impl ExceptionSet {
             )?.into()
         ));
         *old_modified = Some(new_modified);
+        debug!("Updated Slurm file {}", path.display());
         Ok(())
     }
 }
@@ -161,14 +169,24 @@ struct Content {
 }
 
 impl Content {
-    fn apply(&self, set: payload::Set) -> payload::Set {
+    fn apply(
+        &self, unit: &str, path: &Path, set: payload::Set
+    ) -> payload::Set {
         // First filters, then assertions.
         let filtered = set.filter(|payload| {
             !self.filters.drop_payload(payload)
         });
+        let filtered_len = filtered.len();
         let mut builder = filtered.to_builder();
         builder.insert_pack(self.assertions.clone());
-        builder.finalize()
+        let res = builder.finalize();
+        debug!(
+            "Unit {}: file {}: added {}, removed {}.",
+            unit, path.display(),
+            res.len() - filtered_len,
+            set.len() - filtered_len
+        );
+        res
     }
 }
 
@@ -247,7 +265,7 @@ mod test {
             assertions: p3
         };
 
-        assert_eq!(content.apply(input), output);
+        assert_eq!(content.apply("none", Path::new("/"), input), output);
     }
 }
 
