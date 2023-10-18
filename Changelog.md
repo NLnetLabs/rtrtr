@@ -6,9 +6,17 @@ Breaking Changes
 
 New
 
+* Log changes made by the Slurm unit to updates. ([#87])
+
 Bug Fixes
 
 Other Changes
+
+* Upgrades Rust edition, minimal Rust version to 1.70, and dependencies.
+  ([#88])
+
+[#87]: https://github.com/NLnetLabs/rtrtr/pull/87
+[#88]: https://github.com/NLnetLabs/rtrtr/pull/88
 
 
 ## 0.2.2
