@@ -297,7 +297,8 @@ impl ConfigFile {
                 line_starts: bytes.split('\n').fold(
                     vec![0], |mut starts, slice| {
                         starts.push(
-                            starts.last().unwrap() + slice.len()
+                            // slice doesn’t include the \n
+                            starts.last().unwrap() + slice.len() + 1
                         );
                         starts
                     }
@@ -320,9 +321,14 @@ impl ConfigFile {
     }
 
     fn resolve_pos(&self, pos: usize) -> LineCol {
-        let line = self.line_starts.iter().find(|&&start|
-            start < pos
-        ).copied().unwrap_or(self.line_starts.len());
+        let line = self.line_starts.iter().enumerate().find_map(|(i, start)|
+            if *start > pos {
+                Some(i)
+            }
+            else {
+                None
+            }
+        ).unwrap_or(self.line_starts.len());
         let line = line - 1;
         let col = self.line_starts[line] - pos;
         LineCol { line, col }
