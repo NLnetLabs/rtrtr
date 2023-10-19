@@ -4,19 +4,26 @@
 
 Breaking Changes
 
-New
-
-* Log changes made by the Slurm unit to updates. ([#87])
-
-Bug Fixes
-
-Other Changes
-
 * Upgrades Rust edition, minimal Rust version to 1.70, and dependencies.
   ([#88])
 
+New
+
+* Log changes made by the `slurm` unit to updates. ([#87])
+* The `slurm` unit now updates its data set if it discovers that the Slurm
+  files have changed. ([#89])
+
+Bug Fixes
+
+* Fix a race condition where the `slurm` unit would not apply its changes
+  to the first update if loading the files is too slow. ([#89])
+
+Other Changes
+
+
 [#87]: https://github.com/NLnetLabs/rtrtr/pull/87
 [#88]: https://github.com/NLnetLabs/rtrtr/pull/88
+[#89]: https://github.com/NLnetLabs/rtrtr/pull/89
 
 
 ## 0.2.2
