@@ -1,5 +1,5 @@
 # -- stage 1: build static rtrtr with musl libc for alpine
-FROM alpine:3.15 as build
+FROM alpine:3.18 as build
 
 RUN apk add rust cargo
 
