@@ -56,12 +56,12 @@ impl Config {
 
     /// Creates a configuration from a bytes slice with TOML data.
     pub fn from_toml(
-        slice: &[u8], base_dir: Option<impl AsRef<Path>>,
+        slice: &str, base_dir: Option<impl AsRef<Path>>,
     ) -> Result<Self, toml::de::Error> {
         if let Some(ref base_dir) = base_dir {
             ConfigPath::set_base_path(base_dir.as_ref().into())
         }
-        let res = toml::de::from_slice(slice);
+        let res = toml::de::from_str(slice);
         ConfigPath::clear_base_path();
         res
     }
@@ -228,7 +228,7 @@ impl<T> From<T> for Marked<T> {
 impl<T> From<Spanned<T>> for Marked<T> {
     fn from(src: Spanned<T>) -> Marked<T> {
         Marked {
-            index: src.start(),
+            index: src.span().start,
             value: src.into_inner(),
             source: None, pos: None,
         }
@@ -280,7 +280,7 @@ pub struct ConfigFile {
     source: Source,
 
     /// The data of this file.
-    bytes: Vec<u8>,
+    bytes: String,
 
     /// The start indexes of lines.
     ///
@@ -291,10 +291,10 @@ pub struct ConfigFile {
 impl ConfigFile {
     /// Load a config file from disk.
     pub fn load(path: &impl AsRef<Path>) -> Result<Self, io::Error> {
-        fs::read(path).map(|bytes| {
+        fs::read_to_string(path).map(|bytes| {
             ConfigFile {
                 source: path.into(),
-                line_starts: bytes.split(|ch| *ch == b'\n').fold(
+                line_starts: bytes.split('\n').fold(
                     vec![0], |mut starts, slice| {
                         starts.push(
                             starts.last().unwrap() + slice.len()
@@ -315,7 +315,7 @@ impl ConfigFile {
         self.source.path.as_ref().and_then(|path| path.parent())
     }
 
-    pub fn bytes(&self) -> &[u8] {
+    pub fn bytes(&self) -> &str {
         &self.bytes
     }
 
@@ -346,9 +346,9 @@ impl ConfigError {
                 value: (),
                 index: 0,
                 source: Some(file.source.clone()),
-                pos: err.line_col().map(|(line, col)| {
-                    LineCol { line: line + 1, col: col + 1 }
-                })
+                pos: err.span().map(|range| {
+                    file.resolve_pos(range.start)
+                }),
             },
             err,
         }
