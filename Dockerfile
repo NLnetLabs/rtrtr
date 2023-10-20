@@ -156,13 +156,7 @@ RUN addgroup -g ${RUN_USER_GID} ${RUN_USER} && \
 USER $RUN_USER_UID
 
 # Hint to operators the TCP port that the application in this image listens on
-# (by default). Routinator documentation and DEB/RPM packages configure
-# Routinator to listen for HTTP requests on port 8323. For consistency we do
-# the same, but for backward compatibility with earlier versions of this file
-# we still also listen for HTTP requests on port 9556, the port number
-# allocated by the Prometheus project [1] for Routinator metric publication.
-#
-# [1]: https://github.com/prometheus/prometheus/wiki/Default-port-allocations
+# (by default).
 EXPOSE 8080/tcp
 EXPOSE 9001/tcp
 
