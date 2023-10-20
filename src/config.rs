@@ -330,7 +330,7 @@ impl ConfigFile {
             }
         ).unwrap_or(self.line_starts.len());
         let line = line - 1;
-        let col = self.line_starts[line] - pos;
+        let col = pos - self.line_starts[line];
         LineCol { line, col }
     }
 }
