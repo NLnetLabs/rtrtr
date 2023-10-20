@@ -4,8 +4,8 @@
 
 Breaking Changes
 
-* Upgrades Rust edition, minimal Rust version to 1.70, and dependencies.
-  ([#88])
+* Upgrade Rust edition, minimal Rust version to 1.70, and dependencies.
+  ([#88], [#91])
 
 New
 
@@ -20,10 +20,15 @@ Bug Fixes
 
 Other Changes
 
+* Upgrade the packaging and Docker build workflow to allow for
+  cross-compilation. ([#90])
+
 
 [#87]: https://github.com/NLnetLabs/rtrtr/pull/87
 [#88]: https://github.com/NLnetLabs/rtrtr/pull/88
 [#89]: https://github.com/NLnetLabs/rtrtr/pull/89
+[#90]: https://github.com/NLnetLabs/rtrtr/pull/90
+[#91]: https://github.com/NLnetLabs/rtrtr/pull/91
 
 
 ## 0.2.2
