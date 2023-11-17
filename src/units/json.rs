@@ -3,6 +3,7 @@
 use std::{io, thread};
 use std::convert::TryFrom;
 use std::fs::File;
+use std::io::BufReader;
 use std::str::FromStr;
 use std::time::Duration;
 use log::{debug, warn};
@@ -168,7 +169,9 @@ impl SourceUri {
                 ))
             }
             SourceUri::File(ref path) => {
-                match File::open(path).map(JsonReader::File) {
+                match File::open(path).map(|file| {
+                    JsonReader::File(BufReader::new(file))
+                }) {
                     Ok(some) => Some(some),
                     Err(err) => {
                         warn!(
@@ -204,7 +207,7 @@ impl TryFrom<String> for SourceUri {
 
 /// A reader producing the JSON source.
 enum JsonReader {
-    File(File),
+    File(BufReader<File>),
     HttpRequest(Option<reqwest::blocking::RequestBuilder>),
     Http(reqwest::blocking::Response),
 }
