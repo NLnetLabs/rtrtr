@@ -21,8 +21,8 @@ mod rtr;
 
 //------------ Target --------------------------------------------------------
 
+use daemonbase::error::ExitError;
 use serde::Deserialize;
-use crate::log::ExitError;
 use crate::manager::Component;
 
 

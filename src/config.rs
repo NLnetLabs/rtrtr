@@ -6,14 +6,15 @@
 //! file referred to in command line options.
 
 use std::{borrow, error, fmt, fs, io, ops};
-use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
-use clap::{Arg, ArgMatches, Command};
+use clap::{Args as _, FromArgMatches};
+use daemonbase::logging;
+use daemonbase::config::ConfigPath;
+use daemonbase::error::Failed;
 use serde::Deserialize;
 use toml::Spanned;
 use crate::http;
-use crate::log::{ExitError, Failed, LogConfig};
 use crate::manager::{Manager, TargetSet, UnitSet};
 
 
@@ -39,7 +40,7 @@ pub struct Config {
 
     /// The logging configuration.
     #[serde(flatten)]
-    pub log: LogConfig,
+    pub log: logging::Config,
 
     /// The HTTP server configuration.
     #[serde(flatten)]
@@ -47,11 +48,11 @@ pub struct Config {
 }
 
 impl Config {
-    /// Initialises everything.
+    /// Adds the basic arguments to a Clap command.
     ///
-    /// This function should be called first thing.
-    pub fn init() -> Result<(), ExitError> {
-        LogConfig::init_logging()
+    /// Returns the command with the arguments added.
+    pub fn config_args(app: clap::Command) -> clap::Command {
+        Args::augment_args(app)
     }
 
     /// Creates a configuration from a bytes slice with TOML data.
@@ -66,20 +67,6 @@ impl Config {
         res
     }
 
-    /// Configures a clap app with the arguments to load the configuration.
-    pub fn config_args(app: Command) -> Command {
-        let app = app.arg(
-            Arg::new("config")
-                .short('c')
-                .long("config")
-                .required(true)
-                .takes_value(true)
-                .value_name("PATH")
-                .help("Read base configuration from this file")
-        );
-        LogConfig::config_args(app)
-    }
-
     /// Loads the configuration based on command line options provided.
     ///
     /// The `matches` must be the result of getting argument matches from a
@@ -91,27 +78,39 @@ impl Config {
     /// paths. The manager is necessary to resolve links given in the
     /// configuration.
     pub fn from_arg_matches(
-        matches: &ArgMatches,
-        cur_dir: &Path,
+        matches: &clap::ArgMatches,
         manager: &mut Manager,
     ) -> Result<Self, Failed> {
-        let conf_path = cur_dir.join(matches.value_of("config").unwrap());
-        let conf = match ConfigFile::load(&conf_path) {
+        let args = Args::from_arg_matches(
+            matches
+        ).expect("bug in command line arguments parser");
+        let conf = match ConfigFile::load(&args.config) {
             Ok(conf) => conf,
             Err(err) => {
                 eprintln!(
                     "Failed to read config file '{}': {}",
-                    conf_path.display(),
+                    args.config.display(),
                     err
                 );
                 return Err(Failed)
             }
         };
         let mut res = manager.load(conf)?;
-        res.log.update_with_arg_matches(matches, cur_dir)?;
-        res.log.switch_logging(false)?;
+        res.log.apply_args(&args.log);
         Ok(res)
     }
+}
+
+
+//------------ Args ----------------------------------------------------------
+
+#[derive(clap::Parser)]
+pub struct Args {
+    #[arg(short, long)]
+    pub config: ConfigPath,
+
+    #[command(flatten)]
+    pub log: logging::Args,
 }
 
 
@@ -369,76 +368,4 @@ impl fmt::Display for ConfigError {
 }
 
 impl error::Error for ConfigError { }
-
-
-//------------ ConfigPath ----------------------------------------------------
-
-/// A path that encountered in a config file.
-///
-/// This is a basically a `PathBuf` that, when, deserialized resolves all
-/// relative paths from a certain base path so that all relative paths
-/// encountered in a config file are automatically resolved relative to the
-/// location of the config file.
-#[derive(
-    Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd
-)]
-#[serde(from = "String")]
-pub struct ConfigPath(PathBuf);
-
-impl ConfigPath {
-    thread_local!(
-        static BASE_PATH: RefCell<Option<PathBuf>> = RefCell::new(None)
-    );
-
-    fn set_base_path(path: PathBuf) {
-        Self::BASE_PATH.with(|base_path| {
-            base_path.replace(Some(path));
-        })
-    }
-
-    fn clear_base_path() {
-        Self::BASE_PATH.with(|base_path| {
-            base_path.replace(None);
-        })
-    }
-}
-
-impl From<PathBuf> for ConfigPath {
-    fn from(path: PathBuf) -> Self {
-        Self(path)
-    }
-}
-
-impl From<ConfigPath> for PathBuf {
-    fn from(path: ConfigPath) -> Self {
-        path.0
-    }
-}
-
-impl From<String> for ConfigPath {
-    fn from(path: String) -> Self {
-        Self::BASE_PATH.with(|base_path| {
-            ConfigPath(
-                match base_path.borrow().as_ref() {
-                    Some(base_path) => base_path.join(path.as_str()),
-                    None => path.into()
-                }
-            )
-        })
-    }
-}
-
-impl ops::Deref for ConfigPath {
-    type Target = Path;
-
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
-    }
-}
-
-impl AsRef<Path> for ConfigPath {
-    fn as_ref(&self) -> &Path {
-        self.0.as_ref()
-    }
-}
 

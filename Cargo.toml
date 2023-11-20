@@ -13,8 +13,9 @@ readme = "README.md"
 [dependencies]
 arc-swap        = "1.0"
 chrono          = "0.4.31"
-clap            = { version = "3.0", features = [ "cargo" ] }
+clap            = { version = "4", features = [ "cargo", "derive" ] }
 crossbeam-utils = "0.8.4"
+daemonbase      = { git = "https://github.com/NLnetLabs/daemonbase.git" }
 fern            = "0.6.0"
 futures         = "0.3"
 hyper           = { version = "0.14.8", features = [ "server", "stream" ] }

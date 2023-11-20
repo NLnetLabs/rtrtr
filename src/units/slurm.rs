@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime};
 use arc_swap::ArcSwap;
+use daemonbase::config::ConfigPath;
 use log::debug;
 use rpki::slurm::{SlurmFile, ValidationOutputFilters};
 use serde::Deserialize;
 use tokio::sync::Notify;
 use crate::payload;
 use crate::comms::{Gate, Link, Terminated, UnitStatus};
-use crate::config::ConfigPath;
 use crate::manager::Component;
 
 

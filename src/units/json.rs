@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 use std::fs::File;
 use std::str::FromStr;
 use std::time::Duration;
+use daemonbase::config::ConfigPath;
 use log::{debug, warn};
 use reqwest::Url;
 use rpki::rtr::Serial;
@@ -13,7 +14,6 @@ use tokio::sync::oneshot;
 use tokio::time::{Instant, timeout_at};
 use crate::payload;
 use crate::comms::{Gate, Terminated, UnitStatus};
-use crate::config::ConfigPath;
 use crate::formats::json::Set as JsonSet;
 use crate::manager::Component;
 

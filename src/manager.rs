@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use daemonbase::error::Failed;
 use log::error;
 use serde::Deserialize;
 use reqwest::blocking::Client as HttpClient;
@@ -10,7 +11,6 @@ use tokio::runtime::Runtime;
 use crate::{http, metrics};
 use crate::comms::{Gate, GateAgent, Link};
 use crate::config::{Config, ConfigFile, Marked};
-use crate::log::Failed;
 use crate::targets::Target;
 use crate::units::Unit;
 

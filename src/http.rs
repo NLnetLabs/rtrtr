@@ -15,6 +15,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
+use daemonbase::error::ExitError;
 use futures::pin_mut;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use hyper::server::accept::Accept;
@@ -24,7 +25,6 @@ use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
-use crate::log::ExitError;
 use crate::metrics;
 
 
@@ -64,7 +64,7 @@ impl Server {
                 Ok(listener) => listener,
                 Err(err) => {
                     error!("Fatal: error listening on {}: {}", addr, err);
-                    return Err(ExitError);
+                    return Err(ExitError::default());
                 }
             };
             if let Err(err) = listener.set_nonblocking(true) {
@@ -72,7 +72,7 @@ impl Server {
                     "Fatal: failed to set listener {} to non-blocking: {}.",
                     addr, err
                 );
-                return Err(ExitError);
+                return Err(ExitError::default());
             }
             debug!("HTTP server listening on {}", addr);
             listeners.push(listener);

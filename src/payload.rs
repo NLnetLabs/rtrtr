@@ -657,7 +657,7 @@ pub struct OwnedSetIter {
 
 impl OwnedSetIter {
     fn new(set: Set) -> Self {
-        let item = set.blocks.get(0).map(|block| block.start()).unwrap_or(0);
+        let item = set.blocks.first().map(|block| block.start()).unwrap_or(0);
         OwnedSetIter {
             set, block: 0, item
         }
