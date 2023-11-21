@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use crossbeam_utils::atomic::AtomicCell;
 use futures::future::{select, select_all, Either, FutureExt};
+use log::debug;
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
 use crate::metrics;
@@ -42,8 +43,25 @@ impl Any {
 
         // Outer loop picks a new source.
         loop {
-            curr_idx = self.pick(curr_idx);
-            metrics.current_index.store(curr_idx);
+            let new_idx = self.pick(curr_idx);
+            if new_idx != curr_idx {
+                match new_idx {
+                    Some(idx) => {
+                        debug!(
+                            "Unit {}: switched source to index {}",
+                            component.name(), idx,
+                        );
+                    }
+                    None => {
+                        debug!(
+                            "Unit {}: no active source",
+                            component.name(),
+                        );
+                    }
+                }
+                curr_idx = new_idx;
+                metrics.current_index.store(new_idx);
+            }
             if let Some(idx) = curr_idx {
                 if let Some(ref update) = updates[idx] {
                     gate.update_data(update.clone()).await;
@@ -73,10 +91,16 @@ impl Any {
 
                 match res {
                     Ok(update) => {
+                        updates[idx] = Some(update.clone());
                         if Some(idx) == curr_idx {
                             gate.update_data(update.clone()).await;
                         }
-                        updates[idx] = Some(update.clone());
+                        else {
+                            // We currently don’t have an active source but
+                            // there was an update. Break to pick a new active
+                            // source.
+                            break
+                        }
                     }
                     Err(UnitStatus::Stalled) => {
                         if Some(idx) == curr_idx {
