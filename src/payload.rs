@@ -1137,17 +1137,14 @@ impl DiffBuilder {
 pub struct Update {
     /// The new payload set.
     set: Set,
-
-    /// The optional diff from the previous update.
-    diff: Option<Diff>,
 }
 
 impl Update {
     /// Creates a new update.
     pub fn new(
-        set: Set, diff: Option<Diff>
+        set: Set
     ) -> Self {
-        Update { set, diff }
+        Update { set }
     }
 
     /// Returns the payload set of the update.
@@ -1160,15 +1157,9 @@ impl Update {
         self.set
     }
 
-    /// Returns the diff if it is available.
-    pub fn diff(&self) -> Option<&Diff> {
-        self.diff.as_ref()
-    }
-
     /// Applies a diff to the update.
     pub fn apply_diff_relaxed(&mut self, diff: &Diff)  {
         self.set = diff.apply_relaxed(&self.set);
-        self.diff = None;
     }
 }
 

@@ -287,10 +287,7 @@ impl Source {
                 }
             }
             Some(current) => {
-                let diff = match update.diff() {
-                    Some(diff) => diff.clone(),
-                    None => update.set().diff_from(current),
-                };
+                let diff = update.set().diff_from(current);
                 if diff.is_empty() {
                     // If there is no change in data, don’t update.
                     return

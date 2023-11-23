@@ -130,7 +130,7 @@ impl ExceptionSet {
             
         }
 
-        payload::Update::new(set, None)
+        payload::Update::new(set)
     }
 
     async fn notified(&self) {

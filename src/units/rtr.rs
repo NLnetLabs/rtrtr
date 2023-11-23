@@ -568,12 +568,12 @@ impl TargetUpdate {
     fn into_update(self) -> Result<payload::Update, PayloadError> {
         match self {
             TargetUpdate::Reset(pack) => {
-                Ok(payload::Update::new(pack.finalize().into(), None))
+                Ok(payload::Update::new(pack.finalize().into()))
             }
             TargetUpdate::Serial { set, diff } => {
                 let diff = diff.finalize();
                 let set = diff.apply(&set)?;
-                Ok(payload::Update::new(set, Some(diff)))
+                Ok(payload::Update::new(set))
             }
         }
     }

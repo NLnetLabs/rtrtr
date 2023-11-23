@@ -78,7 +78,7 @@ impl JsonRunner {
                         self.gate.update_status(self.status).await
                     }
                     self.gate.update_data(
-                        payload::Update::new(res, None)
+                        payload::Update::new(res)
                     ).await;
                     debug!(
                         "Unit {}: successfully updated.",
