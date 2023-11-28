@@ -2,11 +2,13 @@
 
 use std::{cmp, io};
 use std::str::FromStr;
-use std::time::Duration;
-//use chrono::{DateTime, Utc};
+use std::time::{Duration, SystemTime};
+use std::fs::metadata;
+use chrono::{DateTime, Utc};
 use bytes::{Buf, Bytes, BytesMut};
 use log::{debug, warn};
-use reqwest::Url;
+use reqwest::header;
+use reqwest::{StatusCode, Url};
 use rpki::rtr::Serial;
 use serde::Deserialize;
 use tokio::fs::File;
@@ -19,6 +21,7 @@ use crate::config::ConfigPath;
 use crate::formats::json::Set as JsonSet;
 use crate::manager::Component;
 use crate::log::Failed;
+use crate::utils::http::{format_http_date, parse_http_date};
 
 
 //------------ Json ----------------------------------------------------------
@@ -50,10 +53,6 @@ struct JsonRunner {
     serial: Serial,
     status: UnitStatus,
     current: Option<payload::Set>,
-            /*
-    last_modified: Option<DateTime<Utc>>,
-    etag: Option<String>,
-            */
 }
 
 impl JsonRunner {
@@ -65,10 +64,6 @@ impl JsonRunner {
             serial: Serial::default(),
             status: UnitStatus::Stalled,
             current: Default::default(),
-            /*
-            last_modified: None,
-            etag: None,
-            */
         }
     }
 
@@ -83,7 +78,7 @@ impl JsonRunner {
 
     async fn step(&mut self, gate: &mut Gate) -> Result<(), Terminated> {
         match gate.process_until(self.fetch_json()).await? {
-            Ok(res) => {
+            Ok(Some(res)) => {
                 let res = res.into_payload();
                 if self.current.as_ref() != Some(&res) {
                     self.serial = self.serial.add(1);
@@ -107,6 +102,10 @@ impl JsonRunner {
                     );
                 }
             }
+            Ok(None) => {
+                // Fetching succeeded but there isn’t an update. Nothing
+                // to do, really.
+            }
             Err(Failed) => {
                 if self.status != UnitStatus::Stalled {
                     self.status = UnitStatus::Stalled;
@@ -118,38 +117,18 @@ impl JsonRunner {
         Ok(())
     }
 
-    async fn fetch_json(&mut self) -> Result<JsonSet, Failed> {
-        let reader = HttpReader::new(match self.json.uri {
-            SourceUri::Http(ref url) => {
-                ReaderSource::Http(
-                    self.component.http_client().get(
-                        url.clone()
-                    ).send().await.map_err(|err| {
-                        warn!(
-                            "Unit {}: HTTP request failed: {}",
-                            self.component.name(), err
-                        );
-                        Failed
-                    })?
-                )
-            }
-            SourceUri::File(ref path) => {
-                match File::open(path).await {
-                    Ok(file) => ReaderSource::File(file),
-                    Err(err) => {
-                        warn!(
-                            "Unit {}: Failed to open file {}: {}.",
-                            self.component.name(), path.display(), err
-                        );
-                        return Err(Failed)
-                    }
-                }
-            }
-        });
+    async fn fetch_json(&mut self) -> Result<Option<JsonSet>, Failed> {
+        let reader = match HttpReader::open(
+            &mut self.json.uri,
+            &self.component,
+        ).await? {
+            Some(reader) => reader,
+            None => return Ok(None)
+        };
         match spawn_blocking(move || {
             serde_json::from_reader::<_, JsonSet>(reader)
         }).await {
-            Ok(Ok(res)) => Ok(res),
+            Ok(Ok(res)) => Ok(Some(res)),
             Ok(Err(err)) => {
                 // Joining succeded but JSON parsing didn’t.
                 warn!(
@@ -204,11 +183,21 @@ impl JsonRunner {
 //------------ SourceUri ----------------------------------------------------
 
 /// The URI of the unit’s source.
+///
+/// This also contains the runtime status for the source which is perhaps a
+/// bit cheeky.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(try_from = "String")]
 enum SourceUri {
-    Http(Url),
-    File(ConfigPath),
+    Http {
+        url: Url,
+        last_modified: Option<DateTime<Utc>>,
+        etag: Option<Bytes>,
+    },
+    File {
+        path: ConfigPath,
+        last_modified: Option<SystemTime>,
+    }
 }
 
 impl TryFrom<String> for SourceUri {
@@ -217,10 +206,18 @@ impl TryFrom<String> for SourceUri {
     fn try_from(mut src: String) -> Result<Self, Self::Error> {
         if src.starts_with("file:") {
             let src = src.split_off(5);
-            Ok(SourceUri::File(src.into()))
+            Ok(SourceUri::File {
+                path: src.into(),
+                last_modified: None,
+            })
         }
         else {
-            Url::from_str(&src).map(SourceUri::Http)
+            let url = Url::from_str(&src)?;
+            Ok(SourceUri::Http {
+                url,
+                last_modified: None,
+                etag: None
+            })
         }
     }
 }
@@ -240,6 +237,95 @@ enum ReaderSource {
 }
 
 impl HttpReader {
+    async fn open(
+        uri: &mut SourceUri, 
+        component: &Component,
+    ) -> Result<Option<Self>, Failed> {
+        match uri {
+            SourceUri::Http {
+                ref url, ref mut etag, ref mut last_modified
+            } => {
+                Self::open_http(url, last_modified, etag, component).await
+            }
+            SourceUri::File { ref path, ref mut last_modified } => {
+                Self::open_file(path, last_modified, component).await
+            }
+        }
+    }
+
+    async fn open_http(
+        uri: &Url, 
+        last_modified: &mut Option<DateTime<Utc>>,
+        etag: &mut Option<Bytes>,
+        component: &Component,
+    ) -> Result<Option<Self>, Failed> {
+        // Create and send the request.
+        let mut request = component.http_client().get(uri.clone());
+        if let Some(etag) = etag.as_ref() {
+            request = request.header(
+                header::IF_NONE_MATCH, etag.as_ref()
+            );
+        }
+        if let Some(ts) = last_modified {
+            request = request.header(
+                header::IF_MODIFIED_SINCE, format_http_date(*ts)
+            );
+        }
+        let response = request.send().await.map_err(|err| {
+            warn!(
+                "Unit {}: HTTP request failed: {}",
+                component.name(), err
+            );
+            Failed
+        })?;
+
+        // Return early if we anything other than a 200 OK
+        if response.status() == StatusCode::NOT_MODIFIED {
+            return Ok(None)
+        }
+        else if response.status() != StatusCode::OK {
+            warn!(
+                "Unit {}: HTTP request return status {}",
+                component.name(), response.status()
+            );
+            return Err(Failed)
+        }
+
+        // Update Etag and Last-Modified.
+        *etag = Self::parse_etag(&response);
+        *last_modified = Self::parse_last_modified(&response);
+
+        // And we are good to go!
+        Ok(Some(Self::new(ReaderSource::Http(response))))
+    }
+
+    async fn open_file(
+        path: &ConfigPath,
+        last_modified: &mut Option<SystemTime>,
+        component: &Component,
+    ) -> Result<Option<Self>, Failed> {
+        if let Ok(modified) = metadata(path).and_then(|meta| meta.modified()) {
+            if let Some(last_modified) = last_modified {
+                if *last_modified >= modified {
+                    return Ok(None)
+                }
+            }
+            *last_modified = Some(modified)
+        }
+
+        Ok(Some(Self::new(
+            ReaderSource::File(
+                File::open(path).await.map_err(|err| {
+                    warn!(
+                        "Unit {}: Failed to open file {}: {}.",
+                        component.name(), path.display(), err
+                    );
+                    Failed
+                })?
+            )
+        )))
+    }
+
     fn new(source: ReaderSource) -> Self {
         HttpReader {
             source,
@@ -275,6 +361,56 @@ impl HttpReader {
             }
         }
         Ok(true)
+    }
+
+    fn parse_etag(response: &reqwest::Response) -> Option<Bytes> {
+        // Take the value of the first Etag header. Return None if there’s
+        // more than one, just to be safe.
+        let mut etags = response.headers()
+            .get_all(header::ETAG)
+            .into_iter();
+        let etag = etags.next()?;
+        if etags.next().is_some() {
+            return None
+        }
+        let etag = etag.as_bytes();
+
+        // The tag starts with an optional case-sensitive `W/` followed by
+        // `"`. Let’s remember where the actual tag starts.
+        let start = if etag.starts_with(b"W/\"") {
+            3
+        }
+        else if etag.first() == Some(&b'"') {
+            1
+        }
+        else {
+            return None
+        };
+
+        // We need at least one more character. Empty tags are allowed.
+        if etag.len() <= start {
+            return None
+        }
+
+        // The tag ends with a `"`.
+        if etag.last() != Some(&b'"') {
+            return None
+        }
+
+        Some(Bytes::copy_from_slice(etag))
+    }
+
+    fn parse_last_modified(
+        response: &reqwest::Response
+    ) -> Option<DateTime<Utc>> {
+        let mut iter = response.headers()
+            .get_all(header::LAST_MODIFIED)
+            .into_iter();
+        let value = iter.next()?;
+        if iter.next().is_some() {
+            return None
+        }
+        parse_http_date(value.to_str().ok()?)
     }
 }
 
