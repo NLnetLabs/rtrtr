@@ -27,15 +27,26 @@ pub struct Any {
 
 impl Any {
     pub async fn run(
-        mut self, mut component: Component, mut gate: Gate
+        self,
+        mut component: Component,
+        mut gate: Gate,
     ) -> Result<(), Terminated> {
         if self.sources.is_empty() {
             gate.update_status(UnitStatus::Gone).await;
-            return Err(Terminated)
+            return Err(Terminated);
         }
         let metrics = Arc::new(AnyMetrics::new(&gate));
         component.register_metrics(metrics.clone());
 
+        self.do_run(component.name().clone(), gate, metrics).await
+    }
+
+    async fn do_run(
+        mut self,
+        name: Arc<str>,
+        mut gate: Gate,
+        metrics: Arc<AnyMetrics>,
+    ) -> Result<(), Terminated> {
         let mut curr_idx: Option<usize> = None;
         let mut updates: Vec<Option<payload::Update>> = vec![
             None; self.sources.len()
@@ -49,13 +60,13 @@ impl Any {
                     Some(idx) => {
                         debug!(
                             "Unit {}: switched source to index {}",
-                            component.name(), idx,
+                            name, idx,
                         );
                     }
                     None => {
                         debug!(
                             "Unit {}: no active source",
-                            component.name(),
+                            name,
                         );
                     }
                 }
@@ -144,6 +155,120 @@ impl Any {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn any_unit_should_propagate_status_changes() {
+        // Create a channel that we can use to signal the upstream gate to
+        // change status from Stalled to Healthy.
+        let (status_changer_tx, mut status_changer_rx) =
+            tokio::sync::mpsc::channel::<UnitStatus>(1);
+
+        let (mut source_gate, mut source_gate_agent) = Gate::new();
+
+        // Run the source unit Gate
+        let _ = tokio::task::spawn(async move {
+            loop {
+                match source_gate
+                    .process_until(status_changer_rx.recv())
+                    .await
+                {
+                    Ok(Some(wanted_unit_status)) => {
+                        eprintln!("Setting upstream unit status to: {wanted_unit_status}");
+                        source_gate.update_status(wanted_unit_status).await;
+                    }
+                    Ok(None) => {
+                        eprintln!(
+                            "Upstream runner status changer stream ended."
+                        );
+                        break;
+                    }
+                    Err(Terminated) => todo!(),
+                }
+            }
+        });
+
+        // Create and run an Any unit connected upstream to the source Gate
+        // and to be connected downstream to a target.
+        let (any_gate, mut any_gate_agent) = Gate::new();
+        tokio::task::spawn(async move {
+            let source = source_gate_agent.create_link();
+
+            let any = Any {
+                sources: vec![source],
+                random: false,
+            };
+
+            let metrics = Arc::new(AnyMetrics::default());
+            any.do_run("mock".into(), any_gate, metrics).await.unwrap();
+        });
+
+        // Emulate a downstream target
+        eprintln!("Connecting target to any unit");
+        let mut downstream = any_gate_agent.create_link();
+
+        // Note: we can't call query() here because it would block preventing
+        // us from sending the status change to Healthy below, and we can't
+        // run query() in a Tokio task because if by the time we send the
+        // Healthy status change below the query() hasn't completed the
+        // connect() send subscribe -> confirm subscribe dance the the status
+        // change is not queued but dropped and thus never sent to the
+        // downstream. We could sleep before sending the status Healthy change
+        // but that is not deterministic and can make the test brittle due to
+        // being time sensitive and thus dependent on the performance of the
+        // test environment and CPU stealing, particularly a problem in shared
+        // CI environments. Waiting a very long time to overcome such issues
+        // is also not ideal as it would always make the test very slow. So
+        // instead we use a test mode only fn called connect_only() that exits
+        // once the connect handshake is complete but before blocking on
+        // receiving updates via the connection.
+        downstream.connect_only(false).await.unwrap();
+
+        // Un-stall the upstream source.
+        eprintln!("Requesting source to change status to Healthy");
+        status_changer_tx.send(UnitStatus::Healthy).await.unwrap();
+
+        // Expect the link to become healthy
+        assert_status_change(&mut downstream, UnitStatus::Healthy).await;
+
+        // Stall the upstream source again.
+        eprintln!("Requesting source to change status to Stalled");
+        status_changer_tx.send(UnitStatus::Stalled).await.unwrap();
+
+        // Expect the link to stall
+        assert_status_change(&mut downstream, UnitStatus::Stalled).await;
+    }
+
+    async fn assert_status_change(
+        link: &mut Link,
+        expected_status: UnitStatus
+    ) {
+        // Query the status of the Any gate via the downstream link.
+        // We need some kind of timeout here otherwise the test will block
+        // forever if the expected status change is never seen, but make it
+        // reasonably high to avoid brittleness caused by test environment
+        // differences. Unlike the delay we avoided having above, this
+        // delay only slows down the test if the test is failing.
+        const MAX_WAIT: Duration = Duration::from_secs(10);
+
+        eprintln!("Wait for the Any unit to signal a status change");
+        let timeout_res = tokio::time::timeout(MAX_WAIT, link.query()).await;
+        assert!(!timeout_res.is_err(), "Timed out waiting for status change");
+
+        // Confirm that the query result is an "error" (a status update)
+        // We can't use assert_eq!() here as Update doesn't impl PartialEq/Eq.
+        let query_res = timeout_res.unwrap();
+        assert!(query_res.is_err());
+
+        // Confirm that the gate indeed changed to status Healthy
+        let new_status = query_res.unwrap_err();
+        assert_eq!(new_status, expected_status);
+    }
+}
 
 /*
 impl Any {

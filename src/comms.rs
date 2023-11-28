@@ -413,7 +413,7 @@ struct LinkConnection {
 
 impl Link {
     /// Creates a new, unconnected link.
-    fn new(commands: mpsc::Sender<GateCommand>) -> Self {
+    pub(crate) fn new(commands: mpsc::Sender<GateCommand>) -> Self {
         Link {
             commands,
             connection: None,
@@ -513,6 +513,11 @@ impl Link {
     /// Returns the current status of the connected unit.
     pub fn get_status(&self) -> UnitStatus {
         self.unit_status
+    }
+
+    #[cfg(test)]
+    pub async fn connect_only(&mut self, suspended: bool) -> Result<(), UnitStatus> {
+        self.connect(suspended).await
     }
 
     /// Connects the link to the gate.
@@ -638,7 +643,7 @@ pub struct Terminated;
 
 /// A command sent by a link to a gate.
 #[derive(Debug)]
-enum GateCommand {
+pub(crate) enum GateCommand {
     /// Change the suspension state of a link.
     Suspension {
         /// The slot number of the link to be manipulated.
@@ -689,7 +694,7 @@ type UpdateReceiver = mpsc::Receiver<Result<payload::Update, UnitStatus>>;
 
 /// The response to a subscribe request.
 #[derive(Debug)]
-struct SubscribeResponse {
+pub(crate) struct SubscribeResponse {
     /// The slot number of this subscription in the gate.
     slot: usize,
 
