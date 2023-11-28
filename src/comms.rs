@@ -417,7 +417,7 @@ impl Link {
         Link {
             commands,
             connection: None,
-            unit_status: UnitStatus::Healthy,
+            unit_status: UnitStatus::Stalled,
             suspended: false,
         }
     }

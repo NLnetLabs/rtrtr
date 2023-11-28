@@ -62,12 +62,14 @@ impl Any {
                             "Unit {}: switched source to index {}",
                             name, idx,
                         );
+                        gate.update_status(UnitStatus::Healthy).await;
                     }
                     None => {
                         debug!(
                             "Unit {}: no active source",
                             name,
                         );
+                        gate.update_status(UnitStatus::Stalled).await;
                     }
                 }
                 curr_idx = new_idx;
