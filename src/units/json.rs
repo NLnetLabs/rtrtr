@@ -123,7 +123,10 @@ impl JsonRunner {
             &self.component,
         ).await? {
             Some(reader) => reader,
-            None => return Ok(None)
+            None => {
+                debug!("Unit {}: Source not modified.", self.component.name());
+                return Ok(None)
+            }
         };
         match spawn_blocking(move || {
             serde_json::from_reader::<_, JsonSet>(reader)
@@ -132,7 +135,7 @@ impl JsonRunner {
             Ok(Err(err)) => {
                 // Joining succeded but JSON parsing didn’t.
                 warn!(
-                    "{}: Failed parsing source: {}",
+                    "Unit {}: Failed parsing source: {}",
                     self.component.name(),
                     err
                 );
