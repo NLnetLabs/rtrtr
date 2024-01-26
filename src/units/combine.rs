@@ -41,7 +41,7 @@ impl Any {
             None; self.sources.len()
         ];
 
-        // Outer loop picks a new source.
+        // Outer loop picks a new active source.
         loop {
             let new_idx = self.pick(curr_idx);
             if new_idx != curr_idx {
@@ -68,7 +68,7 @@ impl Any {
                 }
             }
 
-            // Inner loop works the source until it stalls
+            // Inner loop collects updates until the active unit stalls
             loop {
                 let (res, idx, _) = {
                     let res = select(
@@ -95,7 +95,7 @@ impl Any {
                         if Some(idx) == curr_idx {
                             gate.update_data(update.clone()).await;
                         }
-                        else {
+                        else if curr_idx.is_none() {
                             // We currently don’t have an active source but
                             // there was an update. Break to pick a new active
                             // source.
