@@ -57,7 +57,6 @@ use std::sync::Arc;
 use rpki::rtr::client::PayloadError;
 use rpki::rtr::payload::{Action, Payload, PayloadRef};
 use rpki::rtr::server::{PayloadDiff, PayloadSet};
-use rpki::rtr::state::Serial;
 
 
 //------------ Pack ----------------------------------------------------------
@@ -1136,27 +1135,16 @@ impl DiffBuilder {
 /// be copied cheaply.
 #[derive(Clone, Debug)]
 pub struct Update {
-    /// The serial number of this update.
-    serial: Serial,
-
     /// The new payload set.
     set: Set,
-
-    /// The optional diff from the previous update.
-    diff: Option<Diff>,
 }
 
 impl Update {
     /// Creates a new update.
     pub fn new(
-        serial: Serial, set: Set, diff: Option<Diff>
+        set: Set
     ) -> Self {
-        Update { serial, set, diff }
-    }
-
-    /// Returns the serial number of the update.
-    pub fn serial(&self) -> Serial {
-        self.serial
+        Update { set }
     }
 
     /// Returns the payload set of the update.
@@ -1169,27 +1157,9 @@ impl Update {
         self.set
     }
 
-    /// Returns the diff if it can be used for the given serial.
-    ///
-    /// The method will return the diff if it is preset and if the given
-    /// serial is one less than the update’s serial.
-    pub fn get_usable_diff(&self, serial: Serial) -> Option<&Diff> {
-        self.diff.as_ref().and_then(|diff| {
-            if serial.add(1) == self.serial {
-                Some(diff)
-            }
-            else {
-                None
-            }
-        })
-    }
-
     /// Applies a diff to the update.
-    ///
-    /// The update will retain its current serial number.
     pub fn apply_diff_relaxed(&mut self, diff: &Diff)  {
         self.set = diff.apply_relaxed(&self.set);
-        self.diff = None;
     }
 }
 

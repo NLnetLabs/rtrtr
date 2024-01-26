@@ -121,7 +121,6 @@ impl ExceptionSet {
     }
 
     fn apply(&self, unit: &str, update: payload::Update) -> payload::Update {
-        let serial = update.serial();
         let mut set = update.into_set();
 
         for (path, file) in
@@ -131,7 +130,7 @@ impl ExceptionSet {
             
         }
 
-        payload::Update::new(serial, set, None)
+        payload::Update::new(set)
     }
 
     async fn notified(&self) {

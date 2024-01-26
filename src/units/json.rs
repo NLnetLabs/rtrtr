@@ -7,7 +7,6 @@ use std::str::FromStr;
 use std::time::Duration;
 use log::{debug, warn};
 use reqwest::Url;
-use rpki::rtr::Serial;
 use serde::Deserialize;
 use tokio::sync::oneshot;
 use tokio::time::{Instant, timeout_at};
@@ -44,7 +43,6 @@ struct JsonRunner {
     json: Json,
     component: Component,
     gate: Gate,
-    serial: Serial,
     status: UnitStatus,
     current: Option<payload::Set>,
 }
@@ -55,7 +53,6 @@ impl JsonRunner {
     ) -> Self {
         JsonRunner {
             json, component, gate,
-            serial: Serial::default(),
             status: UnitStatus::Stalled,
             current: Default::default(),
         }
@@ -75,14 +72,13 @@ impl JsonRunner {
             Some(res) => {
                 let res = res.into_payload();
                 if self.current.as_ref() != Some(&res) {
-                    self.serial = self.serial.add(1);
                     self.current = Some(res.clone());
                     if self.status != UnitStatus::Healthy {
                         self.status = UnitStatus::Healthy;
                         self.gate.update_status(self.status).await
                     }
                     self.gate.update_data(
-                        payload::Update::new(self.serial, res, None)
+                        payload::Update::new(res)
                     ).await;
                     debug!(
                         "Unit {}: successfully updated.",

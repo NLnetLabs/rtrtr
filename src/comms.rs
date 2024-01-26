@@ -16,7 +16,7 @@
 use std::fmt;
 use std::sync::atomic;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicUsize};
+use std::sync::atomic::AtomicUsize;
 use chrono::{DateTime, Utc};
 use crossbeam_utils::atomic::AtomicCell;
 use futures::pin_mut;
@@ -277,9 +277,6 @@ pub struct GateMetrics {
     /// The current unit status.
     status: AtomicCell<UnitStatus>,
 
-    /// The serial number of the last update.
-    serial: AtomicU32,
-
     /// The number of payload items in the last update.
     count: AtomicUsize,
 
@@ -292,7 +289,6 @@ pub struct GateMetrics {
 impl GateMetrics {
     /// Updates the metrics to match the given update.
     fn update(&self, update: &payload::Update) {
-        self.serial.store(update.serial().into(), atomic::Ordering::Relaxed);
         self.count.store(update.set().len(), atomic::Ordering::Relaxed);
         self.update.store(Some(Utc::now()));
     }
@@ -307,10 +303,6 @@ impl GateMetrics {
     const STATUS_METRIC: Metric = Metric::new(
         "unit_status", "the operational status of the unit",
         MetricType::Text, MetricUnit::Info
-    );
-    const SERIAL_METRIC: Metric = Metric::new(
-        "gate_serial", "the serial number of the unit's updates",
-        MetricType::Counter, MetricUnit::Info
     );
     const COUNT_METRIC: Metric = Metric::new(
         "vrps", "the number of VRPs in the last update",
@@ -334,10 +326,6 @@ impl metrics::Source for GateMetrics {
     fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
         target.append_simple(
             &Self::STATUS_METRIC, Some(unit_name), self.status.load()
-        );
-        target.append_simple(
-            &Self::SERIAL_METRIC, Some(unit_name), 
-            self.serial.load(atomic::Ordering::Relaxed)
         );
         target.append_simple(
             &Self::COUNT_METRIC, Some(unit_name),
