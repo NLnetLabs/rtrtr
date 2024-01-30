@@ -6,6 +6,7 @@ use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use futures::stream;
 use hyper::{Body, Method, Request, Response, StatusCode};
+use hyper::header::{IF_NONE_MATCH, IF_MODIFIED_SINCE};
 use hyper::http::response;
 use log::debug;
 use rpki::rtr::State;
@@ -149,7 +150,7 @@ impl SourceData {
     /// Returns whether 304 Not Modified response should be retured.
     fn is_not_modified(&self, req: &Request<Body>) -> bool {
         // First, check If-None-Match.
-        for value in req.headers().get_all("If-None-Match").iter() {
+        for value in req.headers().get_all(IF_NONE_MATCH).iter() {
             // Skip ill-formatted values. By being lazy here we may falsely
             // return a full response, so this should be fine.
             let value = match value.to_str() {
@@ -168,7 +169,7 @@ impl SourceData {
         }
 
         // Now, the If-Modified-Since header.
-        if let Some(value) = req.headers().get("If-Modified-Since") {
+        if let Some(value) = req.headers().get(IF_MODIFIED_SINCE) {
             let value = match value.to_str() {
                 Ok(value) => value,
                 Err(_) => return false,
