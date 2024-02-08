@@ -150,7 +150,10 @@ impl SourceData {
     /// Returns whether 304 Not Modified response should be retured.
     fn is_not_modified(&self, req: &Request<Body>) -> bool {
         // First, check If-None-Match.
+        let mut found_if_none_match = false;
         for value in req.headers().get_all(IF_NONE_MATCH).iter() {
+            found_if_none_match = true;
+
             // Skip ill-formatted values. By being lazy here we may falsely
             // return a full response, so this should be fine.
             let value = match value.to_str() {
@@ -168,7 +171,13 @@ impl SourceData {
             }
         }
 
-        // Now, the If-Modified-Since header.
+        // If there was at least one If-None-Match, we are supposed to
+        // ignore If-Modified-Since.
+        if found_if_none_match {
+            return false
+        }
+
+        // Check the If-Modified-Since header.
         if let Some(value) = req.headers().get(IF_MODIFIED_SINCE) {
             let value = match value.to_str() {
                 Ok(value) => value,
