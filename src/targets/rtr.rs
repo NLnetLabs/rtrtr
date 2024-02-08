@@ -281,17 +281,13 @@ impl Source {
             None => {
                 SourceData {
                     state: data.state,
-                    unit_serial: update.serial(),
                     current: Some(update.set().clone()),
                     diffs: Vec::new(),
                     timing: Timing::default(),
                 }
             }
             Some(current) => {
-                let diff = match update.get_usable_diff(data.unit_serial) {
-                    Some(diff) => diff.clone(),
-                    None => update.set().diff_from(current),
-                };
+                let diff = update.set().diff_from(current);
                 if diff.is_empty() {
                     // If there is no change in data, don’t update.
                     return
@@ -313,7 +309,6 @@ impl Source {
                 state.inc();
                 SourceData {
                     state,
-                    unit_serial: update.serial(),
                     current: Some(update.set().clone()),
                     diffs,
                     timing: Timing::default(),
@@ -368,9 +363,6 @@ impl PayloadSource for Source {
 struct SourceData {
     /// The current RTR state of the target.
     state: State,
-
-    /// The current serial of the source unit.
-    unit_serial: Serial,
 
     /// The current set of RTR data.
     current: Option<payload::Set>,

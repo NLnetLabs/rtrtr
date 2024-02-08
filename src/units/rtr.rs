@@ -21,7 +21,7 @@ use log::{debug, error, info, warn};
 use pin_project_lite::pin_project;
 use rpki::rtr::client::{Client, PayloadError, PayloadTarget, PayloadUpdate};
 use rpki::rtr::payload::{Action, Payload, Timing};
-use rpki::rtr::state::{Serial, State};
+use rpki::rtr::state::State;
 use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
@@ -255,9 +255,6 @@ struct RtrClient<Connect> {
     /// Our gate status.
     status: GateStatus,
 
-    /// Our current serial.
-    serial: Serial,
-
     /// The unit’s metrics.
     metrics: Arc<RtrMetrics>,
 }
@@ -269,7 +266,6 @@ impl<Connect> RtrClient<Connect> {
             connect,
             retry,
             status: Default::default(),
-            serial: Serial::default(),
             metrics,
         }
     }
@@ -343,7 +339,6 @@ where
                     }
                 };
                 if let Some(update) = update {
-                    this.serial = update.serial();
                     client.target_mut().current = update.set().clone();
                     gate.update_data(update).await;
                 }
@@ -414,14 +409,13 @@ where
     async fn update(
         &mut self, client: &mut Client<Socket, Target>, gate: &mut Gate
     ) -> Result<Result<Option<payload::Update>, io::Error>, Terminated> {
-        let next_serial = self.serial.add(1);
         let update_fut = async {
             let update = client.update().await?;
             let state = client.state();
             if update.is_definitely_empty() {
                 return Ok((state, None))
             }
-            match update.into_update(next_serial) {
+            match update.into_update() {
                 Ok(res) => Ok((state, Some(res))),
                 Err(err) => {
                     client.send_error(err).await?;
@@ -571,20 +565,15 @@ impl TargetUpdate {
     /// Converts the target update into a payload update.
     ///
     /// This will fail if the diff of a serial update doesn’t apply cleanly.
-    /// 
-    /// Upon success, the returned payload update will have the given serial
-    /// number.
-    fn into_update(
-        self, serial: Serial
-    ) -> Result<payload::Update, PayloadError> {
+    fn into_update(self) -> Result<payload::Update, PayloadError> {
         match self {
             TargetUpdate::Reset(pack) => {
-                Ok(payload::Update::new(serial, pack.finalize().into(), None))
+                Ok(payload::Update::new(pack.finalize().into()))
             }
             TargetUpdate::Serial { set, diff } => {
                 let diff = diff.finalize();
                 let set = diff.apply(&set)?;
-                Ok(payload::Update::new(serial, set, Some(diff)))
+                Ok(payload::Update::new(set))
             }
         }
     }

@@ -6,6 +6,8 @@ Breaking Changes
 
 * Upgrade Rust edition, minimal Rust version to 1.70, and dependencies.
   ([#88], [#91])
+* Removed internal serial numbers and the ability to pass optional diffs
+  between units. ([#96])
 
 New
 
@@ -29,6 +31,7 @@ Other Changes
 [#89]: https://github.com/NLnetLabs/rtrtr/pull/89
 [#90]: https://github.com/NLnetLabs/rtrtr/pull/90
 [#91]: https://github.com/NLnetLabs/rtrtr/pull/91
+[#96]: https://github.com/NLnetLabs/rtrtr/pull/96
 
 
 ## 0.2.2
