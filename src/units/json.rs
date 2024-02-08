@@ -307,6 +307,15 @@ impl HttpReader {
         last_modified: &mut Option<SystemTime>,
         component: &Component,
     ) -> Result<Option<Self>, Failed> {
+        let modified = metadata(path).and_then(|meta| meta.modified()).ok();
+        if let (Some(modified), Some(last_modified)) =
+            (modified, last_modified.as_ref())
+        {
+            if *last_modified >= modified {
+                return Ok(None)
+            }
+        }
+
         if let Ok(modified) = metadata(path).and_then(|meta| meta.modified()) {
             if let Some(last_modified) = last_modified {
                 if *last_modified >= modified {
@@ -316,7 +325,7 @@ impl HttpReader {
             *last_modified = Some(modified)
         }
 
-        Ok(Some(Self::new(
+        let res = Self::new(
             ReaderSource::File(
                 File::open(path).await.map_err(|err| {
                     warn!(
@@ -326,7 +335,14 @@ impl HttpReader {
                     Failed
                 })?
             )
-        )))
+        );
+
+        // Just assigning here should be fine -- if we failed to get the
+        // modification time then clearing the stored value is probably a
+        // good idea, anyway.
+        *last_modified = modified;
+
+        Ok(Some(res))
     }
 
     fn new(source: ReaderSource) -> Self {
