@@ -145,7 +145,7 @@ impl JsonRunner {
                 // Joining failed. This may either be because the JSON
                 // parser panicked or because the future was dropped. The
                 // former probably means the JSON was kaputt in a very
-                // creative way and the latter can’t really happening. So
+                // creative way and the latter can’t really happen. So
                 // it is probably safe to ignore the JSON as if it were
                 // broken.
                 if err.is_panic() {
@@ -282,7 +282,7 @@ impl HttpReader {
             Failed
         })?;
 
-        // Return early if we anything other than a 200 OK
+        // Return early if we receive anything other than a 200 OK
         if response.status() == StatusCode::NOT_MODIFIED {
             return Ok(None)
         }
