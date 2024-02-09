@@ -47,6 +47,10 @@ pub enum Unit {
 
     #[serde(rename = "slurm")]
     Slurm(slurm::LocalExceptions),
+
+    #[cfg(test)]
+    #[serde(skip)]
+    Test(crate::test::Unit),
 }
 
 impl Unit {
@@ -59,6 +63,9 @@ impl Unit {
             Unit::RtrTls(unit) => unit.run(component, gate).await,
             Unit::Json(unit) => unit.run(component, gate).await,
             Unit::Slurm(unit) => unit.run(component, gate).await,
+
+            #[cfg(test)]
+            Unit::Test(unit) => unit.run(component, gate).await,
         };
     }
 }

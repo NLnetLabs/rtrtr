@@ -38,6 +38,10 @@ pub enum Target {
 
     #[serde(rename = "http")]
     Http(http::Target),
+
+    #[cfg(test)]
+    #[serde(skip)]
+    Test(crate::test::Target)
 }
 
 impl Target {
@@ -47,6 +51,9 @@ impl Target {
             Target::RtrTcp(target) => target.run(component).await,
             Target::RtrTls(target) => target.run(component).await,
             Target::Http(target) => target.run(component).await,
+
+            #[cfg(test)]
+            Target::Test(target) => target.run(component).await,
         }
     }
 }

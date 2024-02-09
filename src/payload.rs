@@ -1133,7 +1133,7 @@ impl DiffBuilder {
 ///
 /// An update keeps both the set and optional diff behind an arc and can thus
 /// be copied cheaply.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Update {
     /// The new payload set.
     set: Set,

@@ -306,3 +306,44 @@ impl metrics::Source for AnyMetrics {
     }
 }
 
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tokio::runtime;
+    use crate::{test, units};
+    use crate::manager::Manager;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wake_up_again() {
+        let mut manager = Manager::new();
+
+        let (_u1, _u2, _u3, _t) = manager.add_units(
+            &runtime::Handle::current(),
+            |units, targets| {
+                let (u, u1c) = test::Unit::new();
+                units.insert("u1", u);
+                let (u, u2c) = test::Unit::new();
+                units.insert("u2", u);
+                let (u, u3c) = test::Unit::new();
+                units.insert("u3", u);
+
+                units.insert("any", units::Unit::Any(Any {
+                    sources: vec!["u1".into(), "u2".into(), "u3".into()],
+                    random: false
+                }));
+
+                let (t, tc) = test::Target::new("any");
+                targets.insert("t", t);
+
+
+                (u1c, u2c, u3c, tc)
+            }
+        ).unwrap();
+
+        // XXX Do actual testing!
+    }
+}
+

@@ -553,6 +553,12 @@ impl From<String> for Link {
     }
 }
 
+impl<'a> From<&'a str> for Link {
+    fn from(name: &'a str) -> Self {
+        Self::from(String::from(name))
+    }
+}
+
 
 //------------ GateStatus ----------------------------------------------------
 
