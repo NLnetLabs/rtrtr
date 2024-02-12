@@ -12,6 +12,7 @@ readme = "README.md"
 
 [dependencies]
 arc-swap        = "1.0"
+bytes           = "1"
 chrono          = "0.4.31"
 clap            = { version = "3.0", features = [ "cargo" ] }
 crossbeam-utils = "0.8.4"
@@ -29,7 +30,7 @@ rustls-webpki   = "0.101.6"
 serde           = { version = "1.0", features = ["derive"] }
 serde_json      = "1.0"
 slab            = "0.4.2"
-tokio           = { version = "1.6", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"]}
+tokio           = { version = "1.6", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"]}
 tokio-rustls    = "0.24.1"
 tokio-stream    = { version = "0.1", features = ["net"] }
 toml            = "0.8.2"
