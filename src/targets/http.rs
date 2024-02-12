@@ -55,7 +55,7 @@ impl Target {
                     None => {
                         return Some(
                             Response::builder()
-                            .status(503)
+                            .status(StatusCode::SERVICE_UNAVAILABLE)
                             .header("Content-Type", "text/plain")
                             .body(
                                 "Initial validation ongoing. \
@@ -147,7 +147,7 @@ impl SourceData {
         }
     }
 
-    /// Returns whether 304 Not Modified response should be retured.
+    /// Returns whether 304 Not Modified response should be returned.
     fn is_not_modified(&self, req: &Request<Body>) -> bool {
         // First, check If-None-Match.
         let mut found_if_none_match = false;

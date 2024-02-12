@@ -310,15 +310,6 @@ impl HttpReader {
             }
         }
 
-        if let Ok(modified) = metadata(path).and_then(|meta| meta.modified()) {
-            if let Some(last_modified) = last_modified {
-                if *last_modified >= modified {
-                    return Ok(None)
-                }
-            }
-            *last_modified = Some(modified)
-        }
-
         let res = Self::new(
             ReaderSource::File(
                 File::open(path).await.map_err(|err| {
