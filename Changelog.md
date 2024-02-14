@@ -14,6 +14,8 @@ New
 * Log changes made by the `slurm` unit to updates. ([#87])
 * The `slurm` unit now updates its data set if it discovers that the Slurm
   files have changed. ([#89])
+* Both the `json` unit and target now support conditional HTTP requests
+  via the Etag and Last-Modified headers. ([#98])
 
 Bug Fixes
 
@@ -32,6 +34,7 @@ Other Changes
 [#90]: https://github.com/NLnetLabs/rtrtr/pull/90
 [#91]: https://github.com/NLnetLabs/rtrtr/pull/91
 [#96]: https://github.com/NLnetLabs/rtrtr/pull/96
+[#98]: https://github.com/NLnetLabs/rtrtr/pull/98
 
 
 ## 0.2.2

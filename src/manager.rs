@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use log::error;
 use serde::Deserialize;
-use reqwest::blocking::Client as HttpClient;
+use reqwest::Client as HttpClient;
 use tokio::runtime;
 use crate::{http, metrics};
 use crate::comms::{Gate, GateAgent, Link};
