@@ -9,7 +9,6 @@ use crate::metrics;
 use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::comms::{Gate, GateMetrics, Link, Terminated, UnitStatus};
 use crate::manager::Component;
-use crate::payload;
 
 
 //------------ Any -----------------------------------------------------------
@@ -36,16 +35,13 @@ impl Any {
         component.register_metrics(metrics.clone());
 
         let mut curr_idx: Option<usize> = None;
-        let mut updates: Vec<Option<payload::Update>> = vec![
-            None; self.sources.len()
-        ];
 
         // Outer loop picks a new source.
         loop {
             curr_idx = self.pick(curr_idx);
             metrics.current_index.store(curr_idx);
             if let Some(idx) = curr_idx {
-                if let Some(ref update) = updates[idx] {
+                if let Some(update) = self.sources[idx].get_data() {
                     gate.update_data(update.clone()).await;
                 }
             }
@@ -76,7 +72,6 @@ impl Any {
                         if Some(idx) == curr_idx {
                             gate.update_data(update.clone()).await;
                         }
-                        updates[idx] = Some(update.clone());
                     }
                     Err(UnitStatus::Stalled) => {
                         if Some(idx) == curr_idx {
@@ -312,15 +307,19 @@ impl metrics::Source for AnyMetrics {
 #[cfg(test)]
 mod test {
     use super::*;
+    use futures::join;
     use tokio::runtime;
     use crate::{test, units};
     use crate::manager::Manager;
+    use crate::payload::testrig;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn wake_up_again() {
+        use crate::comms::UnitStatus::*;
+
         let mut manager = Manager::new();
 
-        let (_u1, _u2, _u3, _t) = manager.add_units(
+        let (u1, u2, u3, mut t) = manager.add_units(
             &runtime::Handle::current(),
             |units, targets| {
                 let (u, u1c) = test::Unit::new();
@@ -338,12 +337,22 @@ mod test {
                 let (t, tc) = test::Target::new("any");
                 targets.insert("t", t);
 
-
                 (u1c, u2c, u3c, tc)
             }
         ).unwrap();
 
-        // XXX Do actual testing!
+
+        /*
+        // Set all units to stalled, check that the target goes stalled.
+        join!(u1.status(Stalled), u2.status(Stalled), u3.status(Stalled));
+        t.assert_recv_status(Stalled).await;
+        u1.data(testrig::update(&[1])).await;
+        u2.data(testrig::update(&[2])).await;
+        u3.data(testrig::update(&[3])).await;
+        u1.data(testrig::update(&[4])).await;
+        u2.data(testrig::update(&[5])).await;
+        u3.data(testrig::update(&[6])).await;
+        */
     }
 }
 

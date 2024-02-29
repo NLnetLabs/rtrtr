@@ -137,7 +137,7 @@ struct SourceData {
 }
 
 impl SourceData {
-    fn new(update: payload::Update, state: &mut State) -> Self {
+    fn new(update: &payload::Update, state: &mut State) -> Self {
         let etag = format!("\"{:x}-{}\"", state.session(), state.serial());
         state.inc();
         Self {

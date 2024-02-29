@@ -24,7 +24,7 @@ impl Unit {
     }
 
     pub async fn run(
-        mut self, _component: Component, mut gate: Gate
+        mut self, component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
         while let Some(cmd) = gate.process_until(self.rx.recv()).await? {
             match cmd {
@@ -36,6 +36,7 @@ impl Unit {
                 }
             }
         }
+        eprintln!("Unit {} terminated.", component.name());
         Err(Terminated)
     }
 }
@@ -50,13 +51,13 @@ pub struct UnitController {
 }
 
 impl UnitController {
-    pub async fn update_data(&self, data: payload::Update) {
+    pub async fn data(&self, data: payload::Update) {
         self.tx.send(
             UnitCommand::Data(data)
         ).await.expect("unit was terminated")
     }
 
-    pub async fn update_status(&self, status: UnitStatus) {
+    pub async fn status(&self, status: UnitStatus) {
         self.tx.send(
             UnitCommand::Status(status)
         ).await.expect("unit was terminated")
@@ -97,7 +98,7 @@ impl Target {
     ) -> Result<(), ExitError> {
         loop {
             let cmd = match self.link.query().await {
-                Ok(data) => UnitCommand::Data(data),
+                Ok(data) => UnitCommand::Data(data.clone()),
                 Err(status) => UnitCommand::Status(status),
             };
             self.tx.send(cmd).expect("controller went away")
@@ -114,16 +115,44 @@ pub struct TargetController {
 }
 
 impl TargetController {
-    pub async fn assert_data_eq(
+    pub async fn assert_recv_data(
         &mut self, data: payload::Update
     ) {
         assert_eq!(self.rx.recv().await.unwrap(), UnitCommand::Data(data))
     }
 
-    pub async fn assert_status_eq(
+    pub async fn assert_recv_status(
         &mut self, status: UnitStatus
     ) {
         assert_eq!(self.rx.recv().await.unwrap(), UnitCommand::Status(status))
     }
 }
+
+
+//============ Tests =========================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn simple_comms() {
+    use tokio::runtime;
+    use crate::manager::Manager;
+    use crate::payload::testrig;
+
+    let mut manager = Manager::new();
+
+    let (u, mut t) = manager.add_units(
+        &runtime::Handle::current(),
+        |units, targets| {
+            let (u, uc) = Unit::new();
+            units.insert("u", u);
+            let (t, tc) = Target::new("u");
+            targets.insert("t", t);
+
+            (uc, tc)
+        }
+    ).unwrap();
+
+    u.data(testrig::update(&[2])).await;
+    t.assert_recv_data(testrig::update(&[2])).await;
+}
+
 

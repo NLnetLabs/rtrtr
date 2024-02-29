@@ -1245,6 +1245,16 @@ pub(crate) mod testrig {
         }
     }
 
+    /// Creates an update from a bunch of integers
+    pub fn update(values: &[u32]) -> Update {
+        Update::new(
+            set(vec![
+                block(values, 0..values.len())
+            ])
+        )
+    }
+
+
     /// Converts a set into a vec of integers.
     pub fn set_to_vec(set: &Set) -> Vec<u32> {
         set.iter().map(|payload| match payload {
