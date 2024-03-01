@@ -5,7 +5,6 @@
 //! [`Tls`] uses TLS.
 
 use std::io;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::future::Future;
 use std::pin::Pin;

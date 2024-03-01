@@ -235,7 +235,6 @@ impl Manager {
                     continue
                 }
             };
-            eprintln!("Spawning unit {}", name);
             let controller = Component::new(
                 name, self.http_client.clone(), self.metrics.clone(),
                 self.http_resources.clone()
@@ -244,7 +243,6 @@ impl Manager {
         }
 
         for (name, target) in targets.targets.drain() {
-            eprintln!("Spawning target {}", name);
             let controller = Component::new(
                 name, self.http_client.clone(), self.metrics.clone(),
                 self.http_resources.clone()
@@ -252,7 +250,6 @@ impl Manager {
             runtime.spawn(target.run(controller));
         }
 
-        eprintln!("Everything spawned.");
     }
 
     /// Returns a new reference to the manager’s metrics collection.
@@ -351,8 +348,9 @@ impl From<GateAgent> for LoadUnit {
 //------------ Loading Links -------------------------------------------------
 
 thread_local!(
-    static GATES: RefCell<Option<HashMap<String, LoadUnit>>> =
+    static GATES: RefCell<Option<HashMap<String, LoadUnit>>> = const {
         RefCell::new(None)
+    }
 );
 
 

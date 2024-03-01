@@ -18,13 +18,14 @@ pub struct Unit {
 }
 
 impl Unit {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> (units::Unit, UnitController) {
         let (tx, rx) = mpsc::channel(10);
         (units::Unit::Test(Self { rx }), UnitController { tx })
     }
 
     pub async fn run(
-        mut self, component: Component, mut gate: Gate
+        mut self, _component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
         while let Some(cmd) = gate.process_until(self.rx.recv()).await? {
             match cmd {
@@ -36,7 +37,6 @@ impl Unit {
                 }
             }
         }
-        eprintln!("Unit {} terminated.", component.name());
         Err(Terminated)
     }
 }
@@ -85,6 +85,7 @@ pub struct Target {
 }
 
 impl Target {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(link: impl Into<Link>) -> (targets::Target, TargetController) {
         let (tx, rx) = mpsc::unbounded_channel();
         (
@@ -115,16 +116,13 @@ pub struct TargetController {
 }
 
 impl TargetController {
-    pub async fn assert_recv_data(
-        &mut self, data: payload::Update
-    ) {
-        assert_eq!(self.rx.recv().await.unwrap(), UnitCommand::Data(data))
-    }
-
-    pub async fn assert_recv_status(
-        &mut self, status: UnitStatus
-    ) {
-        assert_eq!(self.rx.recv().await.unwrap(), UnitCommand::Status(status))
+    pub async fn recv(
+        &mut self
+    ) -> Result<payload::Update, UnitStatus> {
+        match self.rx.recv().await.unwrap() {
+            UnitCommand::Data(data) => Ok(data),
+            UnitCommand::Status(status) => Err(status)
+        }
     }
 }
 
@@ -152,7 +150,7 @@ async fn simple_comms() {
     ).unwrap();
 
     u.data(testrig::update(&[2])).await;
-    t.assert_recv_data(testrig::update(&[2])).await;
+    assert_eq!(t.recv().await, Ok(testrig::update(&[2])));
 }
 
 

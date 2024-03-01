@@ -387,7 +387,9 @@ pub struct ConfigPath(PathBuf);
 
 impl ConfigPath {
     thread_local!(
-        static BASE_PATH: RefCell<Option<PathBuf>> = RefCell::new(None)
+        static BASE_PATH: RefCell<Option<PathBuf>> = const {
+            RefCell::new(None)
+        }
     );
 
     fn set_base_path(path: PathBuf) {

@@ -189,7 +189,12 @@ impl Gate {
     /// Updates the unit status.
     ///
     /// The method sends out the new status to all links.
+    ///
+    /// If the current status is already the status to set, does nothing.
     pub async fn update_status(&mut self, update: UnitStatus) {
+        if self.unit_status == update {
+            return
+        }
         self.unit_status = update;
         for (_, item) in &mut self.updates {
             match item.sender.as_mut() {
@@ -446,17 +451,17 @@ impl Link {
     /// future can be dropped safely at any time.
     ///
     /// The future either resolves into a payload update or the connected
-    /// unit’s new status as the error variant. The current status is also
-    /// available via the `get_status` method.
+    /// unit’s new status as the error variant.
     ///
-    /// If the link is currently suspended, calling this method will lift the
-    /// suspension.
+    /// If this method is called when the unit status is “gone,” the future
+    /// will never resolve. This helps
     pub async fn query(&mut self) -> Result<&payload::Update, UnitStatus> {
         if self.connect().await {
             if !matches!(self.unit_status, UnitStatus::Healthy) {
                 return Err(self.unit_status)
             }
             // No if let because of lifetime issues.
+            #[allow(clippy::single_match)]
             match self.unit_data {
                 Some(ref update) => return Ok(update),
                 None => {}
@@ -466,7 +471,7 @@ impl Link {
         let conn = match self.connection {
             ConnectionStatus::Active(ref mut conn) => conn,
             ConnectionStatus::Unconnected | ConnectionStatus::Gone => {
-                return Err(UnitStatus::Gone)
+                return futures::future::pending().await
             }
         };
         match conn.updates.recv().await {
