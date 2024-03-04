@@ -1130,9 +1130,6 @@ impl DiffBuilder {
 //------------ Update --------------------------------------------------------
 
 /// An update of a unit’s payload data.
-///
-/// An update keeps both the set and optional diff behind an arc and can thus
-/// be copied cheaply.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Update {
     /// The new payload set.
