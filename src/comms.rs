@@ -73,6 +73,9 @@ pub struct Gate {
     /// The current unit status.
     unit_status: UnitStatus,
 
+    /// The last update from the unit if there was one.
+    unit_data: Option<payload::Update>,
+
     /// The gate metrics.
     metrics: Arc<GateMetrics>,
 }
@@ -91,6 +94,7 @@ impl Gate {
             updates: Slab::new(),
             suspended: 0,
             unit_status: UnitStatus::default(),
+            unit_data: None,
             metrics: Default::default(),
         };
         let agent = GateAgent { commands: tx };
@@ -163,6 +167,7 @@ impl Gate {
     /// This method will send out the update to all active links. It will
     /// also update the gate metrics based on the update.
     pub async fn update_data(&mut self, update: payload::Update) {
+        self.unit_data = Some(update.clone());
         for (_, item) in &mut self.updates {
             if item.suspended {
                 continue
@@ -184,7 +189,12 @@ impl Gate {
     /// Updates the unit status.
     ///
     /// The method sends out the new status to all links.
+    ///
+    /// If the current status is already the status to set, does nothing.
     pub async fn update_status(&mut self, update: UnitStatus) {
+        if self.unit_status == update {
+            return
+        }
         self.unit_status = update;
         for (_, item) in &mut self.updates {
             match item.sender.as_mut() {
@@ -232,7 +242,8 @@ impl Gate {
         let subscription = SubscribeResponse {
             slot,
             receiver,
-            unit_status: self.unit_status
+            unit_status: self.unit_status,
+            unit_data: self.unit_data.clone(),
         };
         if let Err(subscription) = response.send(subscription) {
             self.updates.remove(subscription.slot);
@@ -379,15 +390,28 @@ pub struct Link {
     commands: mpsc::Sender<GateCommand>,
 
     /// The connection to the unit.
-    ///
-    /// If this is `None`, the link has not been connected yet.
-    connection: Option<LinkConnection>,
+    connection: ConnectionStatus,
 
     /// The current unit status.
     unit_status: UnitStatus,
 
+    /// The last update of the unit if any.
+    unit_data: Option<payload::Update>,
+
     /// Are we currently suspended?
     suspended: bool,
+}
+
+#[derive(Debug)]
+enum ConnectionStatus {
+    /// The link is still unconnected.
+    Unconnected,
+
+    /// The link is connected and ready to receive updates.
+    Active(LinkConnection),
+
+    /// The link’s unit has gone.
+    Gone
 }
 
 #[derive(Debug)]
@@ -404,97 +428,10 @@ impl Link {
     fn new(commands: mpsc::Sender<GateCommand>) -> Self {
         Link {
             commands,
-            connection: None,
+            connection: ConnectionStatus::Unconnected,
             unit_status: UnitStatus::Healthy,
+            unit_data: None,
             suspended: false,
-        }
-    }
-
-    /// Query for the next update.
-    ///
-    /// The method returns a future that resolves into the next update. The
-    /// future can be dropped safely at any time.
-    ///
-    /// The future either resolves into a payload update or the connected
-    /// unit’s new status as the error variant. The current status is also
-    /// available via the `get_status` method.
-    ///
-    /// If the link is currently suspended, calling this method will lift the
-    /// suspension.
-    pub async fn query(&mut self) -> Result<payload::Update, UnitStatus> {
-        self.connect(false).await?;
-        let conn = self.connection.as_mut().unwrap();
-
-        match conn.updates.recv().await {
-            Some(Ok(update)) => Ok(update),
-            Some(Err(status)) => {
-                self.unit_status = status;
-                Err(status)
-            }
-            None => {
-                self.unit_status = UnitStatus::Gone;
-                Err(UnitStatus::Gone)
-            }
-        }
-    }
-
-    /// Query a suspended link.
-    ///
-    /// When a link is suspended, it still received updates to the unit’s
-    /// status. These updates can also be queried for explicitly via this
-    /// method.
-    ///
-    /// Much like `query`, the future returned by this method can safely be
-    /// dropped at any time.
-    pub async fn query_suspended(&mut self) -> UnitStatus {
-        if let Err(err) = self.connect(true).await {
-            return err
-        }
-        let conn = self.connection.as_mut().unwrap();
-
-        loop {
-            match conn.updates.recv().await {
-                Some(Ok(_)) => continue,
-                Some(Err(status)) => return status,
-                None => {
-                    self.unit_status = UnitStatus::Gone;
-                    return UnitStatus::Gone
-                }
-            }
-        }
-    }
-
-    /// Suspends the link.
-    ///
-    /// A suspended link will not receive any payload updates from the
-    /// connected unit. It will, however, still receive status updates.
-    ///
-    /// The suspension is lifted automatically the next time `query` is
-    /// called.
-    ///
-    /// Note that this is an async method that needs to be awaited in order
-    /// to do anything.
-    pub async fn suspend(&mut self) {
-        if !self.suspended {
-            self.request_suspend(true).await
-        }
-    }
-
-    /// Request suspension from the gate.
-    async fn request_suspend(&mut self, suspend: bool) {
-        if self.connection.is_none() {
-            return
-        }
-
-        let conn = self.connection.as_mut().unwrap();
-        if self.commands.send(GateCommand::Suspension {
-            slot: conn.slot,
-            suspend
-        }).await.is_err() {
-            self.unit_status = UnitStatus::Gone
-        }
-        else {
-            self.suspended = suspend
         }
     }
 
@@ -503,40 +440,115 @@ impl Link {
         self.unit_status
     }
 
-    /// Connects the link to the gate.
-    async fn connect(&mut self, suspended: bool) -> Result<(), UnitStatus> {
-        if self.connection.is_some() {
-            return Ok(())
+    /// Returns the last update if there was one.
+    pub fn get_data(&self) -> Option<&payload::Update> {
+        self.unit_data.as_ref()
+    }
+
+    /// Query for the next update.
+    ///
+    /// The method returns a future that resolves into the next update. The
+    /// future can be dropped safely at any time.
+    ///
+    /// The future either resolves into a payload update or the connected
+    /// unit’s new status as the error variant.
+    ///
+    /// If this method is called when the unit status is “gone,” the future
+    /// will never resolve.
+    pub async fn query(&mut self) -> Result<&payload::Update, UnitStatus> {
+        if self.connect().await {
+            if !matches!(self.unit_status, UnitStatus::Healthy) {
+                return Err(self.unit_status)
+            }
+            // No if let because of lifetime issues.
+            #[allow(clippy::single_match)]
+            match self.unit_data {
+                Some(ref update) => return Ok(update),
+                None => {}
+            }
         }
-        if let UnitStatus::Gone = self.unit_status {
-            return Err(UnitStatus::Gone)
+
+        let conn = match self.connection {
+            ConnectionStatus::Active(ref mut conn) => conn,
+            ConnectionStatus::Unconnected | ConnectionStatus::Gone => {
+                return futures::future::pending().await
+            }
+        };
+        match conn.updates.recv().await {
+            Some(Ok(update)) => {
+                self.unit_data = Some(update);
+                Ok(self.unit_data.as_ref().unwrap())
+            }
+            Some(Err(status)) => {
+                self.unit_status = status;
+                Err(status)
+            }
+            None => {
+                self.connection = ConnectionStatus::Gone;
+                self.unit_status = UnitStatus::Gone;
+                Err(UnitStatus::Gone)
+            }
+        }
+    }
+
+    /// Connects the link to the gate if necessary.
+    ///
+    /// Returns `true` if a connection attemptwas made – independently of
+    /// whether that was successfull or not – or `false` otherwise.
+    async fn connect(&mut self) -> bool {
+        if !matches!(self.connection, ConnectionStatus::Unconnected) {
+            return false
         }
 
         let (tx, rx) = oneshot::channel();
         if self.commands.send(
-            GateCommand::Subscribe { suspended, response: tx }
+            GateCommand::Subscribe { suspended: self.suspended, response: tx }
         ).await.is_err() {
+            self.connection = ConnectionStatus::Gone;
             self.unit_status = UnitStatus::Gone;
-            return Err(UnitStatus::Gone)
+            return true
         }
         let sub = match rx.await {
             Ok(sub) => sub,
             Err(_) => {
+                self.connection = ConnectionStatus::Gone;
                 self.unit_status = UnitStatus::Gone;
-                return Err(UnitStatus::Gone)
+                return true
             }
         };
-        self.connection = Some(LinkConnection {
+        self.connection = ConnectionStatus::Active(LinkConnection {
             slot: sub.slot,
             updates: sub.receiver,
         });
         self.unit_status = sub.unit_status;
-        self.suspended = suspended;
-        if self.unit_status == UnitStatus::Gone {
-            Err(UnitStatus::Gone)
-        }
-        else {
-            Ok(())
+        self.unit_data = sub.unit_data;
+        true
+    }
+
+    /// Suspends the link.
+    ///
+    /// This is merely a notification to the gate that the owner of the link
+    /// isn’t currently interested in updates. The gate will, however, still
+    /// send updates if it produces any. The link thus still needs to be
+    /// queried regularly or else the queue will fill up.
+    ///
+    /// Note that this is an async method that needs to be awaited in order
+    /// to do anything.
+    pub async fn suspend(&mut self, suspend: bool) {
+        if self.suspended != suspend {
+            let conn = match self.connection {
+                ConnectionStatus::Active(ref mut conn) => conn,
+                _ => return
+            };
+            if self.commands.send(GateCommand::Suspension {
+                slot: conn.slot,
+                suspend
+            }).await.is_err() {
+                self.unit_status = UnitStatus::Gone
+            }
+            else {
+                self.suspended = suspend
+            }
         }
     }
 }
@@ -550,6 +562,12 @@ impl From<Marked<String>> for Link {
 impl From<String> for Link {
     fn from(name: String) -> Self {
         manager::load_link(name.into())
+    }
+}
+
+impl<'a> From<&'a str> for Link {
+    fn from(name: &'a str) -> Self {
+        Self::from(String::from(name))
     }
 }
 
@@ -686,5 +704,8 @@ struct SubscribeResponse {
 
     /// The current unit status.
     unit_status: UnitStatus,
+
+    /// The last update of the unit if any.
+    unit_data: Option<payload::Update>,
 }
 

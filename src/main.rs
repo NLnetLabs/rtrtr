@@ -35,8 +35,9 @@ fn _main() -> Result<(), ExitError> {
         .enable_all()
         .build()
         .unwrap();
+    let handle = runtime.handle();
     config.http.run(manager.metrics(), manager.http_resources(), &runtime)?;
-    manager.spawn(&mut config, &runtime);
+    manager.spawn(&mut config.units, &mut config.targets, handle);
     runtime.block_on(pending())
 }
 

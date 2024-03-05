@@ -7,7 +7,6 @@
 //! indicate that error information has been logged and a consumer can just
 //! return quietly.
 use std::{fmt, io, process};
-use std::convert::TryFrom;
 use std::path::Path;
 use std::str::FromStr;
 use clap::{Arg, ArgMatches, Command};

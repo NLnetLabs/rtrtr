@@ -274,7 +274,7 @@ impl Source {
         }
     }
 
-    fn update(&self, update: payload::Update) {
+    fn update(&self, update: &payload::Update) {
         let data = self.data.load();
 
         let new_data = match data.current.as_ref() {

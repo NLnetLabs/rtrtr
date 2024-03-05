@@ -31,6 +31,7 @@ pub mod log;
 pub mod manager;
 pub mod metrics;
 pub mod payload;
+pub mod test;
 pub mod targets;
 pub mod units;
 pub mod utils;

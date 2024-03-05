@@ -1130,10 +1130,7 @@ impl DiffBuilder {
 //------------ Update --------------------------------------------------------
 
 /// An update of a unit’s payload data.
-///
-/// An update keeps both the set and optional diff behind an arc and can thus
-/// be copied cheaply.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Update {
     /// The new payload set.
     set: Set,
@@ -1244,6 +1241,16 @@ pub(crate) mod testrig {
             assert!(window[0] < window[1])
         }
     }
+
+    /// Creates an update from a bunch of integers
+    pub fn update(values: &[u32]) -> Update {
+        Update::new(
+            set(vec![
+                block(values, 0..values.len())
+            ])
+        )
+    }
+
 
     /// Converts a set into a vec of integers.
     pub fn set_to_vec(set: &Set) -> Vec<u32> {

@@ -17,7 +17,6 @@
 //! When creating a JSON file, this minimal format will be used. The ASN will
 //! be represented as a string with the `AS` prefix.
 
-use std::convert::TryFrom;
 use rpki::resources::asn::Asn;
 use rpki::resources::addr::{MaxLenError, MaxLenPrefix, Prefix};
 use rpki::rtr::payload::{RouteOrigin, Payload, PayloadRef};
