@@ -454,7 +454,7 @@ impl Link {
     /// unit’s new status as the error variant.
     ///
     /// If this method is called when the unit status is “gone,” the future
-    /// will never resolve. This helps
+    /// will never resolve.
     pub async fn query(&mut self) -> Result<&payload::Update, UnitStatus> {
         if self.connect().await {
             if !matches!(self.unit_status, UnitStatus::Healthy) {
