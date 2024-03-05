@@ -165,12 +165,15 @@ impl Manager {
         Ok(config)
     }
 
-    /// Allows creating units and adding them to the manager.
+    /// Allows creating components and adding them to the manager.
     ///
-    /// Because creating units that contain links requires some setup work,
-    /// this has to happen inside a closure. This closure should return a
-    /// list of units 
-    pub fn add_units<F, T>(
+    /// Because creating components that contain links requires some setup
+    /// work, this has to happen inside a closure. Inside the closure, you
+    /// can create units and targets and add them to the correct set. Once
+    /// the closure returns, all of the units and targets are spawned onto
+    /// the runtime represented by the `runtime` handle. If all of this
+    /// succeeds, the method will return whatever the closure returned.
+    pub fn add_components<F, T>(
         &mut self, runtime: &runtime::Handle, op: F
     ) -> Result<T, Failed>
     where
@@ -189,7 +192,7 @@ impl Manager {
         let res = op(&mut units, &mut targets);
 
         // All entries in the thread-local that have a gate are new. They must
-        // appear in config’s units or we have unresolved links.
+        // appear in unit set or we have unresolved links.
         let gates = GATES.with(|gates| gates.replace(None)).unwrap();
         let mut errs = Vec::new();
         for (name, load) in gates {
