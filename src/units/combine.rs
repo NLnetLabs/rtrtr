@@ -193,7 +193,7 @@ mod test {
 
         let mut manager = Manager::new();
 
-        let (u1, u2, u3, mut t) = manager.add_units(
+        let (u1, u2, u3, mut t) = manager.add_components(
             &runtime::Handle::current(),
             |units, targets| {
                 let (u, u1c) = test::Unit::new();

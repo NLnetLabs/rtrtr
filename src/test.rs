@@ -137,7 +137,7 @@ async fn simple_comms() {
 
     let mut manager = Manager::new();
 
-    let (u, mut t) = manager.add_units(
+    let (u, mut t) = manager.add_components(
         &runtime::Handle::current(),
         |units, targets| {
             let (u, uc) = Unit::new();
