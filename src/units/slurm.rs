@@ -42,9 +42,6 @@ impl LocalExceptions {
             self.files.into_iter().map(Into::into).collect()
         );
 
-        // The data set we receive from the source.
-        let mut data = None;
-
         // Whether we are ready to submit an update to our gate.
         //
         // This will stay at false until we have received our first
@@ -57,9 +54,7 @@ impl LocalExceptions {
 
                 maybe_update = self.source.query() => {
                     match maybe_update {
-                        Ok(update) => {
-                            data = Some(update);
-                        }
+                        Ok(_update) => { }
                         Err(UnitStatus::Gone) => return Ok(()),
                         _ => continue,
                     }
@@ -74,9 +69,9 @@ impl LocalExceptions {
                 }
             }
 
-            if let (true, Some(data)) = (ready, data.as_ref()) {
+            if let (true, Some(data)) = (ready, self.source.get_data()) {
                 gate.update_data(
-                    files.apply(component.name(), data.clone())
+                    files.apply(component.name(), data)
                 ).await;
             }
         }
@@ -120,9 +115,8 @@ impl ExceptionSet {
         res
     }
 
-    fn apply(&self, unit: &str, update: payload::Update) -> payload::Update {
-        let serial = update.serial();
-        let mut set = update.into_set();
+    fn apply(&self, unit: &str, update: &payload::Update) -> payload::Update {
+        let mut set = update.set().clone();
 
         for (path, file) in
             self.data.paths.iter().zip(self.data.files.iter())
@@ -131,7 +125,7 @@ impl ExceptionSet {
             
         }
 
-        payload::Update::new(serial, set, None)
+        payload::Update::new(set)
     }
 
     async fn notified(&self) {

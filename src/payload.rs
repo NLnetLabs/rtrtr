@@ -57,7 +57,6 @@ use std::sync::Arc;
 use rpki::rtr::client::PayloadError;
 use rpki::rtr::payload::{Action, Payload, PayloadRef};
 use rpki::rtr::server::{PayloadDiff, PayloadSet};
-use rpki::rtr::state::Serial;
 
 
 //------------ Pack ----------------------------------------------------------
@@ -1131,32 +1130,18 @@ impl DiffBuilder {
 //------------ Update --------------------------------------------------------
 
 /// An update of a unit’s payload data.
-///
-/// An update keeps both the set and optional diff behind an arc and can thus
-/// be copied cheaply.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Update {
-    /// The serial number of this update.
-    serial: Serial,
-
     /// The new payload set.
     set: Set,
-
-    /// The optional diff from the previous update.
-    diff: Option<Diff>,
 }
 
 impl Update {
     /// Creates a new update.
     pub fn new(
-        serial: Serial, set: Set, diff: Option<Diff>
+        set: Set
     ) -> Self {
-        Update { serial, set, diff }
-    }
-
-    /// Returns the serial number of the update.
-    pub fn serial(&self) -> Serial {
-        self.serial
+        Update { set }
     }
 
     /// Returns the payload set of the update.
@@ -1169,27 +1154,9 @@ impl Update {
         self.set
     }
 
-    /// Returns the diff if it can be used for the given serial.
-    ///
-    /// The method will return the diff if it is preset and if the given
-    /// serial is one less than the update’s serial.
-    pub fn get_usable_diff(&self, serial: Serial) -> Option<&Diff> {
-        self.diff.as_ref().and_then(|diff| {
-            if serial.add(1) == self.serial {
-                Some(diff)
-            }
-            else {
-                None
-            }
-        })
-    }
-
     /// Applies a diff to the update.
-    ///
-    /// The update will retain its current serial number.
     pub fn apply_diff_relaxed(&mut self, diff: &Diff)  {
         self.set = diff.apply_relaxed(&self.set);
-        self.diff = None;
     }
 }
 
@@ -1274,6 +1241,16 @@ pub(crate) mod testrig {
             assert!(window[0] < window[1])
         }
     }
+
+    /// Creates an update from a bunch of integers
+    pub fn update(values: &[u32]) -> Update {
+        Update::new(
+            set(vec![
+                block(values, 0..values.len())
+            ])
+        )
+    }
+
 
     /// Converts a set into a vec of integers.
     pub fn set_to_vec(set: &Set) -> Vec<u32> {

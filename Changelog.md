@@ -6,12 +6,16 @@ Breaking Changes
 
 * Upgrade Rust edition, minimal Rust version to 1.70, and dependencies.
   ([#88], [#91])
+* Removed internal serial numbers and the ability to pass optional diffs
+  between units. ([#96])
 
 New
 
 * Log changes made by the `slurm` unit to updates. ([#87])
 * The `slurm` unit now updates its data set if it discovers that the Slurm
   files have changed. ([#89])
+* Both the `json` unit and target now support conditional HTTP requests
+  via the Etag and Last-Modified headers. ([#98])
 
 Bug Fixes
 
@@ -29,6 +33,8 @@ Other Changes
 [#89]: https://github.com/NLnetLabs/rtrtr/pull/89
 [#90]: https://github.com/NLnetLabs/rtrtr/pull/90
 [#91]: https://github.com/NLnetLabs/rtrtr/pull/91
+[#96]: https://github.com/NLnetLabs/rtrtr/pull/96
+[#98]: https://github.com/NLnetLabs/rtrtr/pull/98
 
 
 ## 0.2.2

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use daemonbase::error::Failed;
 use log::error;
 use serde::Deserialize;
-use reqwest::blocking::Client as HttpClient;
-use tokio::runtime::Runtime;
+use reqwest::Client as HttpClient;
+use tokio::runtime;
 use crate::{http, metrics};
 use crate::comms::{Gate, GateAgent, Link};
 use crate::config::{Config, ConfigFile, Marked};
@@ -151,6 +151,7 @@ impl Manager {
                     }
                 }
                 else {
+                    self.units.insert(name.clone(), load.agent);
                     self.pending.insert(name, gate);
                 }
             }
@@ -165,14 +166,73 @@ impl Manager {
         Ok(config)
     }
 
-    /// Spawns all units and targets in the config unto the given runtime.
+    /// Allows creating components and adding them to the manager.
+    ///
+    /// Because creating components that contain links requires some setup
+    /// work, this has to happen inside a closure. Inside the closure, you
+    /// can create units and targets and add them to the correct set. Once
+    /// the closure returns, all of the units and targets are spawned onto
+    /// the runtime represented by the `runtime` handle. If all of this
+    /// succeeds, the method will return whatever the closure returned.
+    pub fn add_components<F, T>(
+        &mut self, runtime: &runtime::Handle, op: F
+    ) -> Result<T, Failed>
+    where
+        F: FnOnce(&mut UnitSet, &mut TargetSet) -> T
+    {
+        GATES.with(|gates| {
+            gates.replace(
+                Some(self.units.iter().map(|(key, value)| {
+                    (key.clone(), value.clone().into())
+                }).collect())
+            )
+        });
+        
+        let mut units = UnitSet::new();
+        let mut targets = TargetSet::new();
+        let res = op(&mut units, &mut targets);
+
+        // All entries in the thread-local that have a gate are new. They must
+        // appear in unit set or we have unresolved links.
+        let gates = GATES.with(|gates| gates.replace(None)).unwrap();
+        let mut errs = Vec::new();
+        for (name, load) in gates {
+            if let Some(gate) = load.gate {
+                if !units.units.contains_key(&name) {
+                    errs.push(
+                        format!("unresolved link to unit '{}'", name)
+                    )
+                }
+                else {
+                    self.units.insert(name.clone(), load.agent);
+                    self.pending.insert(name, gate);
+                }
+            }
+        }
+        if !errs.is_empty() {
+            for err in errs {
+                error!("{}", err);
+            }
+            return Err(Failed)
+        }
+
+        self.spawn(&mut units, &mut targets, runtime);
+        Ok(res)
+    }
+
+    /// Spawns all units and targets unto the given runtime.
     ///
     /// # Panics
     ///
     /// The method panics if the config hasn’t been successfully loaded via
     /// the same manager earlier.
-    pub fn spawn(&mut self, config: &mut Config, runtime: &Runtime) {
-        for (name, unit) in config.units.units.drain() {
+    pub fn spawn(
+        &mut self,
+        units: &mut UnitSet,
+        targets: &mut TargetSet,
+        runtime: &runtime::Handle,
+    ) {
+        for (name, unit) in units.units.drain() {
             let gate = match self.pending.remove(&name) {
                 Some(gate) => gate,
                 None => {
@@ -187,13 +247,14 @@ impl Manager {
             runtime.spawn(unit.run(controller, gate));
         }
 
-        for (name, target) in config.targets.targets.drain() {
+        for (name, target) in targets.targets.drain() {
             let controller = Component::new(
                 name, self.http_client.clone(), self.metrics.clone(),
                 self.http_resources.clone()
             );
             runtime.spawn(target.run(controller));
         }
+
     }
 
     /// Returns a new reference to the manager’s metrics collection.
@@ -211,10 +272,20 @@ impl Manager {
 //------------ UnitSet -------------------------------------------------------
 
 /// A set of units to be started.
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(transparent)]
 pub struct UnitSet {
     units: HashMap<String, Unit>,
+}
+
+impl UnitSet {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn insert(&mut self, name: impl Into<String>, unit: Unit) {
+        self.units.insert(name.into(), unit);
+    }
 }
 
 
@@ -230,6 +301,10 @@ pub struct TargetSet {
 impl TargetSet {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn insert(&mut self, name: impl Into<String>, target: Target) {
+        self.targets.insert(name.into(), target);
     }
 }
 
@@ -278,8 +353,9 @@ impl From<GateAgent> for LoadUnit {
 //------------ Loading Links -------------------------------------------------
 
 thread_local!(
-    static GATES: RefCell<Option<HashMap<String, LoadUnit>>> =
+    static GATES: RefCell<Option<HashMap<String, LoadUnit>>> = const {
         RefCell::new(None)
+    }
 );
 
 

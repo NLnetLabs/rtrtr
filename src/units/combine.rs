@@ -9,7 +9,6 @@ use crate::metrics;
 use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::comms::{Gate, GateMetrics, Link, Terminated, UnitStatus};
 use crate::manager::Component;
-use crate::payload;
 
 
 //------------ Any -----------------------------------------------------------
@@ -36,17 +35,26 @@ impl Any {
         component.register_metrics(metrics.clone());
 
         let mut curr_idx: Option<usize> = None;
-        let mut updates: Vec<Option<payload::Update>> = vec![
-            None; self.sources.len()
-        ];
 
         // Outer loop picks a new source.
         loop {
-            curr_idx = self.pick(curr_idx);
+            curr_idx = match self.pick(curr_idx) {
+                Ok(curr_idx) => curr_idx,
+                Err(_) => {
+                    gate.update_status(UnitStatus::Gone).await;
+                    return Err(Terminated)
+                }
+            };
             metrics.current_index.store(curr_idx);
-            if let Some(idx) = curr_idx {
-                if let Some(ref update) = updates[idx] {
-                    gate.update_data(update.clone()).await;
+            match curr_idx {
+                Some(idx) => {
+                    gate.update_status(UnitStatus::Healthy).await;
+                    if let Some(update) = self.sources[idx].get_data() {
+                        gate.update_data(update.clone()).await;
+                    }
+                }
+                None => {
+                    gate.update_status(UnitStatus::Stalled).await;
                 }
             }
 
@@ -76,7 +84,6 @@ impl Any {
                         if Some(idx) == curr_idx {
                             gate.update_data(update.clone()).await;
                         }
-                        updates[idx] = Some(update.clone());
                     }
                     Err(UnitStatus::Stalled) => {
                         if Some(idx) == curr_idx {
@@ -97,7 +104,8 @@ impl Any {
     /// Pick the next healthy source.
     ///
     /// This will return `None`, if no healthy source is currently available.
-    fn pick(&self, curr: Option<usize>) -> Option<usize> {
+    /// It will error out if all sources have gone.
+    fn pick(&self, curr: Option<usize>) -> Result<Option<usize>, Terminated> {
         // Here’s what we do in case of random picking: We only pick the next
         // source at random and then loop around. That’s not truly random but
         // deterministic.
@@ -110,166 +118,27 @@ impl Any {
         else {
             0
         };
+        let mut only_gone = true;
         for _ in 0..self.sources.len() {
-            if self.sources[next].get_status() == UnitStatus::Healthy {
-                return Some(next)
+            match self.sources[next].get_status() {
+                UnitStatus::Healthy => {
+                    return Ok(Some(next))
+                }
+                UnitStatus::Stalled => {
+                    only_gone = false;
+                }
+                UnitStatus::Gone => { }
             }
             next = (next + 1) % self.sources.len()
         }
-        None
-    }
-}
-
-
-/*
-impl Any {
-    pub async fn run(
-        mut self, mut component: Component, mut gate: Gate
-    ) -> Result<(), Terminated> {
-        if self.sources.is_empty() {
-            gate.update_status(UnitStatus::Gone).await;
-            return Err(Terminated)
-        }
-        let metrics = Arc::new(AnyMetrics::new(&gate));
-        component.register_metrics(metrics.clone());
-
-        let mut gate = [gate];
-        let mut curr_idx = None;
-        loop {
-            // Pick the next healthy source, if there is one.
-            curr_idx = self.pick(curr_idx);
-            metrics.current_index.store(curr_idx);
-
-            println!("current index: {:?}", curr_idx);
-
-            match curr_idx {
-                Some(curr_idx) => self.run_healthy(&mut gate, curr_idx).await,
-                None => self.run_stalled(&mut gate).await
-            }
-        }
-    }
-
-    /// Collects updates from a healthy source until it stalls.
-    async fn run_healthy(&mut self, gate: &mut [Gate], curr_idx: usize) {
-        loop {
-            let res = {
-                select_all(
-                    self.sources.iter_mut().enumerate().map(|(idx, link)| {
-                        if idx == curr_idx {
-                            AnySource::Active(link).run().boxed()
-                        }
-                        else {
-                            AnySource::Suspended(link).run().boxed()
-                        }
-                    }).chain(gate.iter_mut().map(|gate| {
-                        AnySource::Gate(gate).run().boxed()
-                    }))
-                ).await.0
-            };
-            match res {
-                Ok(Some(update)) => {
-                    // Update from the current source.
-                    gate[0].update_data(update).await
-                }
-                Ok(None) => {
-                    // Status change we don’t care about.
-                }
-                Err(()) => {
-                    // Current source has stalled.
-                    break;
-                }
-            }
-        }
-    }
-
-    /// Waits for any source becoming healthy.
-    async fn run_stalled(&mut self, gate: &mut [Gate]) {
-        loop {
-            let res = {
-                select_all(
-                    self.sources.iter_mut().map(|link| {
-                        AnySource::Suspended(link).run_stalled().boxed()
-                    }).chain(gate.iter_mut().map(|gate| {
-                        AnySource::Gate(gate).run_stalled().boxed()
-                    }))
-                ).await.0
-            };
-            println!("Back to healthy: {}", res);
-            if res {
-                break
-            }
-        }
-    }
-
-    /// Pick the next healthy source.
-    ///
-    /// This will return `None`, if no healthy source is currently available.
-    fn pick(&self, curr: Option<usize>) -> Option<usize> {
-        // Here’s what we do in case of random picking: We only pick the next
-        // source at random and then loop around. That’s not truly random but
-        // deterministic.
-        let mut next = if self.random {
-            thread_rng().gen_range(0, self.sources.len())
-        }
-        else if let Some(curr) = curr {
-            (curr + 1) % self.sources.len()
+        if only_gone {
+            Err(Terminated)
         }
         else {
-            0
-        };
-        for _ in 0..self.sources.len() {
-            if self.sources[next].get_status() == UnitStatus::Healthy {
-                return Some(next)
-            }
-            next = (next + 1) % self.sources.len()
-        }
-        None
-    }
-}
-
-enum AnySource<'a> {
-    Active(&'a mut Link),
-    Suspended(&'a mut Link),
-    Gate(&'a mut Gate)
-}
-
-impl<'a> AnySource<'a> {
-    async fn run(self) -> Result<Option<payload::Update>, ()> {
-        match self {
-            AnySource::Active(link) => {
-                match link.query().await {
-                    Ok(update) => Ok(Some(update)),
-                    Err(UnitStatus::Healthy) => Ok(None),
-                    Err(UnitStatus::Stalled) | Err(UnitStatus::Gone) => {
-                        Err(())
-                    }
-                }
-            }
-            AnySource::Suspended(link) => {
-                 let _  = link.query_suspended().await;
-                 Ok(None)
-            }
-            AnySource::Gate(gate) => {
-                let _ = gate.process().await;
-                Ok(None)
-            }
-        }
-    }
-
-    async fn run_stalled(self) -> bool {
-        match self {
-            AnySource::Active(_) => unreachable!(),
-            AnySource::Suspended(link) => {
-                 matches!(link.query_suspended().await, UnitStatus::Healthy)
-            }
-            AnySource::Gate(gate) => {
-                let _ = gate.process().await;
-                false
-            }
+            Ok(None)
         }
     }
 }
-*/
 
 
 //------------ AnyMetrics ----------------------------------------------------
@@ -303,6 +172,72 @@ impl metrics::Source for AnyMetrics {
             self.current_index.load().map(|v| v as isize).unwrap_or(-1)
         );
         self.gate.append(unit_name, target);
+    }
+}
+
+
+//============ Tests =========================================================
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use futures::join;
+    use tokio::runtime;
+    use crate::{test, units};
+    use crate::manager::Manager;
+    use crate::payload::testrig;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wake_up_again() {
+        use crate::comms::UnitStatus::*;
+
+        let mut manager = Manager::new();
+
+        let (u1, u2, u3, mut t) = manager.add_components(
+            &runtime::Handle::current(),
+            |units, targets| {
+                let (u, u1c) = test::Unit::new();
+                units.insert("u1", u);
+                let (u, u2c) = test::Unit::new();
+                units.insert("u2", u);
+                let (u, u3c) = test::Unit::new();
+                units.insert("u3", u);
+
+                units.insert("any", units::Unit::Any(Any {
+                    sources: vec!["u1".into(), "u2".into(), "u3".into()],
+                    random: false
+                }));
+
+                let (t, tc) = test::Target::new("any");
+                targets.insert("t", t);
+
+                (u1c, u2c, u3c, tc)
+            }
+        ).unwrap();
+
+        // Set all units to stalled, check that the target goes stalled.
+        join!(u1.status(Stalled), u2.status(Stalled), u3.status(Stalled));
+        assert_eq!(t.recv().await, Err(Stalled));
+
+        // Set one unit to healthy.
+        u2.data(testrig::update(&[1])).await;
+        u2.status(Healthy).await;
+        assert_eq!(t.recv().await, Err(Healthy));
+        assert_eq!(t.recv().await, Ok(testrig::update(&[1])));
+
+        // Set another unit to healthy. This shouldn’t change anything.
+        u1.data(testrig::update(&[2])).await;
+        u1.status(Healthy).await;
+
+        // Stall them both again.
+        join!(u1.status(Stalled), u2.status(Stalled));
+        assert_eq!(t.recv().await, Err(Stalled));
+
+        // Now unstall one again.
+        u3.data(testrig::update(&[3])).await;
+        u3.status(Healthy).await;
+        assert_eq!(t.recv().await, Err(Healthy));
+        assert_eq!(t.recv().await, Ok(testrig::update(&[3])));
     }
 }
 
