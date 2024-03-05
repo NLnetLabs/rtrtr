@@ -151,6 +151,7 @@ impl Manager {
                     }
                 }
                 else {
+                    self.units.insert(name.clone(), load.agent);
                     self.pending.insert(name, gate);
                 }
             }
@@ -203,6 +204,7 @@ impl Manager {
                     )
                 }
                 else {
+                    self.units.insert(name.clone(), load.agent);
                     self.pending.insert(name, gate);
                 }
             }
