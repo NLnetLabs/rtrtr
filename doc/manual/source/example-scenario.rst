@@ -40,7 +40,7 @@ Configuration File
     log_facility = "daemon"
     log_file = "/var/log/rtrtr.log"
 
-    http-listen = ["dc1.http.example.net:8080"]
+    http-listen = ["127.0.0.1:8080"] # where 127.0.0.1 is the IP address of dc1.http.example.net
 
     # RTR UNITS
 
@@ -77,7 +77,7 @@ Configuration File
 
     [targets.dc1-rtr]
     type = "rtr"
-    listen = [ "dc1.rtr.example.net:9001" ]
+    listen = [ "127.0.0.2:9001" ] # where 127.0.0.2 is the IP address of dc1.http.example.net
     unit = "static-routes"
 
     # JSON TARGET
