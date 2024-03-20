@@ -21,6 +21,7 @@ Bug Fixes
 
 * Fix a race condition where the `slurm` unit would not apply its changes
   to the first update if loading the files is too slow. ([#89])
+* Fixed various race conditions during startup and shutdown. ([#101])
 
 Other Changes
 
@@ -35,6 +36,7 @@ Other Changes
 [#91]: https://github.com/NLnetLabs/rtrtr/pull/91
 [#96]: https://github.com/NLnetLabs/rtrtr/pull/96
 [#98]: https://github.com/NLnetLabs/rtrtr/pull/98
+[#101]: https://github.com/NLnetLabs/rtrtr/pull/101
 
 
 ## 0.2.2
