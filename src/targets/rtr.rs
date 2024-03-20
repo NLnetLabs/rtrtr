@@ -43,6 +43,15 @@ pub struct Tcp {
     #[serde(default = "Tcp::default_history_size")]
     #[serde(rename = "history-size")]
     history_size: usize,
+
+    /// The RTR refresh interval.
+    refresh: Option<u32>,
+
+    /// The RTR retry interval.
+    retry: Option<u32>,
+
+    /// The RTR expire interval.
+    expire: Option<u32>,
 }
 
 impl Tcp {
@@ -54,7 +63,7 @@ impl Tcp {
     /// Runs the target.
     pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let mut notify = NotifySender::new();
-        let target = Source::new(self.history_size);
+        let target = Source::new(self.history_size, self.timing());
         for &addr in &self.listen {
             self.spawn_listener(addr, target.clone(), notify.clone())?;
         }
@@ -106,6 +115,19 @@ impl Tcp {
         Ok(())
     }
 
+    fn timing(&self) -> Timing {
+        let mut res = Timing::default();
+        if let Some(refresh) = self.refresh {
+            res.refresh = refresh;
+        }
+        if let Some(retry) = self.retry {
+            res.retry = retry;
+        }
+        if let Some(expire) = self.expire {
+            res.expire = expire;
+        }
+        res
+    }
 }
 
 
@@ -130,7 +152,7 @@ impl Tls {
     pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
         let acceptor = TlsAcceptor::from(Arc::new(self.create_tls_config()?));
         let mut notify = NotifySender::new();
-        let target = Source::new(self.tcp.history_size);
+        let target = Source::new(self.tcp.history_size, self.tcp.timing());
         for &addr in &self.tcp.listen {
             self.spawn_listener(
                 addr, acceptor.clone(), target.clone(), notify.clone()
@@ -264,13 +286,15 @@ impl Tls {
 struct Source {
     data: Arc<ArcSwap<SourceData>>,
     history_size: usize,
+    timing: Timing,
 }
 
 impl Source {
-    fn new(history_size: usize) -> Self {
+    fn new(history_size: usize, timing: Timing) -> Self {
         Source {
             data: Default::default(),
-            history_size
+            history_size,
+            timing,
         }
     }
 
@@ -283,7 +307,7 @@ impl Source {
                     state: data.state,
                     current: Some(update.set().clone()),
                     diffs: Vec::new(),
-                    timing: Timing::default(),
+                    timing: self.timing,
                 }
             }
             Some(current) => {
@@ -311,7 +335,7 @@ impl Source {
                     state,
                     current: Some(update.set().clone()),
                     diffs,
-                    timing: Timing::default(),
+                    timing: self.timing,
                 }
             }
         };
