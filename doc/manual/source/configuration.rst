@@ -172,6 +172,10 @@ from.
     listen = [ "127.0.0.1:9001" ]
     unit = "source-unit-name"
 
+The three optional configuration options ``refresh``, ``retry`` and ``expire``
+allow setting the respective fields in the timer values sent to the client.
+If they are missing, the default values are used.
+
 This target also supports TLS connections, via the ``rtr-tls`` type. This target
 has two additional configuration options. First, the :option:`certificate`
 option, which is a string value providing a path to a file containing the
