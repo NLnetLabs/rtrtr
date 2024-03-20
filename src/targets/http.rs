@@ -3,6 +3,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 use arc_swap::ArcSwap;
+use daemonbase::error::ExitError;
 use chrono::{DateTime, Utc};
 use futures::stream;
 use hyper::{Body, Method, Request, Response, StatusCode};
@@ -14,7 +15,6 @@ use serde::Deserialize;
 use crate::payload;
 use crate::comms::Link;
 use crate::formats::output;
-use crate::log::ExitError;
 use crate::manager::Component;
 use crate::utils::http::EtagsIter;
 use crate::utils::http::{format_http_date, parse_http_date};

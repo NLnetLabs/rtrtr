@@ -8,6 +8,8 @@ use std::net::TcpListener as StdTcpListener;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
+use daemonbase::config::ConfigPath;
+use daemonbase::error::ExitError;
 use futures::{TryFuture, ready};
 use log::{debug, error};
 use pin_project_lite::pin_project;
@@ -23,8 +25,6 @@ use tokio_rustls::server::TlsStream;
 use tokio_stream::wrappers::TcpListenerStream;
 use crate::payload;
 use crate::comms::Link;
-use crate::config::ConfigPath;
-use crate::log::ExitError;
 use crate::manager::Component;
 
 
@@ -79,7 +79,7 @@ impl Tcp {
             Ok(listener) => listener,
             Err(err) => {
                 error!("Can’t bind to {}: {}", addr, err);
-                return Err(ExitError)
+                return Err(ExitError::default())
             }
         };
         if let Err(err) = listener.set_nonblocking(true) {
@@ -87,13 +87,13 @@ impl Tcp {
                 "Fatal: failed to set listener {} to non-blocking: {}.",
                 addr, err
             );
-            return Err(ExitError);
+            return Err(ExitError::default());
         }
         let listener = match TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(err) => {
                 error!("Fatal error listening on {}: {}", addr, err);
-                return Err(ExitError)
+                return Err(ExitError::default())
             }
         };
         tokio::spawn(async move {
@@ -158,7 +158,7 @@ impl Tls {
                         "Failed to open TLS certificate file '{}': {}.",
                         self.certificate.display(), err
                     );
-                    ExitError
+                    ExitError::default()
                 })?
             )
         ).map_err(|err| {
@@ -166,7 +166,7 @@ impl Tls {
                 "Failed to read TLS certificate file '{}': {}.",
                 self.certificate.display(), err
             );
-            ExitError
+            ExitError::default()
         }).map(|mut certs| {
             certs.drain(..).map(Certificate).collect()
         })?;
@@ -178,7 +178,7 @@ impl Tls {
                         "Failed to open TLS key file '{}': {}.",
                         self.key.display(), err
                     );
-                    ExitError
+                    ExitError::default()
                 })?
             )
         ).map_err(|err| {
@@ -186,21 +186,21 @@ impl Tls {
                 "Failed to read TLS key file '{}': {}.",
                 self.key.display(), err
             );
-            ExitError
+            ExitError::default()
         }).and_then(|mut certs| {
             if certs.is_empty() {
                 error!(
                     "TLS key file '{}' does not contain any usable keys.",
                     self.key.display()
                 );
-                return Err(ExitError)
+                return Err(ExitError::default())
             }
             if certs.len() != 1 {
                 error!(
                     "TLS key file '{}' contains multiple keys.",
                     self.key.display()
                 );
-                return Err(ExitError)
+                return Err(ExitError::default())
             }
             Ok(PrivateKey(certs.pop().unwrap()))
         })?;
@@ -211,7 +211,7 @@ impl Tls {
             .with_single_cert(certs, key)
             .map_err(|err| {
                 error!("Failed to create TLS server config: {}", err);
-                ExitError
+                ExitError::default()
             })
     }
 
@@ -224,7 +224,7 @@ impl Tls {
             Ok(listener) => listener,
             Err(err) => {
                 error!("Can’t bind to {}: {}", addr, err);
-                return Err(ExitError)
+                return Err(ExitError::default())
             }
         };
         if let Err(err) = listener.set_nonblocking(true) {
@@ -232,13 +232,13 @@ impl Tls {
                 "Fatal: failed to set listener {} to non-blocking: {}.",
                 addr, err
             );
-            return Err(ExitError);
+            return Err(ExitError::default());
         }
         let listener = match TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(err) => {
                 error!("Fatal error listening on {}: {}", addr, err);
-                return Err(ExitError)
+                return Err(ExitError::default())
             }
         };
         tokio::spawn(async move {

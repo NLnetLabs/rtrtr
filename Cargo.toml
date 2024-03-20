@@ -14,13 +14,12 @@ readme = "README.md"
 arc-swap        = "1.0"
 bytes           = "1"
 chrono          = "0.4.31"
-clap            = { version = "3.0", features = [ "cargo" ] }
+clap            = { version = "~4.4", features = [ "cargo", "derive" ] }
 crossbeam-utils = "0.8.4"
-fern            = "0.6.0"
+daemonbase      = "0.1.0"
 futures         = "0.3"
 hyper           = { version = "0.14.8", features = [ "server", "stream" ] }
 log             = "0.4"
-log-reroute     = "0.1.5"
 pin-project-lite = "0.2.4"
 rand            = "0.8.3"
 reqwest         = { version = "0.11.3", default-features = false, features = ["blocking", "rustls-tls"] }
@@ -36,9 +35,6 @@ tokio-stream    = { version = "0.1", features = ["net"] }
 toml            = "0.8.2"
 url             = { version = "2.2", features = ["serde"] }
 webpki-roots    = "0.25.2"
-
-[target.'cfg(unix)'.dependencies]
-syslog          = "6.0"
 
 [dev-dependencies]
 rand_pcg        = "0.3"

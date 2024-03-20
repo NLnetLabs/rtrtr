@@ -27,7 +27,6 @@ pub mod comms;
 pub mod config;
 pub mod formats;
 pub mod http;
-pub mod log;
 pub mod manager;
 pub mod metrics;
 pub mod payload;

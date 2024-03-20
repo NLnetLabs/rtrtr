@@ -1,11 +1,11 @@
 //! Helpful things for testing.
 #![cfg(test)]
 
+use daemonbase::error::ExitError;
 use tokio::sync::mpsc;
 use crate::{targets, units};
 use crate::comms::{Gate, Link, Terminated, UnitStatus};
 use crate::payload;
-use crate::log::ExitError;
 use crate::manager::Component;
 
 

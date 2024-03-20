@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use chrono::{TimeZone, Utc};
+use daemonbase::config::ConfigPath;
 use futures::pin_mut;
 use futures::future::{select, Either};
 use log::{debug, error, info, warn};
@@ -33,7 +34,6 @@ use tokio_rustls::{
 use webpki::TrustAnchor;
 use crate::metrics;
 use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
-use crate::config::ConfigPath;
 use crate::manager::Component;
 use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::payload;

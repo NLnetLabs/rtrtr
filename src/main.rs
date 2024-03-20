@@ -1,36 +1,26 @@
-use std::env::current_dir;
 use std::process::exit;
 use clap::{Command, crate_authors, crate_version};
+use daemonbase::error::ExitError;
+use daemonbase::logging::Logger;
 use futures::future::pending;
-use log::error;
 use tokio::runtime;
 use rtrtr::config::Config;
-use rtrtr::log::ExitError;
 use rtrtr::manager::Manager;
 
 
 fn _main() -> Result<(), ExitError> {
-    Config::init()?;
+    Logger::init_logging()?;
     let matches = Config::config_args(
         Command::new("rtrtr")
         .version(crate_version!())
         .author(crate_authors!())
         .about("collecting, processing and distributing route filtering data")
     ).get_matches();
-    let cur_dir = match current_dir() {
-        Ok(dir) => dir,
-        Err(err) => {
-            error!(
-                "Fatal: cannot get current directory ({}). Aborting.",
-                err
-            );
-            return Err(ExitError);
-        }
-    };
     let mut manager = Manager::new();
     let mut config = Config::from_arg_matches(
-        &matches, &cur_dir, &mut manager
+        &matches, &mut manager
     )?;
+    Logger::from_config(&config.log)?.switch_logging(false)?;
     let runtime = runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -44,7 +34,7 @@ fn _main() -> Result<(), ExitError> {
 fn main() {
     match _main() {
         Ok(_) => exit(0),
-        Err(ExitError) => exit(1),
+        Err(err) => err.exit(),
     }
 }
 

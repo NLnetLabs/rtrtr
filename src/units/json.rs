@@ -6,6 +6,8 @@ use std::time::{Duration, SystemTime};
 use std::fs::metadata;
 use chrono::{DateTime, Utc};
 use bytes::{Buf, Bytes, BytesMut};
+use daemonbase::config::ConfigPath;
+use daemonbase::error::Failed;
 use log::{debug, warn};
 use reqwest::header;
 use reqwest::{StatusCode, Url};
@@ -16,10 +18,8 @@ use tokio::task::spawn_blocking;
 use tokio::time::{Instant, timeout_at};
 use crate::payload;
 use crate::comms::{Gate, Terminated, UnitStatus};
-use crate::config::ConfigPath;
 use crate::formats::json::Set as JsonSet;
 use crate::manager::Component;
-use crate::log::Failed;
 use crate::utils::http::{format_http_date, parse_http_date};
 
 
