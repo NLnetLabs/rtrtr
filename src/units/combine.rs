@@ -243,6 +243,7 @@ mod test {
 
         // Set another unit to healthy. This shouldn’t change anything.
         u1.send_payload(testrig::update(&[2])).await;
+        t.recv_nothing();
 
         // Stall them both again.
         join!(u1.send_stalled(), u2.send_stalled());

@@ -100,6 +100,20 @@ pub struct TargetController {
 }
 
 impl TargetController {
+    pub fn recv_nothing(&mut self) {
+        use tokio::sync::mpsc::error::TryRecvError;
+
+        match self.rx.try_recv() {
+            Ok(update) => {
+                panic!("expected no update, got {:?}", update);
+            }
+            Err(TryRecvError::Empty) => { }
+            Err(TryRecvError::Disconnected) => {
+                panic!("target disconnected")
+            }
+        }
+    }
+
     pub async fn recv(&mut self) -> UnitUpdate {
         self.rx.recv().await.unwrap()
     }
@@ -107,14 +121,14 @@ impl TargetController {
     pub async fn recv_payload(&mut self) -> payload::Update {
         match self.recv().await {
             UnitUpdate::Payload(payload) => payload,
-            other => panic!("Expected payload, got {:?}", other),
+            other => panic!("expected payload, got {:?}", other),
         }
     }
 
     pub async fn recv_stalled(&mut self) {
         match self.recv().await {
             UnitUpdate::Stalled => { }
-            other => panic!("Expected stalled status, got {:?}", other),
+            other => panic!("expected stalled status, got {:?}", other),
         }
     }
 }
