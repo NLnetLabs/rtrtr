@@ -120,6 +120,18 @@ impl TargetController {
 }
 
 
+//------------ Helper Functions ----------------------------------------------
+
+pub fn init_log() {
+    use std::io::Write;
+
+    env_logger::Builder::new()
+        .filter_level(log::LevelFilter::max())
+        .format(|buf, record| writeln!(buf, "{}", record.args()))
+        .init();
+}
+
+
 //============ Tests =========================================================
 
 #[tokio::test(flavor = "multi_thread")]

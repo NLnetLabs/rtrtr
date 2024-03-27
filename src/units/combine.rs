@@ -208,6 +208,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn wake_up_again() {
+        test::init_log();
         let mut manager = Manager::new();
 
         let (u1, u2, u3, mut t) = manager.add_components(
