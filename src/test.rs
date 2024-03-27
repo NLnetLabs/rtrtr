@@ -123,12 +123,7 @@ impl TargetController {
 //------------ Helper Functions ----------------------------------------------
 
 pub fn init_log() {
-    use std::io::Write;
-
-    env_logger::Builder::new()
-        .filter_level(log::LevelFilter::max())
-        .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .init();
+    stderrlog::new().verbosity(5).init().unwrap();
 }
 
 
