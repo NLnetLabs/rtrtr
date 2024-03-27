@@ -17,7 +17,7 @@ use tokio::io::AsyncReadExt;
 use tokio::task::spawn_blocking;
 use tokio::time::{Instant, timeout_at};
 use crate::payload;
-use crate::comms::{Gate, Terminated, UnitStatus};
+use crate::comms::{Gate, Terminated, UnitUpdate};
 use crate::formats::json::Set as JsonSet;
 use crate::manager::Component;
 use crate::utils::http::{format_http_date, parse_http_date};
@@ -37,62 +37,30 @@ pub struct Json {
 
 impl Json {
     pub async fn run(
-        self, component: Component, gate: Gate
+        mut self, mut component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
-        JsonRunner::new(self, component).run(gate).await
-    }
-}
-
-
-//----------- JsonRunner -----------------------------------------------------
-
-struct JsonRunner {
-    json: Json,
-    component: Component,
-    status: UnitStatus,
-    current: Option<payload::Set>,
-}
-
-impl JsonRunner {
-    fn new(
-        json: Json, component: Component
-    ) -> Self {
-        JsonRunner {
-            json, component,
-            status: UnitStatus::Stalled,
-            current: Default::default(),
-        }
-    }
-
-    async fn run(mut self, mut gate: Gate) -> Result<(), Terminated> {
-        self.component.register_metrics(gate.metrics());
-        gate.update_status(self.status).await;
+        component.register_metrics(gate.metrics());
         loop {
-            self.step(&mut gate).await?;
+            self.step(&component, &mut gate).await?;
             self.wait(&mut gate).await?;
         }
     }
 
-    async fn step(&mut self, gate: &mut Gate) -> Result<(), Terminated> {
-        match gate.process_until(self.fetch_json()).await? {
+    async fn step(
+        &mut self, component: &Component, gate: &mut Gate
+    ) -> Result<(), Terminated> {
+        match gate.process_until(self.fetch_json(component)).await? {
             Ok(Some(res)) => {
-                let res = res.into_payload();
-                if self.current.as_ref() != Some(&res) {
-                    self.current = Some(res.clone());
-                    if self.status != UnitStatus::Healthy {
-                        self.status = UnitStatus::Healthy;
-                        gate.update_status(self.status).await
-                    }
-                    gate.update_data(payload::Update::new(res)).await;
+                if gate.update(UnitUpdate::Payload(res)).await {
                     debug!(
                         "Unit {}: successfully updated.",
-                        self.component.name()
+                        component.name()
                     );
                 }
                 else {
                     debug!(
                         "Unit {}: update without changes.",
-                        self.component.name()
+                        component.name()
                     );
                 }
             }
@@ -101,36 +69,41 @@ impl JsonRunner {
                 // to do, really.
             }
             Err(Failed) => {
-                if self.status != UnitStatus::Stalled {
-                    self.status = UnitStatus::Stalled;
-                    gate.update_status(self.status).await
+                if gate.update(UnitUpdate::Stalled).await {
+                    debug!(
+                        "Unit {}: marked as stalled.",
+                        component.name()
+                    );
                 }
-                debug!("Unit {}: marked as stalled.", self.component.name());
             }
         };
         Ok(())
     }
 
-    async fn fetch_json(&mut self) -> Result<Option<JsonSet>, Failed> {
+    async fn fetch_json(
+        &mut self, component: &Component
+    ) -> Result<Option<payload::Update>, Failed> {
         let reader = match HttpReader::open(
-            &mut self.json.uri,
-            &self.component,
+            &mut self.uri,
+            component,
         ).await? {
             Some(reader) => reader,
             None => {
-                debug!("Unit {}: Source not modified.", self.component.name());
+                debug!("Unit {}: Source not modified.", component.name());
                 return Ok(None)
             }
         };
         match spawn_blocking(move || {
             serde_json::from_reader::<_, JsonSet>(reader)
         }).await {
-            Ok(Ok(res)) => Ok(Some(res)),
+            Ok(Ok(res)) => {
+                Ok(Some(payload::Update::new(res.into_payload())))
+            }
             Ok(Err(err)) => {
                 // Joining succeded but JSON parsing didn’t.
                 warn!(
                     "Unit {}: Failed parsing source: {}",
-                    self.component.name(),
+                    component.name(),
                     err
                 );
                 Err(Failed)
@@ -145,14 +118,14 @@ impl JsonRunner {
                 if err.is_panic() {
                     warn!(
                         "Unit {}: Failed parsing source: JSON parser panicked.",
-                        self.component.name(),
+                        component.name(),
                     );
                 }
                 else {
                     warn!(
                         "Unit {}: Failed parsing source: parser was dropped \
                          (This can't happen.)",
-                        self.component.name(),
+                        component.name(),
                     );
                 }
                 Err(Failed)
@@ -161,12 +134,10 @@ impl JsonRunner {
     }
 
     async fn wait(&mut self, gate: &mut Gate) -> Result<(), Terminated> {
-        let end = Instant::now() + Duration::from_secs(self.json.refresh);
+        let end = Instant::now() + Duration::from_secs(self.refresh);
         while end > Instant::now() {
             match timeout_at(end, gate.process()).await {
-                Ok(Ok(_status)) => {
-                    //self.status = status
-                }
+                Ok(Ok(_status)) => { }
                 Ok(Err(_)) => return Err(Terminated),
                 Err(_) => return Ok(()),
             }

@@ -33,7 +33,7 @@ use tokio_rustls::{
 };
 use webpki::TrustAnchor;
 use crate::metrics;
-use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitStatus};
+use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitUpdate};
 use crate::manager::Component;
 use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::payload;
@@ -290,12 +290,10 @@ where
         let mut target = Target::new(component.name().clone());
         component.register_metrics(metrics.clone());
         let mut this = Self::new(connect, retry, metrics);
-        gate.update_status(UnitStatus::Stalled).await;
         loop {
             debug!("Unit {}: Connecting ...", target.name);
             let mut client = match this.connect(target, &mut gate).await {
                 Ok(client) => {
-                    gate.update_status(UnitStatus::Healthy).await;
                     client
                 }
                 Err(res) => {
@@ -303,7 +301,7 @@ where
                         "Unit {}: Connection failed. Awaiting reconnect.",
                         res.name
                     );
-                    gate.update_status(UnitStatus::Stalled).await;
+                    gate.update(UnitUpdate::Stalled).await;
                     this.retry_wait(&mut gate).await?;
                     target = res;
                     continue;
@@ -334,17 +332,18 @@ where
                             "Unit {}: RTR client terminated.",
                             client.target().name
                         );
+                        gate.update(UnitUpdate::Gone).await;
                         return Err(Terminated)
                     }
                 };
                 if let Some(update) = update {
                     client.target_mut().current = update.set().clone();
-                    gate.update_data(update).await;
+                    gate.update(UnitUpdate::Payload(update)).await;
                 }
             }
 
             target = client.into_target();
-            gate.update_status(UnitStatus::Stalled).await;
+            gate.update(UnitUpdate::Stalled).await;
             this.retry_wait(&mut gate).await?;
         }
     }
