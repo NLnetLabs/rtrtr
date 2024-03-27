@@ -11,7 +11,7 @@ use rpki::slurm::{SlurmFile, ValidationOutputFilters};
 use serde::Deserialize;
 use tokio::sync::Notify;
 use crate::payload;
-use crate::comms::{Gate, Link, Terminated, UnitStatus};
+use crate::comms::{Gate, Link, Terminated, UnitUpdate};
 use crate::manager::Component;
 
 
@@ -54,8 +54,11 @@ impl LocalExceptions {
 
                 maybe_update = self.source.query() => {
                     match maybe_update {
-                        Ok(_update) => { }
-                        Err(UnitStatus::Gone) => return Ok(()),
+                        UnitUpdate::Payload(_update) => { }
+                        UnitUpdate::Gone => {
+                            gate.update(UnitUpdate::Gone).await;
+                            return Ok(())
+                        }
                         _ => continue,
                     }
                 }
@@ -69,9 +72,9 @@ impl LocalExceptions {
                 }
             }
 
-            if let (true, Some(data)) = (ready, self.source.get_data()) {
-                gate.update_data(
-                    files.apply(component.name(), data)
+            if let (true, Some(data)) = (ready, self.source.get_payload()) {
+                gate.update(
+                    UnitUpdate::Payload(files.apply(component.name(), data))
                 ).await;
             }
         }

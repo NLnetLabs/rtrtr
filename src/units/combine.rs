@@ -7,7 +7,9 @@ use rand::{thread_rng, Rng};
 use serde::Deserialize;
 use crate::metrics;
 use crate::metrics::{Metric, MetricType, MetricUnit};
-use crate::comms::{Gate, GateMetrics, Link, Terminated, UnitStatus};
+use crate::comms::{
+    Gate, GateMetrics, Link, Terminated, UnitHealth, UnitUpdate
+};
 use crate::manager::Component;
 
 
@@ -28,7 +30,7 @@ impl Any {
         mut self, mut component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
         if self.sources.is_empty() {
-            gate.update_status(UnitStatus::Gone).await;
+            gate.update(UnitUpdate::Gone).await;
             return Err(Terminated)
         }
         let metrics = Arc::new(AnyMetrics::new(&gate));
@@ -41,20 +43,27 @@ impl Any {
             curr_idx = match self.pick(curr_idx) {
                 Ok(curr_idx) => curr_idx,
                 Err(_) => {
-                    gate.update_status(UnitStatus::Gone).await;
+                    gate.update(UnitUpdate::Gone).await;
                     return Err(Terminated)
                 }
             };
             metrics.current_index.store(curr_idx);
             match curr_idx {
                 Some(idx) => {
-                    gate.update_status(UnitStatus::Healthy).await;
-                    if let Some(update) = self.sources[idx].get_data() {
-                        gate.update_data(update.clone()).await;
+                    if let Some(update) = self.sources[idx].get_payload() {
+                        gate.update(
+                            UnitUpdate::Payload(update.clone())
+                        ).await;
+                    }
+                    else {
+                        // This shouldn’t really happen (pick should always
+                        // pick a source with an update), but this is still
+                        // safe.
+                        gate.update(UnitUpdate::Stalled).await;
                     }
                 }
                 None => {
-                    gate.update_status(UnitStatus::Stalled).await;
+                    gate.update(UnitUpdate::Stalled).await;
                 }
             }
 
@@ -80,22 +89,24 @@ impl Any {
                 };
 
                 match res {
-                    Ok(update) => {
+                    UnitUpdate::Payload(payload) => {
+                        // If it is from our active source, send it on.
+                        // If we don’t have an active source, break out of
+                        // the loop because we now have a candidate.
                         if Some(idx) == curr_idx {
-                            gate.update_data(update.clone()).await;
+                            gate.update(UnitUpdate::Payload(payload)).await;
+                        }
+                        else if curr_idx.is_none() {
+                            break
                         }
                     }
-                    Err(UnitStatus::Stalled) => {
+                    UnitUpdate::Stalled | UnitUpdate::Gone => {
+                        // If our active unit stalls or dies, break.
+                        // Otherwise we can ignore it.
                         if Some(idx) == curr_idx {
                             break
                         }
                     }
-                    Err(UnitStatus::Healthy) => {
-                        if curr_idx.is_none() {
-                            break
-                        }
-                    }
-                    _ => ()
                 }
             }
         }
@@ -120,14 +131,17 @@ impl Any {
         };
         let mut only_gone = true;
         for _ in 0..self.sources.len() {
-            match self.sources[next].get_status() {
-                UnitStatus::Healthy => {
-                    return Ok(Some(next))
-                }
-                UnitStatus::Stalled => {
+            match self.sources[next].get_health() {
+                UnitHealth::Healthy => {
+                    if self.sources[next].get_payload().is_some() {
+                        return Ok(Some(next))
+                    }
                     only_gone = false;
                 }
-                UnitStatus::Gone => { }
+                UnitHealth::Stalled => {
+                    only_gone = false;
+                }
+                UnitHealth::Gone => { }
             }
             next = (next + 1) % self.sources.len()
         }
@@ -189,8 +203,6 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn wake_up_again() {
-        use crate::comms::UnitStatus::*;
-
         let mut manager = Manager::new();
 
         let (u1, u2, u3, mut t) = manager.add_components(
@@ -216,28 +228,23 @@ mod test {
         ).unwrap();
 
         // Set all units to stalled, check that the target goes stalled.
-        join!(u1.status(Stalled), u2.status(Stalled), u3.status(Stalled));
-        assert_eq!(t.recv().await, Err(Stalled));
+        join!(u1.send_stalled(), u2.send_stalled(), u3.send_stalled());
+        t.recv_stalled().await;
 
         // Set one unit to healthy.
-        u2.data(testrig::update(&[1])).await;
-        u2.status(Healthy).await;
-        assert_eq!(t.recv().await, Err(Healthy));
-        assert_eq!(t.recv().await, Ok(testrig::update(&[1])));
+        u2.send_payload(testrig::update(&[1])).await;
+        assert_eq!(t.recv_payload().await, testrig::update(&[1]));
 
         // Set another unit to healthy. This shouldn’t change anything.
-        u1.data(testrig::update(&[2])).await;
-        u1.status(Healthy).await;
+        u1.send_payload(testrig::update(&[2])).await;
 
         // Stall them both again.
-        join!(u1.status(Stalled), u2.status(Stalled));
-        assert_eq!(t.recv().await, Err(Stalled));
+        join!(u1.send_stalled(), u2.send_stalled());
+        t.recv_stalled().await;
 
         // Now unstall one again.
-        u3.data(testrig::update(&[3])).await;
-        u3.status(Healthy).await;
-        assert_eq!(t.recv().await, Err(Healthy));
-        assert_eq!(t.recv().await, Ok(testrig::update(&[3])));
+        u3.send_payload(testrig::update(&[3])).await;
+        assert_eq!(t.recv_payload().await, testrig::update(&[3]));
     }
 }
 
