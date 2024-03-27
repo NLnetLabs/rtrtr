@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use crossbeam_utils::atomic::AtomicCell;
 use futures::future::{select, select_all, Either, FutureExt};
+use log::debug;
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
 use crate::metrics;
@@ -47,6 +48,10 @@ impl Any {
                     return Err(Terminated)
                 }
             };
+            debug!(
+                "Unit {}: current index is now {:?}",
+                component.name(), curr_idx
+            );
             metrics.current_index.store(curr_idx);
             match curr_idx {
                 Some(idx) => {
