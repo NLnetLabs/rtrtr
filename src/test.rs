@@ -2,7 +2,7 @@
 #![cfg(test)]
 
 use daemonbase::error::ExitError;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use crate::{payload, targets, units};
 use crate::comms::{Gate, Link, Terminated, UnitUpdate};
 use crate::manager::Component;
@@ -13,7 +13,7 @@ use crate::manager::Component;
 /// A unit that only does what it is told.
 #[derive(Debug)]
 pub struct Unit {
-    rx: mpsc::Receiver<UnitUpdate>,
+    rx: mpsc::Receiver<(UnitUpdate, oneshot::Sender<()>)>,
 }
 
 impl Unit {
@@ -26,8 +26,11 @@ impl Unit {
     pub async fn run(
         mut self, _component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
-        while let Some(update) = gate.process_until(self.rx.recv()).await? {
+        while let Some((update, tx)) = gate.process_until(
+            self.rx.recv()
+        ).await? {
             gate.update(update).await;
+            tx.send(()).unwrap();
         }
         Err(Terminated)
     }
@@ -39,12 +42,14 @@ impl Unit {
 /// A controller for telling the test unit what to do.
 #[derive(Clone, Debug)]
 pub struct UnitController {
-    tx: mpsc::Sender<UnitUpdate>,
+    tx: mpsc::Sender<(UnitUpdate, oneshot::Sender<()>)>,
 }
 
 impl UnitController {
     pub async fn send_update(&self, update: UnitUpdate) {
-        self.tx.send(update).await.expect("unit was terminated")
+        let (tx, rx) = oneshot::channel();
+        self.tx.send((update, tx)).await.expect("unit was terminated");
+        rx.await.unwrap()
     }
 
     pub async fn send_payload(&self, update: payload::Update) {
