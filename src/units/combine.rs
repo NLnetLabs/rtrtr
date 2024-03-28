@@ -205,7 +205,7 @@ mod test {
     use crate::manager::Manager;
     use crate::payload::testrig;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn wake_up_again() {
         test::init_log();
         let mut manager = Manager::new();
