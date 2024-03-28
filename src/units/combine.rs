@@ -243,7 +243,7 @@ mod test {
         // Set one unit to healthy.
         u2.send_payload(testrig::update(&[2])).await;
         eprintln!("Check");
-        assert_eq!(t.recv_payload().await, testrig::update(&[1]));
+        assert_eq!(t.recv_payload().await, testrig::update(&[2]));
 
         eprintln!("u1 update");
         // Set another unit to healthy. This shouldn’t change anything.
