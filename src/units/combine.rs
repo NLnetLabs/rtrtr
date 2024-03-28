@@ -200,7 +200,6 @@ impl metrics::Source for AnyMetrics {
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::join;
     use tokio::runtime;
     use crate::{test, units};
     use crate::manager::Manager;
@@ -233,34 +232,33 @@ mod test {
             }
         ).unwrap();
 
-        eprintln!("All stalled");
-        // Set all units to stalled, check that the target goes stalled.
-        join!(u1.send_stalled(), u2.send_stalled(), u3.send_stalled());
-        eprintln!("Check");
+        // Set all units to stalled, check that the target goes stalled after
+        // the last one.
+        u1.send_stalled().await;
+        u2.send_stalled().await;
+        t.recv_nothing().unwrap();
+        u3.send_stalled().await;
         t.recv_stalled().await.unwrap();
 
-        eprintln!("u2 update");
-        // Set one unit to healthy.
-        u2.send_payload(testrig::update(&[2])).await;
-        eprintln!("Check");
-        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
-
-        eprintln!("u1 update");
-        // Set another unit to healthy. This shouldn’t change anything.
+        // Set one unit to healthy, check that we get an update.
         u1.send_payload(testrig::update(&[1])).await;
-        eprintln!("Check");
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[1]));
+
+        // Set another unit to healthy. This shouldn’t change anything.
+        u2.send_payload(testrig::update(&[2])).await;
         t.recv_nothing().unwrap();
 
-        eprintln!("u1 and u2 stalled");
-        // Stall them both again.
-        join!(u1.send_stalled(), u2.send_stalled());
-        eprintln!("Check");
+        // Now stall the first one and check that we get an update with the
+        // second’s data.
+        u1.send_stalled().await;
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
+
+        // Now stall the second one, too, and watch us stall.
+        u2.send_stalled().await;
         t.recv_stalled().await.unwrap();
 
-        eprintln!("u3 update");
-        // Now unstall one again.
+        // Now unstall the third one and receive its data.
         u3.send_payload(testrig::update(&[3])).await;
-        eprintln!("Check");
         assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[3]));
     }
 }
