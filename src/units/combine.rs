@@ -237,31 +237,31 @@ mod test {
         // Set all units to stalled, check that the target goes stalled.
         join!(u1.send_stalled(), u2.send_stalled(), u3.send_stalled());
         eprintln!("Check");
-        t.recv_stalled().await;
+        t.recv_stalled().await.unwrap();
 
         eprintln!("u2 update");
         // Set one unit to healthy.
         u2.send_payload(testrig::update(&[2])).await;
         eprintln!("Check");
-        assert_eq!(t.recv_payload().await, testrig::update(&[2]));
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
 
         eprintln!("u1 update");
         // Set another unit to healthy. This shouldn’t change anything.
         u1.send_payload(testrig::update(&[1])).await;
         eprintln!("Check");
-        t.recv_nothing();
+        t.recv_nothing().unwrap();
 
         eprintln!("u1 and u2 stalled");
         // Stall them both again.
         join!(u1.send_stalled(), u2.send_stalled());
         eprintln!("Check");
-        t.recv_stalled().await;
+        t.recv_stalled().await.unwrap();
 
         eprintln!("u3 update");
         // Now unstall one again.
         u3.send_payload(testrig::update(&[3])).await;
         eprintln!("Check");
-        assert_eq!(t.recv_payload().await, testrig::update(&[3]));
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[3]));
     }
 }
 

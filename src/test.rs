@@ -105,35 +105,35 @@ pub struct TargetController {
 }
 
 impl TargetController {
-    pub fn recv_nothing(&mut self) {
+    pub fn recv_nothing(&mut self) -> Result<(), String> {
         use tokio::sync::mpsc::error::TryRecvError;
 
         match self.rx.try_recv() {
             Ok(update) => {
-                panic!("expected no update, got {:?}", update);
+                Err(format!("expected no update, got {:?}", update))
             }
-            Err(TryRecvError::Empty) => { }
+            Err(TryRecvError::Empty) => Ok(()),
             Err(TryRecvError::Disconnected) => {
-                panic!("target disconnected")
+                Err(format!("target disconnected"))
             }
         }
     }
 
-    pub async fn recv(&mut self) -> UnitUpdate {
-        self.rx.recv().await.unwrap()
+    pub async fn recv(&mut self) -> Result<UnitUpdate, String> {
+        self.rx.recv().await.ok_or_else(|| "target was terminated".into())
     }
 
-    pub async fn recv_payload(&mut self) -> payload::Update {
-        match self.recv().await {
-            UnitUpdate::Payload(payload) => payload,
-            other => panic!("expected payload, got {:?}", other),
+    pub async fn recv_payload(&mut self) -> Result<payload::Update, String> {
+        match self.recv().await? {
+            UnitUpdate::Payload(payload) => Ok(payload),
+            other => Err(format!("expected payload, got {:?}", other)),
         }
     }
 
-    pub async fn recv_stalled(&mut self) {
-        match self.recv().await {
-            UnitUpdate::Stalled => { }
-            other => panic!("expected stalled status, got {:?}", other),
+    pub async fn recv_stalled(&mut self) -> Result<(), String> {
+        match self.recv().await? {
+            UnitUpdate::Stalled => Ok(()),
+            other => Err(format!("expected stalled status, got {:?}", other))
         }
     }
 }
@@ -169,7 +169,7 @@ async fn simple_comms() {
     ).unwrap();
 
     u.send_payload(testrig::update(&[2])).await;
-    assert_eq!(t.recv_payload().await, testrig::update(&[2]));
+    assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
 }
 
 
