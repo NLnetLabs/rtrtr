@@ -232,13 +232,17 @@ mod test {
             }
         ).unwrap();
 
-        // Set all units to stalled, check that the target goes stalled after
-        // the last one.
+        // Set one unit to stalled, this triggers picking a new source healthy
+        // with data but there isn’t one, so we go stalled.
         u1.send_stalled().await;
+        t.recv_stalled().await.unwrap();
+
+        // Now stall the other ones. That shouldn’t change anything.
+        // the last one.
         u2.send_stalled().await;
         t.recv_nothing().unwrap();
         u3.send_stalled().await;
-        t.recv_stalled().await.unwrap();
+        t.recv_nothing().unwrap();
 
         // Set one unit to healthy, check that we get an update.
         u1.send_payload(testrig::update(&[1])).await;
