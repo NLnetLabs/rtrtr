@@ -1316,7 +1316,7 @@ pub(crate) mod testrig {
     pub fn set<const N: usize>(blocks: [Block; N]) -> Set {
         let len = blocks.iter().map(|item| item.len()).sum();
         Set {
-            blocks: blocks.into(),
+            blocks: Arc::from(blocks.as_slice()),
             len
         }
     }
