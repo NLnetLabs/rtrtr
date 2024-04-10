@@ -37,6 +37,7 @@ url             = { version = "2.2", features = ["serde"] }
 webpki-roots    = "0.25.2"
 
 [dev-dependencies]
+stderrlog       = "0.6"
 rand_pcg        = "0.3"
 
 [profile.release]
