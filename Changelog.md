@@ -16,6 +16,7 @@ New
   files have changed. ([#89])
 * Both the `json` unit and target now support conditional HTTP requests
   via the Etag and Last-Modified headers. ([#98])
+* The RTR timer values can now be configured for the RTR target. ([#106])
 
 Bug Fixes
 
@@ -37,6 +38,7 @@ Other Changes
 [#96]: https://github.com/NLnetLabs/rtrtr/pull/96
 [#98]: https://github.com/NLnetLabs/rtrtr/pull/98
 [#101]: https://github.com/NLnetLabs/rtrtr/pull/101
+[#106]: https://github.com/NLnetLabs/rtrtr/pull/106
 
 
 ## 0.2.2
