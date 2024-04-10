@@ -168,8 +168,8 @@ async fn simple_comms() {
         }
     ).unwrap();
 
-    u.send_payload(testrig::update(&[2])).await;
-    assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
+    u.send_payload(testrig::update([2])).await;
+    assert_eq!(t.recv_payload().await.unwrap(), testrig::update([2]));
 }
 
 

@@ -47,7 +47,7 @@
 //! base type yet returns references to the items. For now, these need to
 //! separate because the `Iterator` trait requires the returned items to have
 //! the same lifetime as the iterator type itself. 
-use std::slice;
+use std::{mem, slice};
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -254,6 +254,19 @@ impl Block {
         }
     }
 
+    /// Splits off the part of the block before the given pack index.
+    ///
+    /// Moves the start of this block to the given index and returns a block
+    /// from the original start to the new start.
+    fn split_off_at(&mut self, pack_index: usize) -> Block {
+        assert!(pack_index >= self.range.start);
+        assert!(pack_index <= self.range.end);
+        let mut res = self.clone();
+        res.range.end = pack_index;
+        self.range.start = res.range.end;
+        res
+    }
+
     /// Returns an owned iterator-like for the block.
     pub fn owned_iter(&self) -> OwnedBlockIter {
         OwnedBlockIter::new(self.clone())
@@ -417,15 +430,6 @@ impl Set {
         OwnedSetIter::new(self)
     }
 
-    /// Returns a set which has this set and the other set merged.
-    ///
-    /// The two sets may overlap.
-    pub fn merge(&self, other: &Set) -> Set {
-        let mut res = self.to_builder();
-        res.insert_set(other.clone());
-        res.finalize()
-    }
-
     /// Returns a set with the indicated elements removed.
     ///
     /// Each element in the current set is presented to the closure and only
@@ -475,6 +479,108 @@ impl Set {
         Set {
             blocks: res.into(),
             len: res_len
+        }
+    }
+
+    /// Returns a set merging the elements from this and another set.
+    pub fn merge(&self, other: &Set) -> Set {
+        let mut left_tail = self.blocks.iter().cloned();
+        let mut right_tail = other.blocks.iter().cloned();
+        let mut left_head = left_tail.next();
+        let mut right_head = right_tail.next();
+        let mut target = Vec::new();
+        let mut target_len = 0;
+
+        // Merge potentially overlapping blocks.
+        loop {
+            // Skip over empty blocks. If either side runs out of block, we
+            // are done with this difficult part.
+            let left = loop {
+                match left_head.as_mut() {
+                    Some(block) if block.is_empty() => { }
+                    Some(block) => break Some(block),
+                    None => break None,
+                }
+                left_head = left_tail.next();
+            };
+            let right = loop {
+                match right_head.as_mut() {
+                    Some(block) if block.is_empty() => { }
+                    Some(block) => break Some(block),
+                    None => break None,
+                }
+                right_head = right_tail.next();
+            };
+            let (left, right) = match (left, right) {
+                (Some(left), Some(right)) => (left, right),
+                _ => break,
+            };
+
+            // Make left the block that starts first. Since neither block is
+            // empty, we can unwrap.
+            if right.first().unwrap() < left.first().unwrap() {
+                mem::swap(left, right);
+            }
+
+            // Find out how much of left we can add.
+            //
+            // First, find the part of left that is before right.
+            let first_right = right.first().unwrap();
+            let mut left_idx = left.range.start;
+            while let Some(item) = left.get_from_pack(left_idx) {
+                if item >= first_right {
+                    break;
+                }
+                left_idx += 1;
+            }
+
+            // Now progress left_idx as long as elements are equal with right.
+            let mut right_idx = right.range.start;
+            while let (Some(left_item), Some(right_item)) = (
+                left.get_from_pack(left_idx), right.get_from_pack(right_idx)
+            ) {
+                if left_item == right_item {
+                    left_idx += 1;
+                    right_idx += 1;
+                }
+                else {
+                    break
+                }
+            }
+
+            // left_idx now is the end of the range in left we need to add to
+            // the target.
+            let new = left.split_off_at(left_idx);
+            target_len += new.len();
+            target.push(new);
+
+            // Finally, right to its new start.
+            right.range.start = right_idx;
+        }
+
+        // At least one of the two iterators is now exhausted. So we can now
+        // just push whatever is left on either to the target. Don’t forget
+        // the heads, though, only one of which at most should not be empty.
+        if let Some(block) = left_head {
+            if !block.is_empty() {
+                target_len += block.len();
+                target.push(block);
+            }
+        }
+        if let Some(block) = right_head {
+            if !block.is_empty() {
+                target_len += block.len();
+                target.push(block);
+            }
+        }
+        for block in left_tail.chain(right_tail) {
+            target_len += block.len();
+            target.push(block)
+        }
+
+        Set {
+            blocks: target.into(),
+            len: target_len
         }
     }
 
@@ -1189,27 +1295,29 @@ pub(crate) mod testrig {
     }
 
     /// Create a pack of payload from a slice of `u32`s.
-    pub fn pack(values: &[u32]) -> Pack {
+    pub fn pack<const N: usize>(values: [u32; N]) -> Pack {
         Pack {
             items:
-                values.iter().cloned().map(p).collect::<Vec<_>>().into()
-        }
-    }
-
-    /// Creates a set from a vec of blocks.
-    pub fn set(values: Vec<Block>) -> Set {
-        let len = values.iter().map(|item| item.len()).sum();
-        Set {
-            blocks: Arc::from(values.into_boxed_slice()),
-            len
+                values.into_iter().map(p).collect::<Vec<_>>().into()
         }
     }
 
     /// Create a block of payload from a slice of `u32`s.
-    pub fn block(values: &[u32], range: Range<usize>) -> Block {
+    pub fn block<const N: usize>(
+        values: [u32; N], range: Range<usize>
+    ) -> Block {
         Block {
             pack: pack(values),
             range
+        }
+    }
+
+    /// Create a set from a slice of blocks.
+    pub fn set<const N: usize>(blocks: [Block; N]) -> Set {
+        let len = blocks.iter().map(|item| item.len()).sum();
+        Set {
+            blocks: blocks.into(),
+            len
         }
     }
 
@@ -1243,9 +1351,9 @@ pub(crate) mod testrig {
     }
 
     /// Creates an update from a bunch of integers
-    pub fn update(values: &[u32]) -> Update {
+    pub fn update<const N: usize>(values: [u32; N]) -> Update {
         Update::new(
-            set(vec![
+            set([
                 block(values, 0..values.len())
             ])
         )
@@ -1273,12 +1381,36 @@ mod test {
     use super::testrig::*;
 
     #[test]
+    fn set_merge() {
+        assert!(
+            set([block([1, 3, 4], 0..3)]).merge(
+                &set([block([1, 3, 4], 0..3)])
+            ).iter().eq(set([block([1, 3, 4], 0..3)]).iter())
+        );
+        assert!(
+            set([block([1, 3, 4, 5], 0..4)]).merge(
+                &set([block([1, 3, 4], 0..3)])
+            ).iter().eq(set([block([1, 3, 4, 5], 0..4)]).iter())
+        );
+        assert!(
+            set([block([1, 3, 5], 0..3)]).merge(
+                &set([block([1, 3, 4], 0..3)])
+            ).iter().eq(set([block([1, 3, 4, 5], 0..4)]).iter())
+        );
+        assert!(
+            set([block([1, 3, 5], 0..3), block([10, 11], 0..2)]).merge(
+                &set([block([3, 4], 0..2)])
+            ).iter().eq(set([block([1, 3, 4, 5, 10, 11], 0..6)]).iter())
+        );
+    }
+
+    #[test]
     fn set_iter() {
         assert_eq!(
             Set {
                 blocks: vec![
-                    block(&[1, 2, 4], 0..3),
-                    block(&[4, 5], 1..2)
+                    block([1, 2, 4], 0..3),
+                    block([4, 5], 1..2)
                 ].into(),
                 len: 4
             }.iter().cloned().collect::<Vec<_>>(),
@@ -1289,11 +1421,11 @@ mod test {
     #[test]
     fn set_builder() {
         let mut builder = SetBuilder::empty();
-        builder.insert_pack(pack(&[1, 2, 11, 12]));
-        builder.insert_pack(pack(&[5, 6, 7, 15, 18]));
-        builder.insert_pack(pack(&[6, 7]));
-        builder.insert_pack(pack(&[7]));
-        builder.insert_pack(pack(&[17]));
+        builder.insert_pack(pack([1, 2, 11, 12]));
+        builder.insert_pack(pack([5, 6, 7, 15, 18]));
+        builder.insert_pack(pack([6, 7]));
+        builder.insert_pack(pack([7]));
+        builder.insert_pack(pack([17]));
         let set = builder.finalize();
         check_set(&set);
         assert_eq!(
@@ -1308,8 +1440,8 @@ mod test {
 
         assert_eq!(
             Diff {
-                announced: pack(&[6, 7, 15, 18]),
-                withdrawn: pack(&[2, 8, 9]),
+                announced: pack([6, 7, 15, 18]),
+                withdrawn: pack([2, 8, 9]),
             }.iter().collect::<Vec<_>>(),
             [
                 (&p(2), W), (&p(6), A), (&p(7), A), (&p(8), W), (&p(9), W),
@@ -1420,7 +1552,7 @@ mod test {
 
     #[test]
     fn owned_block_iter() {
-        fn test_iter(payload: &[Payload], block: Block) {
+        fn test_iter<const N: usize>(payload: [Payload; N], block: Block) {
             let piter = payload.iter();
             let mut oiter = block.owned_iter();
 
@@ -1434,46 +1566,46 @@ mod test {
 
         // Empty set.
         test_iter(
-            &[],
-            block(&[], 0..0)
+            [],
+            block([], 0..0)
         );
 
         // Empty range over a non-empty block.
         test_iter(
-            &[],
-            block(&[7, 8, 10, 12, 18, 19], 3..3)
+            [],
+            block([7, 8, 10, 12, 18, 19], 3..3)
         );
 
         // Blocks with a range.
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            block(&[7, 8, 10, 12, 18, 19], 0..6)
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            block([7, 8, 10, 12, 18, 19], 0..6)
         );
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            block(&[2, 3, 7, 8, 10, 12, 18, 19], 2..8)
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            block([2, 3, 7, 8, 10, 12, 18, 19], 2..8)
         );
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            block(&[7, 8, 10, 12, 18, 19, 21, 22], 0..6)
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            block([7, 8, 10, 12, 18, 19, 21, 22], 0..6)
         );
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8)
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            block([2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8)
         );
         test_iter(
-            &[p(7)],
-            block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3)
+            [p(7)],
+            block([2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3)
         );
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            block(&[7, 8, 10, 12, 18, 19], 0..6)
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            block([7, 8, 10, 12, 18, 19], 0..6)
         );
     }
 
     #[test]
     fn set_iters() {
-        fn test_iter(payload: &[Payload], set: Set) {
+        fn test_iter<const N: usize>(payload: [Payload; N], set: Set) {
             let piter = payload.iter();
             let mut iter = set.iter();
             let mut oiter = set.owned_iter();
@@ -1490,51 +1622,51 @@ mod test {
 
         // Empty set.
         test_iter(
-            &[],
-            Set::from(pack(&[]))
+            [],
+            Set::from(pack([]))
         );
 
         // Complete single pack.
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            Set::from(pack(&[7, 8, 10, 12, 18, 19]))
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(pack([7, 8, 10, 12, 18, 19]))
         );
 
         // Empty range over a non-empty block.
         test_iter(
-            &[],
-            Set::from(block(&[7, 8, 10, 12, 18, 19], 3..3))
+            [],
+            Set::from(block([7, 8, 10, 12, 18, 19], 3..3))
         );
 
         // Blocks with a range.
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            Set::from(block(&[7, 8, 10, 12, 18, 19], 0..6))
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block([7, 8, 10, 12, 18, 19], 0..6))
         );
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19], 2..8))
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block([2, 3, 7, 8, 10, 12, 18, 19], 2..8))
         );
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            Set::from(block(&[7, 8, 10, 12, 18, 19, 21, 22], 0..6))
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block([7, 8, 10, 12, 18, 19, 21, 22], 0..6))
         );
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8))
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            Set::from(block([2, 3, 7, 8, 10, 12, 18, 19, 21], 2..8))
         );
         test_iter(
-            &[p(7)],
-            Set::from(block(&[2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3))
+            [p(7)],
+            Set::from(block([2, 3, 7, 8, 10, 12, 18, 19, 21], 2..3))
         );
 
         // Multiple blocks.
         test_iter(
-            &[p(7), p(8), p(10), p(12), p(18), p(19)],
-            set(vec![
-                block(&[2, 7, 8, 10], 1..3),
-                block(&[10], 0..1),
-                block(&[2, 12, 18, 19], 1..4)
+            [p(7), p(8), p(10), p(12), p(18), p(19)],
+            set([
+                block([2, 7, 8, 10], 1..3),
+                block([10], 0..1),
+                block([2, 12, 18, 19], 1..4)
             ])
         );
     }
