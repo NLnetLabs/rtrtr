@@ -293,9 +293,7 @@ where
         loop {
             debug!("Unit {}: Connecting ...", target.name);
             let mut client = match this.connect(target, &mut gate).await {
-                Ok(client) => {
-                    client
-                }
+                Ok(client) => client,
                 Err(res) => {
                     debug!(
                         "Unit {}: Connection failed. Awaiting reconnect.",

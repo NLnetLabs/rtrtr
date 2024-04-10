@@ -263,13 +263,18 @@ impl Tls {
 
 //------------ Source --------------------------------------------------------
 
+/// The data source for the RTR client.
 #[derive(Clone)]
 struct Source {
+    /// The current data set.
     data: Arc<ArcSwap<SourceData>>,
+
+    /// The maximum nummber of diffs to keep.
     history_size: usize,
 }
 
 impl Source {
+    /// Creates a new source using the given history size.
     fn new(history_size: usize) -> Self {
         Source {
             data: Default::default(),
@@ -277,6 +282,9 @@ impl Source {
         }
     }
 
+    /// Updates the source from the provided unit update.
+    ///
+    /// Returns whether there is a new data set and clients need notifying.
     fn update(&self, update: UnitUpdate) -> bool {
         let payload = match update {
             UnitUpdate::Payload(payload) => payload,
@@ -367,6 +375,7 @@ impl PayloadSource for Source {
 
 //------------ SourceData ----------------------------------------------------
 
+/// The RTR data set.
 #[derive(Clone, Default)]
 struct SourceData {
     /// The current RTR state of the target.
@@ -385,6 +394,7 @@ struct SourceData {
 }
 
 impl SourceData {
+    /// Returns the diff for the given serial if available.
     fn get_diff(&self, serial: Serial) -> Option<payload::OwnedDiffIter> {
         if serial == self.state.serial() {
             Some(payload::Diff::default().into_owned_iter())

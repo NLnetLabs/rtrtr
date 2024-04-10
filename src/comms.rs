@@ -113,7 +113,7 @@ impl Gate {
     /// This is the case if all links and gate agents referring to the gate
     /// have been dropped.
     pub async fn process(&mut self) -> Result<GateStatus, Terminated> {
-        let status = self.get_gate_status();
+        let status = self.gate_status();
         loop {
             let command = match self.commands.recv().await {
                 Some(command) => command,
@@ -129,7 +129,7 @@ impl Gate {
                 }
             }
 
-            let new_status = self.get_gate_status();
+            let new_status = self.gate_status();
             if new_status != status {
                 return Ok(new_status)
             }
@@ -188,7 +188,7 @@ impl Gate {
     }
 
     /// Returns the current gate status.
-    pub fn get_gate_status(&self) -> GateStatus {
+    pub fn gate_status(&self) -> GateStatus {
         if self.suspended == self.updates.len() {
             GateStatus::Dormant
         }
@@ -261,7 +261,7 @@ impl GateAgent {
 #[derive(Debug, Default)]
 pub struct GateMetrics {
     /// The current unit status.
-    status: AtomicCell<UnitHealth>,
+    health: AtomicCell<UnitHealth>,
 
     /// The number of payload items in the last update.
     count: AtomicUsize,
@@ -281,7 +281,7 @@ impl GateMetrics {
             );
         }
         self.update.store(Some(Utc::now()));
-        self.status.store(status.health)
+        self.health.store(status.health)
     }
 }
 
@@ -311,7 +311,7 @@ impl metrics::Source for GateMetrics {
     /// `unit_name`.
     fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
         target.append_simple(
-            &Self::STATUS_METRIC, Some(unit_name), self.status.load()
+            &Self::STATUS_METRIC, Some(unit_name), self.health.load()
         );
         target.append_simple(
             &Self::COUNT_METRIC, Some(unit_name),
@@ -407,12 +407,12 @@ impl Link {
     }
 
     /// Returns the current health of the connected unit.
-    pub fn get_health(&self) -> UnitHealth {
+    pub fn health(&self) -> UnitHealth {
         self.unit_status.health
     }
 
     /// Returns the last update if there was one.
-    pub fn get_payload(&self) -> Option<&payload::Update> {
+    pub fn payload(&self) -> Option<&payload::Update> {
         self.unit_status.payload.as_ref()
     }
 
@@ -427,7 +427,7 @@ impl Link {
         if self.connect().await {
             // A connection attempt has been made. The unit status now
             // represents the initial update. If there is one, return it.
-            // Otherwise we need to wait for the next real update.
+            // Otherwise we need to wait for the next update event.
             if let Some(update) = self.unit_status.to_update() {
                 return update
             }
@@ -455,7 +455,7 @@ impl Link {
     /// Connects the link to the gate if necessary.
     ///
     /// Returns `true` if a connection attempt was made – independently of
-    /// whether that was successfull or not – or `false` otherwise.
+    /// whether that was successful or not – or `false` otherwise.
     async fn connect(&mut self) -> bool {
         if !matches!(self.connection, ConnectionStatus::Unconnected) {
             return false
@@ -554,7 +554,7 @@ pub enum GateStatus {
 
 //------------ UnitHealth ----------------------------------------------------
 
-/// The operational status of a unit.
+/// A unit’s self-perceived ability to produce updates.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum UnitHealth {
     /// The unit is ready to produce data updates.

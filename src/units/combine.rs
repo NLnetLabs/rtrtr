@@ -55,7 +55,7 @@ impl Any {
             metrics.current_index.store(curr_idx);
             match curr_idx {
                 Some(idx) => {
-                    if let Some(update) = self.sources[idx].get_payload() {
+                    if let Some(update) = self.sources[idx].payload() {
                         gate.update(
                             UnitUpdate::Payload(update.clone())
                         ).await;
@@ -97,7 +97,7 @@ impl Any {
                     UnitUpdate::Payload(payload) => {
                         // If it is from our active source, send it on.
                         // If we don’t have an active source, break out of
-                        // the loop because we now have a candidate.
+                        // the loop because we may now have one.
                         if Some(idx) == curr_idx {
                             gate.update(UnitUpdate::Payload(payload)).await;
                         }
@@ -136,9 +136,9 @@ impl Any {
         };
         let mut only_gone = true;
         for _ in 0..self.sources.len() {
-            match self.sources[next].get_health() {
+            match self.sources[next].health() {
                 UnitHealth::Healthy => {
-                    if self.sources[next].get_payload().is_some() {
+                    if self.sources[next].payload().is_some() {
                         return Ok(Some(next))
                     }
                     only_gone = false;
@@ -238,13 +238,13 @@ mod test {
         t.recv_stalled().await.unwrap();
 
         // Now stall the other ones. That shouldn’t change anything.
-        // the last one.
         u2.send_stalled().await;
         t.recv_nothing().unwrap();
         u3.send_stalled().await;
         t.recv_nothing().unwrap();
 
-        // Set one unit to healthy, check that we get an update.
+        // Set one unit to healthy by sending a data update. Check that
+        // the target unstalls with an update.
         u1.send_payload(testrig::update(&[1])).await;
         assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[1]));
 

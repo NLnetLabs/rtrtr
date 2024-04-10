@@ -72,7 +72,7 @@ impl LocalExceptions {
                 }
             }
 
-            if let (true, Some(data)) = (ready, self.source.get_payload()) {
+            if let (true, Some(data)) = (ready, self.source.payload()) {
                 gate.update(
                     UnitUpdate::Payload(files.apply(component.name(), data))
                 ).await;

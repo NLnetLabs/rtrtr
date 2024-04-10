@@ -90,7 +90,7 @@ impl Target {
 
         loop {
             debug!("Target {}: link status: {}",
-                    component.name(), unit.get_health()
+                    component.name(), unit.health()
             );
             if let UnitUpdate::Payload(update) = unit.query().await {
                 debug!(

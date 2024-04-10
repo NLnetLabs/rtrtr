@@ -114,7 +114,7 @@ impl TargetController {
             }
             Err(TryRecvError::Empty) => Ok(()),
             Err(TryRecvError::Disconnected) => {
-                Err(format!("target disconnected"))
+                Err("target disconnected".to_string())
             }
         }
     }
