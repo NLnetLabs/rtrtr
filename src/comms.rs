@@ -73,9 +73,6 @@ pub struct Gate {
     /// The current unit status.
     unit_status: UnitStatus,
 
-    /// The last update from the unit if there was one.
-    unit_data: Option<payload::Update>,
-
     /// The gate metrics.
     metrics: Arc<GateMetrics>,
 }
@@ -93,8 +90,7 @@ impl Gate {
             commands: rx,
             updates: Slab::new(),
             suspended: 0,
-            unit_status: UnitStatus::default(),
-            unit_data: None,
+            unit_status: Default::default(),
             metrics: Default::default(),
         };
         let agent = GateAgent { commands: tx };
@@ -117,7 +113,7 @@ impl Gate {
     /// This is the case if all links and gate agents referring to the gate
     /// have been dropped.
     pub async fn process(&mut self) -> Result<GateStatus, Terminated> {
-        let status = self.get_gate_status();
+        let status = self.gate_status();
         loop {
             let command = match self.commands.recv().await {
                 Some(command) => command,
@@ -133,7 +129,7 @@ impl Gate {
                 }
             }
 
-            let new_status = self.get_gate_status();
+            let new_status = self.gate_status();
             if new_status != status {
                 return Ok(new_status)
             }
@@ -162,19 +158,23 @@ impl Gate {
         }
     }
 
-    /// Updates the data set of the unit.
+    /// Updates the unit.
     ///
     /// This method will send out the update to all active links. It will
     /// also update the gate metrics based on the update.
-    pub async fn update_data(&mut self, update: payload::Update) {
-        self.unit_data = Some(update.clone());
+    ///
+    /// Returns whether the update changed the unit’s status.
+    pub async fn update(&mut self, update: UnitUpdate) -> bool {
+        if !self.unit_status.apply(&update) {
+            return false
+        }
         for (_, item) in &mut self.updates {
             if item.suspended {
                 continue
             }
             match item.sender.as_mut() {
                 Some(sender) => {
-                    if sender.send(Ok(update.clone())).await.is_ok() {
+                    if sender.send(update.clone()).await.is_ok() {
                         continue
                     }
                 }
@@ -183,36 +183,12 @@ impl Gate {
             item.sender = None
         }
         self.updates.retain(|_, item| item.sender.is_some());
-        self.metrics.update(&update);
-    }
-
-    /// Updates the unit status.
-    ///
-    /// The method sends out the new status to all links.
-    ///
-    /// If the current status is already the status to set, does nothing.
-    pub async fn update_status(&mut self, update: UnitStatus) {
-        if self.unit_status == update {
-            return
-        }
-        self.unit_status = update;
-        for (_, item) in &mut self.updates {
-            match item.sender.as_mut() {
-                Some(sender) => {
-                    if sender.send(Err(update)).await.is_ok() {
-                        continue
-                    }
-                }
-                None => continue
-            }
-            item.sender = None
-        }
-        self.updates.retain(|_, item| item.sender.is_some());
-        self.metrics.update_status(update);
+        self.metrics.update(&self.unit_status);
+        true
     }
 
     /// Returns the current gate status.
-    pub fn get_gate_status(&self) -> GateStatus {
+    pub fn gate_status(&self) -> GateStatus {
         if self.suspended == self.updates.len() {
             GateStatus::Dormant
         }
@@ -242,8 +218,7 @@ impl Gate {
         let subscription = SubscribeResponse {
             slot,
             receiver,
-            unit_status: self.unit_status,
-            unit_data: self.unit_data.clone(),
+            unit_status: self.unit_status.clone(),
         };
         if let Err(subscription) = response.send(subscription) {
             self.updates.remove(subscription.slot);
@@ -286,7 +261,7 @@ impl GateAgent {
 #[derive(Debug, Default)]
 pub struct GateMetrics {
     /// The current unit status.
-    status: AtomicCell<UnitStatus>,
+    health: AtomicCell<UnitHealth>,
 
     /// The number of payload items in the last update.
     count: AtomicUsize,
@@ -299,14 +274,14 @@ pub struct GateMetrics {
 
 impl GateMetrics {
     /// Updates the metrics to match the given update.
-    fn update(&self, update: &payload::Update) {
-        self.count.store(update.set().len(), atomic::Ordering::Relaxed);
+    fn update(&self, status: &UnitStatus) {
+        if let Some(payload) = status.payload.as_ref() {
+            self.count.store(
+                payload.set().len(), atomic::Ordering::Relaxed
+            );
+        }
         self.update.store(Some(Utc::now()));
-    }
-
-    /// Updates the metrics to match the given unit status.
-    fn update_status(&self, status: UnitStatus) {
-        self.status.store(status)
+        self.health.store(status.health)
     }
 }
 
@@ -336,7 +311,7 @@ impl metrics::Source for GateMetrics {
     /// `unit_name`.
     fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
         target.append_simple(
-            &Self::STATUS_METRIC, Some(unit_name), self.status.load()
+            &Self::STATUS_METRIC, Some(unit_name), self.health.load()
         );
         target.append_simple(
             &Self::COUNT_METRIC, Some(unit_name),
@@ -392,11 +367,8 @@ pub struct Link {
     /// The connection to the unit.
     connection: ConnectionStatus,
 
-    /// The current unit status.
+    /// The current unit health.
     unit_status: UnitStatus,
-
-    /// The last update of the unit if any.
-    unit_data: Option<payload::Update>,
 
     /// Are we currently suspended?
     suspended: bool,
@@ -429,20 +401,19 @@ impl Link {
         Link {
             commands,
             connection: ConnectionStatus::Unconnected,
-            unit_status: UnitStatus::Healthy,
-            unit_data: None,
+            unit_status: Default::default(),
             suspended: false,
         }
     }
 
-    /// Returns the current status of the connected unit.
-    pub fn get_status(&self) -> UnitStatus {
-        self.unit_status
+    /// Returns the current health of the connected unit.
+    pub fn health(&self) -> UnitHealth {
+        self.unit_status.health
     }
 
     /// Returns the last update if there was one.
-    pub fn get_data(&self) -> Option<&payload::Update> {
-        self.unit_data.as_ref()
+    pub fn payload(&self) -> Option<&payload::Update> {
+        self.unit_status.payload.as_ref()
     }
 
     /// Query for the next update.
@@ -450,21 +421,15 @@ impl Link {
     /// The method returns a future that resolves into the next update. The
     /// future can be dropped safely at any time.
     ///
-    /// The future either resolves into a payload update or the connected
-    /// unit’s new status as the error variant.
-    ///
     /// If this method is called when the unit status is “gone,” the future
     /// will never resolve.
-    pub async fn query(&mut self) -> Result<&payload::Update, UnitStatus> {
+    pub async fn query(&mut self) -> UnitUpdate {
         if self.connect().await {
-            if !matches!(self.unit_status, UnitStatus::Healthy) {
-                return Err(self.unit_status)
-            }
-            // No if let because of lifetime issues.
-            #[allow(clippy::single_match)]
-            match self.unit_data {
-                Some(ref update) => return Ok(update),
-                None => {}
+            // A connection attempt has been made. The unit status now
+            // represents the initial update. If there is one, return it.
+            // Otherwise we need to wait for the next update event.
+            if let Some(update) = self.unit_status.to_update() {
+                return update
             }
         }
 
@@ -475,26 +440,22 @@ impl Link {
             }
         };
         match conn.updates.recv().await {
-            Some(Ok(update)) => {
-                self.unit_data = Some(update);
-                Ok(self.unit_data.as_ref().unwrap())
-            }
-            Some(Err(status)) => {
-                self.unit_status = status;
-                Err(status)
+            Some(update) => {
+                self.unit_status.apply(&update);
+                update
             }
             None => {
                 self.connection = ConnectionStatus::Gone;
-                self.unit_status = UnitStatus::Gone;
-                Err(UnitStatus::Gone)
+                self.unit_status.health = UnitHealth::Gone;
+                UnitUpdate::Gone
             }
         }
     }
 
     /// Connects the link to the gate if necessary.
     ///
-    /// Returns `true` if a connection attemptwas made – independently of
-    /// whether that was successfull or not – or `false` otherwise.
+    /// Returns `true` if a connection attempt was made – independently of
+    /// whether that was successful or not – or `false` otherwise.
     async fn connect(&mut self) -> bool {
         if !matches!(self.connection, ConnectionStatus::Unconnected) {
             return false
@@ -505,14 +466,14 @@ impl Link {
             GateCommand::Subscribe { suspended: self.suspended, response: tx }
         ).await.is_err() {
             self.connection = ConnectionStatus::Gone;
-            self.unit_status = UnitStatus::Gone;
+            self.unit_status.health = UnitHealth::Gone;
             return true
         }
         let sub = match rx.await {
             Ok(sub) => sub,
             Err(_) => {
                 self.connection = ConnectionStatus::Gone;
-                self.unit_status = UnitStatus::Gone;
+                self.unit_status.health = UnitHealth::Gone;
                 return true
             }
         };
@@ -521,7 +482,6 @@ impl Link {
             updates: sub.receiver,
         });
         self.unit_status = sub.unit_status;
-        self.unit_data = sub.unit_data;
         true
     }
 
@@ -544,7 +504,7 @@ impl Link {
                 slot: conn.slot,
                 suspend
             }).await.is_err() {
-                self.unit_status = UnitStatus::Gone
+                self.unit_status.health = UnitHealth::Gone
             }
             else {
                 self.suspended = suspend
@@ -592,11 +552,11 @@ pub enum GateStatus {
 }
 
 
-//------------ UnitStatus ----------------------------------------------------
+//------------ UnitHealth ----------------------------------------------------
 
-/// The operational status of a unit.
+/// A unit’s self-perceived ability to produce updates.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum UnitStatus {
+pub enum UnitHealth {
     /// The unit is ready to produce data updates.
     ///
     /// Note that this status does not necessarily mean that the unit is
@@ -620,14 +580,114 @@ pub enum UnitStatus {
     Gone,
 }
 
-impl fmt::Display for UnitStatus {
+impl<'a> From<&'a UnitUpdate> for UnitHealth {
+    fn from(update: &'a UnitUpdate) -> Self {
+        match update {
+            UnitUpdate::Payload(_) => Self::Healthy,
+            UnitUpdate::Stalled => Self::Stalled,
+            UnitUpdate::Gone => Self::Gone,
+        }
+    }
+}
+
+impl fmt::Display for UnitHealth {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match *self {
-            UnitStatus::Healthy => "healthy",
-            UnitStatus::Stalled => "stalled",
-            UnitStatus::Gone => "gone",
+            UnitHealth::Healthy => "healthy",
+            UnitHealth::Stalled => "stalled",
+            UnitHealth::Gone => "gone",
         })
     }
+}
+
+
+//------------ UnitStatus ----------------------------------------------------
+
+/// A combination of both a unit’s health and the last payload update.
+///
+/// This is a helper type that makes it easier to apply updates.
+#[derive(Clone, Debug, Default)]
+struct UnitStatus {
+    /// The current health of the unit.
+    health: UnitHealth,
+
+    /// The last payload update if there ever was one.
+    payload: Option<payload::Update>,
+}
+
+impl UnitStatus {
+    /// Applies a unit update to the status.
+    ///
+    /// Returns whether the status has changed.
+    fn apply(&mut self, update: &UnitUpdate) -> bool {
+        match update {
+            UnitUpdate::Payload(payload) => {
+                if matches!(self.health, UnitHealth::Healthy)
+                    && Some(payload) == self.payload.as_ref()
+                {
+                    false
+                }
+                else {
+                    self.health = UnitHealth::Healthy;
+                    self.payload = Some(payload.clone());
+                    true
+                }
+            }
+            UnitUpdate::Stalled => {
+                if matches!(self.health, UnitHealth::Stalled) {
+                    false
+                }
+                else {
+                    self.health = UnitHealth::Stalled;
+                    true
+                }
+            }
+            UnitUpdate::Gone => {
+                if matches!(self.health, UnitHealth::Gone) {
+                    false
+                }
+                else {
+                    self.health = UnitHealth::Gone;
+                    true
+                }
+            }
+        }
+    }
+
+    /// Returns an update corresponding with the current unit status.
+    ///
+    /// This may be `None` if the unit status indicates that there hasn’t
+    /// been an update yet.
+    fn to_update(&self) -> Option<UnitUpdate> {
+        match self.health {
+            UnitHealth::Healthy => {
+                self.payload.as_ref().map(|payload| {
+                    UnitUpdate::Payload(payload.clone())
+                })
+            }
+            UnitHealth::Stalled => Some(UnitUpdate::Stalled),
+            UnitHealth::Gone => Some(UnitUpdate::Gone),
+        }
+    }
+}
+
+
+//------------ UnitUpdate ----------------------------------------------------
+
+/// An update to the unit.
+#[derive(Clone, Debug)]
+pub enum UnitUpdate {
+    /// A new payload set has become available.
+    ///
+    /// This also implies a change to unit status “healthy” if that is not the
+    /// current state.
+    Payload(payload::Update),
+
+    /// The unit status has changed to “stalled.”
+    Stalled,
+
+    /// The unit status has changed to “gone.”
+    Gone
 }
 
 
@@ -678,7 +738,7 @@ struct UpdateSender {
     /// fails, we swap this to `None` and then go over the slab again and
     /// drop anything that is `None`. We need to do this because
     /// `Slab::retain` isn’t async but `mpsc::Sender::send` is.
-    sender: Option<mpsc::Sender<Result<payload::Update, UnitStatus>>>,
+    sender: Option<mpsc::Sender<UnitUpdate>>,
 
     /// Are we currently suspended?
     suspended: bool
@@ -688,7 +748,7 @@ struct UpdateSender {
 //------------ UpdateReceiver ------------------------------------------------
 
 /// The link side of receiving updates.
-type UpdateReceiver = mpsc::Receiver<Result<payload::Update, UnitStatus>>;
+type UpdateReceiver = mpsc::Receiver<UnitUpdate>;
 
 
 //------------ SubscribeResponse ---------------------------------------------
@@ -704,8 +764,5 @@ struct SubscribeResponse {
 
     /// The current unit status.
     unit_status: UnitStatus,
-
-    /// The last update of the unit if any.
-    unit_data: Option<payload::Update>,
 }
 

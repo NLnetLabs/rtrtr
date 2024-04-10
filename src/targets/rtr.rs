@@ -24,7 +24,7 @@ use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 use tokio_rustls::server::TlsStream;
 use tokio_stream::wrappers::TcpListenerStream;
 use crate::payload;
-use crate::comms::Link;
+use crate::comms::{Link, UnitUpdate};
 use crate::manager::Component;
 
 
@@ -52,20 +52,32 @@ impl Tcp {
     }
 
     /// Runs the target.
-    pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
-        let mut notify = NotifySender::new();
+    pub async fn run(self, component: Component) -> Result<(), ExitError> {
+        let notify = NotifySender::new();
         let target = Source::new(self.history_size);
         for &addr in &self.listen {
             self.spawn_listener(addr, target.clone(), notify.clone())?;
         }
 
+        self.run_loop(component, target, notify).await
+    }
+
+    /// Runs the target’s main loop.
+    async fn run_loop(
+        mut self,
+        component: Component,
+        target: Source,
+        mut notify: NotifySender
+    ) -> Result<(), ExitError> {
         loop {
-            if let Ok(update) = self.unit.query().await {
+            let update = self.unit.query().await;
+            if let UnitUpdate::Payload(ref payload) = update {
                 debug!(
                     "Target {}: Got update ({} entries)",
-                    component.name(), update.set().len()
+                    component.name(), payload.set().len()
                 );
-                target.update(update);
+            }
+            if target.update(update) {
                 notify.notify()
             }
         }
@@ -127,9 +139,9 @@ pub struct Tls {
 
 impl Tls {
     /// Runs the target.
-    pub async fn run(mut self, component: Component) -> Result<(), ExitError> {
+    pub async fn run(self, component: Component) -> Result<(), ExitError> {
         let acceptor = TlsAcceptor::from(Arc::new(self.create_tls_config()?));
-        let mut notify = NotifySender::new();
+        let notify = NotifySender::new();
         let target = Source::new(self.tcp.history_size);
         for &addr in &self.tcp.listen {
             self.spawn_listener(
@@ -137,16 +149,7 @@ impl Tls {
             )?;
         }
 
-        loop {
-            if let Ok(update) = self.tcp.unit.query().await {
-                debug!(
-                    "Target {}: Got update ({} entries)",
-                    component.name(), update.set().len()
-                );
-                target.update(update);
-                notify.notify()
-            }
-        }
+        self.tcp.run_loop(component, target, notify).await
     }
 
     /// Creates the TLS server config.
@@ -260,13 +263,18 @@ impl Tls {
 
 //------------ Source --------------------------------------------------------
 
+/// The data source for the RTR client.
 #[derive(Clone)]
 struct Source {
+    /// The current data set.
     data: Arc<ArcSwap<SourceData>>,
+
+    /// The maximum nummber of diffs to keep.
     history_size: usize,
 }
 
 impl Source {
+    /// Creates a new source using the given history size.
     fn new(history_size: usize) -> Self {
         Source {
             data: Default::default(),
@@ -274,23 +282,30 @@ impl Source {
         }
     }
 
-    fn update(&self, update: &payload::Update) {
-        let data = self.data.load();
+    /// Updates the source from the provided unit update.
+    ///
+    /// Returns whether there is a new data set and clients need notifying.
+    fn update(&self, update: UnitUpdate) -> bool {
+        let payload = match update {
+            UnitUpdate::Payload(payload) => payload,
+            _ => return false,
+        };
 
+        let data = self.data.load();
         let new_data = match data.current.as_ref() {
             None => {
                 SourceData {
                     state: data.state,
-                    current: Some(update.set().clone()),
+                    current: Some(payload.set().clone()),
                     diffs: Vec::new(),
                     timing: Timing::default(),
                 }
             }
             Some(current) => {
-                let diff = update.set().diff_from(current);
+                let diff = payload.set().diff_from(current);
                 if diff.is_empty() {
                     // If there is no change in data, don’t update.
-                    return
+                    return false
                 }
                 let mut diffs = Vec::with_capacity(
                     cmp::min(data.diffs.len() + 1, self.history_size)
@@ -309,7 +324,7 @@ impl Source {
                 state.inc();
                 SourceData {
                     state,
-                    current: Some(update.set().clone()),
+                    current: Some(payload.set().clone()),
                     diffs,
                     timing: Timing::default(),
                 }
@@ -317,6 +332,7 @@ impl Source {
         };
 
         self.data.store(new_data.into());
+        true
     }
 }
 
@@ -359,6 +375,7 @@ impl PayloadSource for Source {
 
 //------------ SourceData ----------------------------------------------------
 
+/// The RTR data set.
 #[derive(Clone, Default)]
 struct SourceData {
     /// The current RTR state of the target.
@@ -377,6 +394,7 @@ struct SourceData {
 }
 
 impl SourceData {
+    /// Returns the diff for the given serial if available.
     fn get_diff(&self, serial: Serial) -> Option<payload::OwnedDiffIter> {
         if serial == self.state.serial() {
             Some(payload::Diff::default().into_owned_iter())

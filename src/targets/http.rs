@@ -13,7 +13,7 @@ use log::debug;
 use rpki::rtr::State;
 use serde::Deserialize;
 use crate::payload;
-use crate::comms::Link;
+use crate::comms::{Link, UnitUpdate};
 use crate::formats::output;
 use crate::manager::Component;
 use crate::utils::http::EtagsIter;
@@ -90,14 +90,14 @@ impl Target {
 
         loop {
             debug!("Target {}: link status: {}",
-                    component.name(), unit.get_status()
+                    component.name(), unit.health()
             );
-            if let Ok(update) = unit.query().await {
+            if let UnitUpdate::Payload(update) = unit.query().await {
                 debug!(
                     "Target {}: Got update ({} entries)",
                     component.name(), update.set().len()
                 );
-                source.update(SourceData::new(update, &mut state));
+                source.update(SourceData::new(&update, &mut state));
             }
         }
     }

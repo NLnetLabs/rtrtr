@@ -2,10 +2,9 @@
 #![cfg(test)]
 
 use daemonbase::error::ExitError;
-use tokio::sync::mpsc;
-use crate::{targets, units};
-use crate::comms::{Gate, Link, Terminated, UnitStatus};
-use crate::payload;
+use tokio::sync::{mpsc, oneshot};
+use crate::{payload, targets, units};
+use crate::comms::{Gate, Link, Terminated, UnitUpdate};
 use crate::manager::Component;
 
 
@@ -14,7 +13,7 @@ use crate::manager::Component;
 /// A unit that only does what it is told.
 #[derive(Debug)]
 pub struct Unit {
-    rx: mpsc::Receiver<UnitCommand>,
+    rx: mpsc::Receiver<(UnitUpdate, oneshot::Sender<()>)>,
 }
 
 impl Unit {
@@ -27,15 +26,11 @@ impl Unit {
     pub async fn run(
         mut self, _component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
-        while let Some(cmd) = gate.process_until(self.rx.recv()).await? {
-            match cmd {
-                UnitCommand::Data(update) => {
-                    gate.update_data(update).await
-                }
-                UnitCommand::Status(status) => {
-                    gate.update_status(status).await
-                }
-            }
+        while let Some((update, tx)) = gate.process_until(
+            self.rx.recv()
+        ).await? {
+            gate.update(update).await;
+            tx.send(()).unwrap();
         }
         Err(Terminated)
     }
@@ -47,31 +42,27 @@ impl Unit {
 /// A controller for telling the test unit what to do.
 #[derive(Clone, Debug)]
 pub struct UnitController {
-    tx: mpsc::Sender<UnitCommand>,
+    tx: mpsc::Sender<(UnitUpdate, oneshot::Sender<()>)>,
 }
 
 impl UnitController {
-    pub async fn data(&self, data: payload::Update) {
-        self.tx.send(
-            UnitCommand::Data(data)
-        ).await.expect("unit was terminated")
+    pub async fn send_update(&self, update: UnitUpdate) {
+        let (tx, rx) = oneshot::channel();
+        self.tx.send((update, tx)).await.expect("unit was terminated");
+        rx.await.unwrap()
     }
 
-    pub async fn status(&self, status: UnitStatus) {
-        self.tx.send(
-            UnitCommand::Status(status)
-        ).await.expect("unit was terminated")
+    pub async fn send_payload(&self, update: payload::Update) {
+        self.send_update(UnitUpdate::Payload(update)).await
     }
-}
 
+    pub async fn send_stalled(&self) {
+        self.send_update(UnitUpdate::Stalled).await
+    }
 
-//------------ UnitCommand ---------------------------------------------------
-
-/// A command sent by the unit controller.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum UnitCommand {
-    Data(payload::Update),
-    Status(UnitStatus),
+    pub async fn send_gone(&self) {
+        self.send_update(UnitUpdate::Gone).await
+    }
 }
 
 
@@ -81,7 +72,7 @@ enum UnitCommand {
 #[derive(Debug)]
 pub struct Target {
     link: Link,
-    tx: mpsc::UnboundedSender<UnitCommand>,
+    tx: mpsc::UnboundedSender<UnitUpdate>,
 }
 
 impl Target {
@@ -98,11 +89,9 @@ impl Target {
         mut self, _component: Component,
     ) -> Result<(), ExitError> {
         loop {
-            let cmd = match self.link.query().await {
-                Ok(data) => UnitCommand::Data(data.clone()),
-                Err(status) => UnitCommand::Status(status),
-            };
-            self.tx.send(cmd).expect("controller went away")
+            self.tx.send(
+                self.link.query().await
+            ).expect("controller went away")
         }
     }
 }
@@ -112,18 +101,48 @@ impl Target {
 
 #[derive(Debug)]
 pub struct TargetController {
-    rx: mpsc::UnboundedReceiver<UnitCommand>,
+    rx: mpsc::UnboundedReceiver<UnitUpdate>,
 }
 
 impl TargetController {
-    pub async fn recv(
-        &mut self
-    ) -> Result<payload::Update, UnitStatus> {
-        match self.rx.recv().await.unwrap() {
-            UnitCommand::Data(data) => Ok(data),
-            UnitCommand::Status(status) => Err(status)
+    pub fn recv_nothing(&mut self) -> Result<(), String> {
+        use tokio::sync::mpsc::error::TryRecvError;
+
+        match self.rx.try_recv() {
+            Ok(update) => {
+                Err(format!("expected no update, got {:?}", update))
+            }
+            Err(TryRecvError::Empty) => Ok(()),
+            Err(TryRecvError::Disconnected) => {
+                Err("target disconnected".to_string())
+            }
         }
     }
+
+    pub async fn recv(&mut self) -> Result<UnitUpdate, String> {
+        self.rx.recv().await.ok_or_else(|| "target was terminated".into())
+    }
+
+    pub async fn recv_payload(&mut self) -> Result<payload::Update, String> {
+        match self.recv().await? {
+            UnitUpdate::Payload(payload) => Ok(payload),
+            other => Err(format!("expected payload, got {:?}", other)),
+        }
+    }
+
+    pub async fn recv_stalled(&mut self) -> Result<(), String> {
+        match self.recv().await? {
+            UnitUpdate::Stalled => Ok(()),
+            other => Err(format!("expected stalled status, got {:?}", other))
+        }
+    }
+}
+
+
+//------------ Helper Functions ----------------------------------------------
+
+pub fn init_log() {
+    stderrlog::new().verbosity(5).init().unwrap();
 }
 
 
@@ -149,8 +168,8 @@ async fn simple_comms() {
         }
     ).unwrap();
 
-    u.data(testrig::update(&[2])).await;
-    assert_eq!(t.recv().await, Ok(testrig::update(&[2])));
+    u.send_payload(testrig::update(&[2])).await;
+    assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
 }
 
 

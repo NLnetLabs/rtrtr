@@ -3,11 +3,14 @@
 use std::sync::Arc;
 use crossbeam_utils::atomic::AtomicCell;
 use futures::future::{select, select_all, Either, FutureExt};
+use log::debug;
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
 use crate::metrics;
 use crate::metrics::{Metric, MetricType, MetricUnit};
-use crate::comms::{Gate, GateMetrics, Link, Terminated, UnitStatus};
+use crate::comms::{
+    Gate, GateMetrics, Link, Terminated, UnitHealth, UnitUpdate
+};
 use crate::manager::Component;
 
 
@@ -28,7 +31,7 @@ impl Any {
         mut self, mut component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
         if self.sources.is_empty() {
-            gate.update_status(UnitStatus::Gone).await;
+            gate.update(UnitUpdate::Gone).await;
             return Err(Terminated)
         }
         let metrics = Arc::new(AnyMetrics::new(&gate));
@@ -41,20 +44,31 @@ impl Any {
             curr_idx = match self.pick(curr_idx) {
                 Ok(curr_idx) => curr_idx,
                 Err(_) => {
-                    gate.update_status(UnitStatus::Gone).await;
+                    gate.update(UnitUpdate::Gone).await;
                     return Err(Terminated)
                 }
             };
+            debug!(
+                "Unit {}: current index is now {:?}",
+                component.name(), curr_idx
+            );
             metrics.current_index.store(curr_idx);
             match curr_idx {
                 Some(idx) => {
-                    gate.update_status(UnitStatus::Healthy).await;
-                    if let Some(update) = self.sources[idx].get_data() {
-                        gate.update_data(update.clone()).await;
+                    if let Some(update) = self.sources[idx].payload() {
+                        gate.update(
+                            UnitUpdate::Payload(update.clone())
+                        ).await;
+                    }
+                    else {
+                        // This shouldn’t really happen (pick should always
+                        // pick a source with an update), but this is still
+                        // safe.
+                        gate.update(UnitUpdate::Stalled).await;
                     }
                 }
                 None => {
-                    gate.update_status(UnitStatus::Stalled).await;
+                    gate.update(UnitUpdate::Stalled).await;
                 }
             }
 
@@ -80,22 +94,24 @@ impl Any {
                 };
 
                 match res {
-                    Ok(update) => {
+                    UnitUpdate::Payload(payload) => {
+                        // If it is from our active source, send it on.
+                        // If we don’t have an active source, break out of
+                        // the loop because we may now have one.
                         if Some(idx) == curr_idx {
-                            gate.update_data(update.clone()).await;
+                            gate.update(UnitUpdate::Payload(payload)).await;
+                        }
+                        else if curr_idx.is_none() {
+                            break
                         }
                     }
-                    Err(UnitStatus::Stalled) => {
+                    UnitUpdate::Stalled | UnitUpdate::Gone => {
+                        // If our active unit stalls or dies, break.
+                        // Otherwise we can ignore it.
                         if Some(idx) == curr_idx {
                             break
                         }
                     }
-                    Err(UnitStatus::Healthy) => {
-                        if curr_idx.is_none() {
-                            break
-                        }
-                    }
-                    _ => ()
                 }
             }
         }
@@ -120,14 +136,17 @@ impl Any {
         };
         let mut only_gone = true;
         for _ in 0..self.sources.len() {
-            match self.sources[next].get_status() {
-                UnitStatus::Healthy => {
-                    return Ok(Some(next))
-                }
-                UnitStatus::Stalled => {
+            match self.sources[next].health() {
+                UnitHealth::Healthy => {
+                    if self.sources[next].payload().is_some() {
+                        return Ok(Some(next))
+                    }
                     only_gone = false;
                 }
-                UnitStatus::Gone => { }
+                UnitHealth::Stalled => {
+                    only_gone = false;
+                }
+                UnitHealth::Gone => { }
             }
             next = (next + 1) % self.sources.len()
         }
@@ -181,16 +200,14 @@ impl metrics::Source for AnyMetrics {
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::join;
     use tokio::runtime;
     use crate::{test, units};
     use crate::manager::Manager;
     use crate::payload::testrig;
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test]
     async fn wake_up_again() {
-        use crate::comms::UnitStatus::*;
-
+        test::init_log();
         let mut manager = Manager::new();
 
         let (u1, u2, u3, mut t) = manager.add_components(
@@ -215,29 +232,38 @@ mod test {
             }
         ).unwrap();
 
-        // Set all units to stalled, check that the target goes stalled.
-        join!(u1.status(Stalled), u2.status(Stalled), u3.status(Stalled));
-        assert_eq!(t.recv().await, Err(Stalled));
+        // Set one unit to stalled, this triggers picking a new source healthy
+        // with data but there isn’t one, so we go stalled.
+        u1.send_stalled().await;
+        t.recv_stalled().await.unwrap();
 
-        // Set one unit to healthy.
-        u2.data(testrig::update(&[1])).await;
-        u2.status(Healthy).await;
-        assert_eq!(t.recv().await, Err(Healthy));
-        assert_eq!(t.recv().await, Ok(testrig::update(&[1])));
+        // Now stall the other ones. That shouldn’t change anything.
+        u2.send_stalled().await;
+        t.recv_nothing().unwrap();
+        u3.send_stalled().await;
+        t.recv_nothing().unwrap();
+
+        // Set one unit to healthy by sending a data update. Check that
+        // the target unstalls with an update.
+        u1.send_payload(testrig::update(&[1])).await;
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[1]));
 
         // Set another unit to healthy. This shouldn’t change anything.
-        u1.data(testrig::update(&[2])).await;
-        u1.status(Healthy).await;
+        u2.send_payload(testrig::update(&[2])).await;
+        t.recv_nothing().unwrap();
 
-        // Stall them both again.
-        join!(u1.status(Stalled), u2.status(Stalled));
-        assert_eq!(t.recv().await, Err(Stalled));
+        // Now stall the first one and check that we get an update with the
+        // second’s data.
+        u1.send_stalled().await;
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
 
-        // Now unstall one again.
-        u3.data(testrig::update(&[3])).await;
-        u3.status(Healthy).await;
-        assert_eq!(t.recv().await, Err(Healthy));
-        assert_eq!(t.recv().await, Ok(testrig::update(&[3])));
+        // Now stall the second one, too, and watch us stall.
+        u2.send_stalled().await;
+        t.recv_stalled().await.unwrap();
+
+        // Now unstall the third one and receive its data.
+        u3.send_payload(testrig::update(&[3])).await;
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[3]));
     }
 }
 
