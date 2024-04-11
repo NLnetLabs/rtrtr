@@ -37,6 +37,7 @@ pub struct HttpClientConfig {
     user_agent: Option<String>,
 
     /// Local address to bind to for outgoing HTTP requests.
+    #[serde(rename = "http-client-addr")]
     local_addr: Option<IpAddr>,
 }
 
