@@ -36,6 +36,11 @@ toml            = "0.8.2"
 url             = { version = "2.2", features = ["serde"] }
 webpki-roots    = "0.25.2"
 
+[features]
+default = [ "socks" ]
+socks = [ "reqwest/socks" ]
+
+
 [dev-dependencies]
 stderrlog       = "0.6"
 rand_pcg        = "0.3"

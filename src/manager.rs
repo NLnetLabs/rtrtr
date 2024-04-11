@@ -1,18 +1,44 @@
 //! Controlling the entire operation.
 
+use std::{fs, io};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use clap::crate_version;
 use daemonbase::error::Failed;
 use log::error;
 use serde::Deserialize;
-use reqwest::Client as HttpClient;
+use reqwest::{Certificate, Client as HttpClient};
 use tokio::runtime;
 use crate::{http, metrics};
 use crate::comms::{Gate, GateAgent, Link};
 use crate::config::{Config, ConfigFile, Marked};
 use crate::targets::Target;
 use crate::units::Unit;
+
+
+//------------ HttpClientConfig ----------------------------------------------
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct HttpClientConfig {
+    /// The proxy servers to use for outgoing HTTP requests.
+    #[cfg(feature = "socks")]
+    #[serde(default, rename = "http-proxies")]
+    proxies: Vec<String>,
+
+    /// Additional root certificates for outgoing HTTP requests.
+    #[serde(default, rename = "http-root-certs")]
+    root_certs: Vec<PathBuf>,
+
+    /// The user agent string to use for outgoing HTTP requests.
+    #[serde(rename = "http-user-agent")]
+    user_agent: Option<String>,
+
+    /// Local address to bind to for outgoing HTTP requests.
+    local_addr: Option<IpAddr>,
+}
 
 
 //------------ Component -----------------------------------------------------
@@ -97,8 +123,81 @@ pub struct Manager {
 
 impl Manager {
     /// Creates a new manager.
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(http_config: &HttpClientConfig) -> Result<Self, Failed> {
+        let mut builder = HttpClient::builder();
+        
+        #[cfg(feature = "socks")]
+        for proxy in &http_config.proxies {
+            let proxy = match reqwest::Proxy::all(proxy) {
+                Ok(proxy) => proxy,
+                Err(err) => {
+                    error!(
+                        "Invalid rrdp-proxy '{}': {}", proxy, err
+                    );
+                    return Err(Failed)
+                }
+            };
+            builder = builder.proxy(proxy);
+        }
+
+        for path in &http_config.root_certs {
+            builder = builder.add_root_certificate(
+                Self::load_cert(path)?
+            );
+        }
+
+        builder = builder.user_agent(
+            match http_config.user_agent.as_ref() {
+                Some(agent) => agent.as_str(),
+                None => concat!("RTRTR ", crate_version!()),
+            }
+        );
+
+        if let Some(addr) = http_config.local_addr {
+            builder = builder.local_address(addr)
+        }
+
+        let client = match builder.build() {
+            Ok(client) => client,
+            Err(err) => {
+                error!("Failed to initialize HTTP client: {}.", err);
+                return Err(Failed)
+            }
+        };
+
+        Ok(Manager {
+            http_client: client,
+            .. Default::default()
+        })
+    }
+
+    /// Loads a WebPKI trusted certificate.
+    fn load_cert(path: &Path) -> Result<Certificate, Failed> {
+        let mut file = match fs::File::open(path) {
+            Ok(file) => file,
+            Err(err) => {
+                error!(
+                    "Cannot open rrdp-root-cert file '{}': {}'",
+                    path.display(), err
+                );
+                return Err(Failed);
+            }
+        };
+        let mut data = Vec::new();
+        if let Err(err) = io::Read::read_to_end(&mut file, &mut data) {
+            error!(
+                "Cannot read rrdp-root-cert file '{}': {}'",
+                path.display(), err
+            );
+            return Err(Failed);
+        }
+        Certificate::from_pem(&data).map_err(|err| {
+            error!(
+                "Cannot decode rrdp-root-cert file '{}': {}'",
+                path.display(), err
+            );
+            Failed
+        })
     }
 
     /// Loads the given config file.
@@ -111,17 +210,15 @@ impl Manager {
     ///
     /// If the method succeeds, you need to spawn all units and targets via
     /// the [`spawn`](Self::spawn) method.
+    ///
+    /// Returns both a new manager and the parsed config.
     pub fn load(
-        &mut self, file: ConfigFile
-    ) -> Result<Config, Failed> {
+        file: ConfigFile
+    ) -> Result<(Self, Config), Failed> {
         // Prepare the thread-local used to allow serde load the links in the
         // units and targets.
         GATES.with(|gates| {
-            gates.replace(
-                Some(self.units.iter().map(|(key, value)| {
-                    (key.clone(), value.clone().into())
-                }).collect())
-            )
+            gates.replace(Some(Default::default()))
         });
 
         // Now load the config file.
@@ -135,6 +232,8 @@ impl Manager {
                 return Err(Failed)
             }
         };
+
+        let mut manager = Self::new(&config.http_client)?;
 
         // All entries in the thread-local that have a gate are new. They must
         // appear in config’s units or we have unresolved links.
@@ -151,8 +250,8 @@ impl Manager {
                     }
                 }
                 else {
-                    self.units.insert(name.clone(), load.agent);
-                    self.pending.insert(name, gate);
+                    manager.units.insert(name.clone(), load.agent);
+                    manager.pending.insert(name, gate);
                 }
             }
         }
@@ -163,7 +262,7 @@ impl Manager {
             return Err(Failed)
         }
 
-        Ok(config)
+        Ok((manager, config))
     }
 
     /// Allows creating components and adding them to the manager.

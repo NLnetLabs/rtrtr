@@ -154,7 +154,7 @@ async fn simple_comms() {
     use crate::manager::Manager;
     use crate::payload::testrig;
 
-    let mut manager = Manager::new();
+    let mut manager = Manager::default();
 
     let (u, mut t) = manager.add_components(
         &runtime::Handle::current(),

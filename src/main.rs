@@ -5,7 +5,6 @@ use daemonbase::logging::Logger;
 use futures::future::pending;
 use tokio::runtime;
 use rtrtr::config::Config;
-use rtrtr::manager::Manager;
 
 
 fn _main() -> Result<(), ExitError> {
@@ -16,10 +15,7 @@ fn _main() -> Result<(), ExitError> {
         .author(crate_authors!())
         .about("collecting, processing and distributing route filtering data")
     ).get_matches();
-    let mut manager = Manager::new();
-    let mut config = Config::from_arg_matches(
-        &matches, &mut manager
-    )?;
+    let (mut manager, mut config) = Config::from_arg_matches(&matches)?;
     Logger::from_config(&config.log)?.switch_logging(false)?;
     let runtime = runtime::Builder::new_multi_thread()
         .enable_all()

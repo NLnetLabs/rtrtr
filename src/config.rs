@@ -15,7 +15,7 @@ use daemonbase::error::Failed;
 use serde::Deserialize;
 use toml::Spanned;
 use crate::http;
-use crate::manager::{Manager, TargetSet, UnitSet};
+use crate::manager::{HttpClientConfig, Manager, TargetSet, UnitSet};
 
 
 //------------ Config --------------------------------------------------------
@@ -45,6 +45,10 @@ pub struct Config {
     /// The HTTP server configuration.
     #[serde(flatten)]
     pub http: http::Server,
+
+    /// The HTTP client configuration.
+    #[serde(flatten)]
+    pub http_client: HttpClientConfig,
 }
 
 impl Config {
@@ -75,12 +79,12 @@ impl Config {
     /// to panic.
     ///
     /// The current path needs to be provided to be able to deal with relative
-    /// paths. The manager is necessary to resolve links given in the
-    /// configuration.
+    /// paths.
+    ///
+    /// Returns both a manager and the config.
     pub fn from_arg_matches(
         matches: &clap::ArgMatches,
-        manager: &mut Manager,
-    ) -> Result<Self, Failed> {
+    ) -> Result<(Manager, Self), Failed> {
         let args = Args::from_arg_matches(
             matches
         ).expect("bug in command line arguments parser");
@@ -95,9 +99,9 @@ impl Config {
                 return Err(Failed)
             }
         };
-        let mut res = manager.load(conf)?;
-        res.log.apply_args(&args.log);
-        Ok(res)
+        let (manager, mut config) = Manager::load(conf)?;
+        config.log.apply_args(&args.log);
+        Ok((manager, config))
     }
 }
 
