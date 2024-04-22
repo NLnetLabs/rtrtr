@@ -17,6 +17,12 @@ New
 * Both the `json` unit and target now support conditional HTTP requests
   via the Etag and Last-Modified headers. ([#98])
 * The RTR timer values can now be configured for the RTR target. ([#106])
+* Added four new configuration options to the HTTP client:
+  * `http-root-certs` for additional TLS root certificates,
+  * `http-user-agent` for setting a custom user agent,
+  * `http-client-addr` to specify a local address to bind to, and
+  * `http-proxies` to add HTTP proxies (only available if the `socks` feature
+     is enabled which it is by default). ([#111])
 
 Bug Fixes
 
@@ -39,6 +45,7 @@ Other Changes
 [#98]: https://github.com/NLnetLabs/rtrtr/pull/98
 [#101]: https://github.com/NLnetLabs/rtrtr/pull/101
 [#106]: https://github.com/NLnetLabs/rtrtr/pull/106
+[#111]: https://github.com/NLnetLabs/rtrtr/pull/111
 
 
 ## 0.2.2
