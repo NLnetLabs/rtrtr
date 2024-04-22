@@ -44,6 +44,21 @@ Note that details are provided for each unit and each target.
     # Where should the HTTP server listen on?
     http-listen = ["127.0.0.1:8080"]
 
+    # The proxy servers to use for outgoing HTTP requests.
+    #
+    # Note: This option is only used if RTRTR is built with the socks feature
+    # enabled. This is true by default.
+    http-proxies = [ "socks5://192.168.1.3:9000" ]
+
+    # Additional root certificates for outgoing HTTP requests
+    http-root-certs = [ "/var/lib/rtrtr/root-cert/some.crt" ]
+
+    # The user agent string to use for outgoing HTTP requests.
+    http-user-agent = "My RPKI proxy"
+
+    # Local address to bind to for outgoing HTTP requests.
+    http-client-addr = "198.168.1.2"
+
 Units
 -----
 

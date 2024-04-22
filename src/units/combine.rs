@@ -208,7 +208,7 @@ mod test {
     #[tokio::test]
     async fn wake_up_again() {
         test::init_log();
-        let mut manager = Manager::new();
+        let mut manager = Manager::default();
 
         let (u1, u2, u3, mut t) = manager.add_components(
             &runtime::Handle::current(),
