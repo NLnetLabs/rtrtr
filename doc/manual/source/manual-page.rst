@@ -239,6 +239,16 @@ random
       A boolean value specifying whether the unit should pick a source unit
       at random. If the value is ``false`` or not given, the source units are
       picked in the order given.
+
+Merge Unit
+----------
+
+A unit of type ``"merge"`` will merge the data from all data sets of its
+source units. It has the following configuration options:
+
+sources
+      A list of strings each containing the name of a unit to use as a
+      source.
  
 
 SLURM Unit
