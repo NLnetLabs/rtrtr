@@ -1383,7 +1383,22 @@ mod test {
     #[test]
     fn set_merge() {
         assert!(
+            set([block([], 0..0)]).merge(
+                &set([block([], 0..0)])
+            ).iter().eq(set([block([], 0..0)]).iter())
+        );
+        assert!(
             set([block([1, 3, 4], 0..3)]).merge(
+                &set([block([1, 3, 4], 0..3)])
+            ).iter().eq(set([block([1, 3, 4], 0..3)]).iter())
+        );
+        assert!(
+            set([block([1, 3, 4], 0..3)]).merge(
+                &set([block([], 0..0)])
+            ).iter().eq(set([block([1, 3, 4], 0..3)]).iter())
+        );
+        assert!(
+            set([block([], 0..0)]).merge(
                 &set([block([1, 3, 4], 0..3)])
             ).iter().eq(set([block([1, 3, 4], 0..3)]).iter())
         );
