@@ -1294,7 +1294,7 @@ pub(crate) mod testrig {
         )
     }
 
-    /// Create a pack of payload from a slice of `u32`s.
+    /// Create a pack of payload from an array of `u32`s.
     pub fn pack<const N: usize>(values: [u32; N]) -> Pack {
         Pack {
             items:
@@ -1302,7 +1302,7 @@ pub(crate) mod testrig {
         }
     }
 
-    /// Create a block of payload from a slice of `u32`s.
+    /// Create a block of payload from an array of `u32`s.
     pub fn block<const N: usize>(
         values: [u32; N], range: Range<usize>
     ) -> Block {
@@ -1312,7 +1312,7 @@ pub(crate) mod testrig {
         }
     }
 
-    /// Create a set from a slice of blocks.
+    /// Create a set from an array of blocks.
     pub fn set<const N: usize>(blocks: [Block; N]) -> Set {
         let len = blocks.iter().map(|item| item.len()).sum();
         Set {
@@ -1350,7 +1350,7 @@ pub(crate) mod testrig {
         }
     }
 
-    /// Creates an update from a bunch of integers
+    /// Creates an update from an array of `u32`s. 
     pub fn update<const N: usize>(values: [u32; N]) -> Update {
         Update::new(
             set([
