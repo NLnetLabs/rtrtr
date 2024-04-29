@@ -45,6 +45,9 @@ pub enum Unit {
     #[serde(rename = "json")]
     Json(json::Json),
 
+    #[serde(rename = "merge")]
+    Merge(combine::Merge),
+
     #[serde(rename = "slurm")]
     Slurm(slurm::LocalExceptions),
 
@@ -62,6 +65,7 @@ impl Unit {
             Unit::RtrTcp(unit) => unit.run(component, gate).await,
             Unit::RtrTls(unit) => unit.run(component, gate).await,
             Unit::Json(unit) => unit.run(component, gate).await,
+            Unit::Merge(unit) => unit.run(component, gate).await,
             Unit::Slurm(unit) => unit.run(component, gate).await,
 
             #[cfg(test)]

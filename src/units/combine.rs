@@ -6,7 +6,7 @@ use futures::future::{select, select_all, Either, FutureExt};
 use log::debug;
 use rand::{thread_rng, Rng};
 use serde::Deserialize;
-use crate::metrics;
+use crate::{metrics, payload};
 use crate::metrics::{Metric, MetricType, MetricUnit};
 use crate::comms::{
     Gate, GateMetrics, Link, Terminated, UnitHealth, UnitUpdate
@@ -195,6 +195,58 @@ impl metrics::Source for AnyMetrics {
 }
 
 
+//------------ Merge ---------------------------------------------------------
+
+/// A unit merging the data sets of all upstream units.
+#[derive(Debug, Deserialize)]
+pub struct Merge {
+    /// The set of units whose data set should be merged.
+    sources: Vec<Link>,
+}
+
+impl Merge {
+    pub async fn run(
+        mut self, mut component: Component, mut gate: Gate
+    ) -> Result<(), Terminated> {
+        if self.sources.is_empty() {
+            gate.update(UnitUpdate::Gone).await;
+            return Err(Terminated)
+        }
+        let metrics = gate.metrics();
+        component.register_metrics(metrics.clone());
+
+        loop {
+            {
+                let res = select(
+                    select_all(
+                        self.sources.iter_mut().map(|link|
+                            link.query().boxed()
+                        )
+                    ),
+                    gate.process().boxed()
+                ).await;
+
+                if let Either::Right(_) = res {
+                    continue
+                }
+            }
+
+            let mut output = payload::Set::default();
+            for source in self.sources.iter() {
+                if matches!(source.health(), UnitHealth::Healthy) {
+                    if let Some(update) = source.payload() {
+                        output = output.merge(update.set())
+                    }
+                }
+            }
+            gate.update(
+                UnitUpdate::Payload(payload::Update::new(output))
+            ).await;
+        }
+    }
+}
+
+
 //============ Tests =========================================================
 
 #[cfg(test)]
@@ -245,25 +297,25 @@ mod test {
 
         // Set one unit to healthy by sending a data update. Check that
         // the target unstalls with an update.
-        u1.send_payload(testrig::update(&[1])).await;
-        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[1]));
+        u1.send_payload(testrig::update([1])).await;
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update([1]));
 
         // Set another unit to healthy. This shouldn’t change anything.
-        u2.send_payload(testrig::update(&[2])).await;
+        u2.send_payload(testrig::update([2])).await;
         t.recv_nothing().unwrap();
 
         // Now stall the first one and check that we get an update with the
         // second’s data.
         u1.send_stalled().await;
-        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[2]));
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update([2]));
 
         // Now stall the second one, too, and watch us stall.
         u2.send_stalled().await;
         t.recv_stalled().await.unwrap();
 
         // Now unstall the third one and receive its data.
-        u3.send_payload(testrig::update(&[3])).await;
-        assert_eq!(t.recv_payload().await.unwrap(), testrig::update(&[3]));
+        u3.send_payload(testrig::update([3])).await;
+        assert_eq!(t.recv_payload().await.unwrap(), testrig::update([3]));
     }
 }
 
