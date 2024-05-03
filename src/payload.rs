@@ -67,6 +67,7 @@ use rpki::rtr::server::{PayloadDiff, PayloadSet};
 /// A pack always keeps the payload in sorted order. Once created, it cannot
 /// be changed anymore.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Pack {
     /// The payload items.
     items: Arc<[Payload]>,
@@ -140,6 +141,7 @@ impl Borrow<[Payload]> for Pack {
 
 /// A builder for a payload pack.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PackBuilder {
     items: HashSet<Payload>,
 }
@@ -210,6 +212,7 @@ impl PackBuilder {
 ///
 /// A block references a slice of a [`Pack`]’s items.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Block {
     pack: Pack,
     range: Range<usize>,
@@ -396,6 +399,7 @@ impl OwnedBlockIter {
 
 /// An ordered set of payload items.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Set {
     /// The blocks of the set.
     blocks: Arc<[Block]>,
@@ -806,6 +810,7 @@ impl PayloadSet for OwnedSetIter {
 
 /// A builder for a set.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SetBuilder {
     blocks: Vec<Block>,
 }
@@ -950,6 +955,7 @@ impl SetBuilder {
 /// as a single list of pairs of [`Payload`] and [`Action`]s in order of the
 /// payload. This makes it relatively safe to apply non-atomically.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Diff {
     /// A set of announced elements.
     announced: Pack,
@@ -1153,6 +1159,7 @@ impl PayloadDiff for OwnedDiffIter {
 
 /// A builder for a diff.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct DiffBuilder {
     announced: PackBuilder,
     withdrawn: PackBuilder,
@@ -1237,6 +1244,7 @@ impl DiffBuilder {
 
 /// An update of a unit’s payload data.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Update {
     /// The new payload set.
     set: Set,
