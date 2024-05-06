@@ -32,3 +32,9 @@ name = "payload_set_merge"
 path = "fuzz_targets/payload_set_merge.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "payload_set_filter"
+path = "fuzz_targets/payload_set_filter.rs"
+test = false
+doc = false
