@@ -47,7 +47,7 @@
 //! base type yet returns references to the items. For now, these need to
 //! separate because the `Iterator` trait requires the returned items to have
 //! the same lifetime as the iterator type itself. 
-use std::{mem, slice};
+use std::slice;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -515,16 +515,18 @@ impl Set {
                 }
                 right_head = right_tail.next();
             };
-            let (left, right) = match (left, right) {
-                (Some(left), Some(right)) => (left, right),
-                _ => break,
-            };
 
             // Make left the block that starts first. Since neither block is
             // empty, we can unwrap.
-            if right.first().unwrap() < left.first().unwrap() {
-                mem::swap(left, right);
-            }
+            let (left, right) = match (left, right) {
+                (Some(left), Some(right))
+                    if right.first().unwrap() < left.first().unwrap() =>
+                {
+                    (right, left)
+                }
+                (Some(left), Some(right)) => (left, right),
+                _ => break,
+            };
 
             // Find out how much of left we can add.
             //

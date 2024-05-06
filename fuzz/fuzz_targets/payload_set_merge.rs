@@ -31,9 +31,6 @@ fuzz_target!(|data: (Vec<Vec<Payload>>, Vec<Vec<Payload>>)| {
     assert!(left_set.iter().is_sorted());
     assert!(right_set.iter().is_sorted());
 
-    eprintln!("Sets are fine.");
-
-
     let merged_set = left_set.merge(&right_set);
     let mut merged_vec = left_hash.union(
         &right_hash
