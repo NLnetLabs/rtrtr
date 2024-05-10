@@ -12,7 +12,7 @@ Breaking Changes
 New
 
 * Added a new `merge` unit that merges the datasets of all its sources.
-  ([#110])
+  ([#110], [#113])
 * Added four new configuration options to the HTTP client:
   * `http-root-certs` for additional TLS root certificates,
   * `http-user-agent` for setting a custom user agent,
@@ -49,6 +49,7 @@ Other Changes
 [#106]: https://github.com/NLnetLabs/rtrtr/pull/106
 [#110]: https://github.com/NLnetLabs/rtrtr/pull/110
 [#111]: https://github.com/NLnetLabs/rtrtr/pull/111
+[#113]: https://github.com/NLnetLabs/rtrtr/pull/113
 
 
 ## 0.2.2
