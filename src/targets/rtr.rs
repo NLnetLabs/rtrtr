@@ -10,7 +10,7 @@ use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
 use daemonbase::config::ConfigPath;
 use daemonbase::error::ExitError;
-use futures::{TryFuture, ready};
+use futures_util::{TryFuture, ready};
 use log::{debug, error};
 use pin_project_lite::pin_project;
 use serde::Deserialize;
@@ -20,7 +20,8 @@ use rpki::rtr::state::{Serial, State};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{Accept, TlsAcceptor};
-use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::server::TlsStream;
 use tokio_stream::wrappers::TcpListenerStream;
 use crate::payload;
@@ -177,7 +178,18 @@ impl Tls {
 
     /// Creates the TLS server config.
     fn create_tls_config(&self) -> Result<ServerConfig, ExitError> {
-        let certs = rustls_pemfile::certs(
+        ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(self.read_certs()?, self.read_key()?)
+            .map_err(|err| {
+                error!("Failed to create TLS server config: {}", err);
+                ExitError::default()
+            })
+    }
+
+    /// Reads the certificates from the given PEM file.
+    fn read_certs(&self) -> Result<Vec<CertificateDer<'static>>, ExitError> {
+        rustls_pemfile::certs(
             &mut io::BufReader::new(
                 File::open(&self.certificate).map_err(|err| {
                     error!(
@@ -187,58 +199,74 @@ impl Tls {
                     ExitError::default()
                 })?
             )
-        ).map_err(|err| {
+        ).collect::<Result<_, _>>().map_err(|err| {
             error!(
                 "Failed to read TLS certificate file '{}': {}.",
                 self.certificate.display(), err
             );
             ExitError::default()
-        }).map(|mut certs| {
-            certs.drain(..).map(Certificate).collect()
-        })?;
+        })
+    }
 
-        let key = rustls_pemfile::pkcs8_private_keys(
-            &mut io::BufReader::new(
-                File::open(&self.key).map_err(|err| {
-                    error!(
-                        "Failed to open TLS key file '{}': {}.",
-                        self.key.display(), err
-                    );
-                    ExitError::default()
-                })?
-            )
-        ).map_err(|err| {
-            error!(
-                "Failed to read TLS key file '{}': {}.",
-                self.key.display(), err
-            );
-            ExitError::default()
-        }).and_then(|mut certs| {
-            if certs.is_empty() {
+    /// Reads the first private key from the given PEM file.
+    ///
+    /// The key may be a PKCS#1 RSA private key, a PKCS#8 private key, or a
+    /// SEC1 encoded EC private key. All other PEM items are ignored.
+    ///
+    /// Errors out if opening or reading the file fails or if there isn’t exactly
+    /// one private key in the file.
+    fn read_key(&self) -> Result<PrivateKeyDer<'static>, ExitError> {
+        use rustls_pemfile::Item::*;
+
+        let mut key_file = io::BufReader::new(
+            File::open(&self.key).map_err(|err| {
                 error!(
-                    "TLS key file '{}' does not contain any usable keys.",
-                    self.key.display()
+                    "Failed to open TLS key file '{}': {}.",
+                    self.key.display(), err
                 );
-                return Err(ExitError::default())
-            }
-            if certs.len() != 1 {
+                ExitError::default()
+            })?
+        );
+
+        let mut key = None;
+
+        while let Some(item) =
+            rustls_pemfile::read_one(&mut key_file).transpose()
+        {
+            let item = item.map_err(|err| {
+                error!(
+                    "Failed to read TLS key file '{}': {}.",
+                    self.key.display(), err
+                );
+                ExitError::default()
+            })?;
+
+            let bits = match item {
+                Pkcs1Key(bits) => bits.into(),
+                Pkcs8Key(bits) => bits.into(),
+                Sec1Key(bits) => bits.into(),
+                _ => continue,
+            };
+            if key.is_some() {
                 error!(
                     "TLS key file '{}' contains multiple keys.",
                     self.key.display()
                 );
                 return Err(ExitError::default())
             }
-            Ok(PrivateKey(certs.pop().unwrap()))
-        })?;
+            key = Some(bits)
+        }
 
-        ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|err| {
-                error!("Failed to create TLS server config: {}", err);
-                ExitError::default()
-            })
+        match key {
+            Some(key) => Ok(key),
+            None => {
+                 error!(
+                    "TLS key file '{}' does not contain any usable keys.",
+                    self.key.display()
+                );
+                Err(ExitError::default())
+           }
+        }
     }
 
     /// Spawns a single listener onto the current runtime.
@@ -268,7 +296,7 @@ impl Tls {
             }
         };
         tokio::spawn(async move {
-            use futures::StreamExt;
+            use futures_util::stream::StreamExt;
 
             let listener = TcpListenerStream::new(listener).map(|sock| {
                 sock.map(|sock| TlsSocket::new(&config , sock))

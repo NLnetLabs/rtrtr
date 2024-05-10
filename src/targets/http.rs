@@ -1,23 +1,22 @@
 //! A target using the HTTP server.
 
-use std::convert::Infallible;
 use std::sync::Arc;
 use arc_swap::ArcSwap;
 use daemonbase::error::ExitError;
 use chrono::{DateTime, Utc};
-use futures::stream;
-use hyper::{Body, Method, Request, Response, StatusCode};
+use futures_util::stream;
+use hyper::Method;
 use hyper::header::{IF_NONE_MATCH, IF_MODIFIED_SINCE};
-use hyper::http::response;
 use log::debug;
 use rpki::rtr::State;
 use serde::Deserialize;
 use crate::payload;
 use crate::comms::{Link, UnitUpdate};
 use crate::formats::output;
+use crate::http::{ContentType, Response, ResponseBuilder, Request};
 use crate::manager::Component;
 use crate::utils::http::EtagsIter;
-use crate::utils::http::{format_http_date, parse_http_date};
+use crate::utils::http::parse_http_date;
 
 
 //------------ Target --------------------------------------------------------
@@ -41,7 +40,7 @@ impl Target {
         let http_source = source.clone();
         
         let processor = Arc::new(
-            move |request: &Request<_>| {
+            move |request: &Request| {
                 if 
                     request.method() != Method::GET
                     || request.uri().path() != path
@@ -54,14 +53,9 @@ impl Target {
                     Some(update) => update,
                     None => {
                         return Some(
-                            Response::builder()
-                            .status(StatusCode::SERVICE_UNAVAILABLE)
-                            .header("Content-Type", "text/plain")
-                            .body(
-                                "Initial validation ongoing. \
-                                 Please wait.".into()
-                            )
-                            .unwrap()
+                            ResponseBuilder::service_unavailable()
+                            .content_type(ContentType::TEXT)
+                            .body("Initial validation ongoing. Please wait.")
                         )
                     }
                 };
@@ -71,16 +65,15 @@ impl Target {
                 }
 
                 Some(
-                    update.header(
-                        Response::builder()
-                    ).header(
-                        "Content-Type", format.content_type()
+                    ResponseBuilder::ok()
+                    .content_type(format.content_type())
+                    .etag(&update.etag)
+                    .last_modified(update.created)
+                    .stream(
+                        stream::iter(
+                            format.stream(update.set.clone()).map(Into::into)
+                        )
                     )
-                    .body(Body::wrap_stream(stream::iter(
-                        format.stream(update.set.clone())
-                        .map(Result::<_, Infallible>::Ok)
-                    )))
-                    .unwrap()
                 )
             }
         );
@@ -148,7 +141,7 @@ impl SourceData {
     }
 
     /// Returns whether 304 Not Modified response should be returned.
-    fn is_not_modified(&self, req: &Request<Body>) -> bool {
+    fn is_not_modified(&self, req: &Request) -> bool {
         // First, check If-None-Match.
         let mut found_if_none_match = false;
         for value in req.headers().get_all(IF_NONE_MATCH).iter() {
@@ -193,19 +186,10 @@ impl SourceData {
         false
     }
 
-    fn not_modified(&self) -> Response<Body> {
-        self.header(
-            response::Builder::new().status(
-                StatusCode::NOT_MODIFIED
-            )
-        ).body(Body::empty()).expect("broken HTTP response builder")
-    }
-
-    fn header(&self, builder: response::Builder) -> response::Builder {
-        builder.header(
-            "ETag", &self.etag
-        ).header(
-            "Last-Modified", format_http_date(self.created)
-        )
+    fn not_modified(&self) -> Response {
+        ResponseBuilder::not_modified()
+            .etag(&self.etag)
+            .last_modified(self.created)
+            .empty()
     }
 }

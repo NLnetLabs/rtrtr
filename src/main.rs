@@ -2,7 +2,7 @@ use std::process::exit;
 use clap::{Command, crate_authors, crate_version};
 use daemonbase::error::ExitError;
 use daemonbase::logging::Logger;
-use futures::future::pending;
+use futures_util::future::pending;
 use tokio::runtime;
 use rtrtr::config::Config;
 
