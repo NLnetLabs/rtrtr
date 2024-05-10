@@ -434,7 +434,7 @@ impl Set {
         OwnedSetIter::new(self)
     }
 
-    /// Returns a set with the indicated elements removed.
+    /// Returns a set with only the indicated elements included.
     ///
     /// Each element in the current set is presented to the closure and only
     /// those for which the closure returns `true` are added to the returned
