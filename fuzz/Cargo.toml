@@ -1,0 +1,40 @@
+[package]
+name = "rtrtr-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rpki = { version = "*", features = [ "arbitrary" ] }
+
+[dependencies.rtrtr]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "payload_set_builder"
+path = "fuzz_targets/payload_set_builder.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "payload_set_merge"
+path = "fuzz_targets/payload_set_merge.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "payload_set_filter"
+path = "fuzz_targets/payload_set_filter.rs"
+test = false
+doc = false
