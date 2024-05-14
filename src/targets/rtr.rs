@@ -1,7 +1,8 @@
 /// RTR servers as a target.
 
 use std::{cmp, io};
-use std::sync::Arc;
+use std::ops::Deref;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{
     AtomicI64, AtomicU32, AtomicU64, AtomicUsize,
 };
@@ -15,7 +16,6 @@ use arc_swap::ArcSwap;
 use chrono::{DateTime, TimeZone, Utc};
 use daemonbase::config::ConfigPath;
 use daemonbase::error::ExitError;
-use flurry::HashMap;
 use futures_util::{Stream, pin_mut};
 use log::{debug, error};
 use serde::Deserialize;
@@ -76,7 +76,7 @@ impl Tcp {
     ) -> Result<(), ExitError> {
         let notify = NotifySender::new();
         let target = Source::new(self.history_size, self.timing());
-        let metrics = Arc::new(ServerMetrics::new(self.client_metrics));
+        let metrics = Arc::new(ListenerMetrics::new(self.client_metrics));
         component.register_metrics(metrics.clone());
 
         for &addr in &self.listen {
@@ -154,7 +154,7 @@ impl Tls {
         ));
         let notify = NotifySender::new();
         let target = Source::new(self.tcp.history_size, self.tcp.timing());
-        let metrics = Arc::new(ServerMetrics::new(self.tcp.client_metrics));
+        let metrics = Arc::new(ListenerMetrics::new(self.tcp.client_metrics));
         component.register_metrics(metrics.clone());
 
         for &addr in &self.tcp.listen {
@@ -334,7 +334,7 @@ struct RtrListener {
     tcp: TcpListener,
     tls: Option<TlsAcceptor>,
     keepalive: Option<Duration>,
-    server_metrics: Arc<ServerMetrics>,
+    server_metrics: Arc<ListenerMetrics>,
 }
 
 impl RtrListener {
@@ -344,7 +344,7 @@ impl RtrListener {
         keepalive: Option<Duration>,
         target: Source,
         notify: NotifySender,
-        server_metrics: Arc<ServerMetrics>,
+        server_metrics: Arc<ListenerMetrics>,
     ) -> Result<(), ExitError> {
         let listener = match StdTcpListener::bind(addr) {
             Ok(listener) => listener,
@@ -418,7 +418,7 @@ impl RtrStream {
         addr: SocketAddr,
         tls: Option<&TlsAcceptor>,
         keepalive: Option<Duration>,
-        server_metrics: &ServerMetrics,
+        server_metrics: &ListenerMetrics,
     ) -> Result<Self, io::Error> {
         if let Some(duration) = keepalive {
             Self::set_keepalive(&sock, duration)?
@@ -544,14 +544,20 @@ impl Drop for RtrStream {
 
 //============ Metrics =======================================================
 
-//------------ ServerMetrics -------------------------------------------------
+//------------ ListenerMetrics -----------------------------------------------
 
-struct ServerMetrics {
+/// The metrics held by a listener.
+struct ListenerMetrics {
+    /// The global metrics over all connections.
     global: Arc<MetricsData>,
-    client: Option<HashMap<IpAddr, Arc<MetricsData>>>,
+
+    /// The per-client address metrics.
+    ///
+    /// If this is `None`, per-client metrics are disabled.
+    client: Option<PerAddrMetrics>,
 }
 
-impl ServerMetrics {
+impl ListenerMetrics {
     fn new(client_metrics: bool) -> Self {
         Self {
             global: Default::default(),
@@ -562,22 +568,15 @@ impl ServerMetrics {
     fn get_client(&self, addr: IpAddr) -> ClientMetrics {
         ClientMetrics {
             global: self.global.clone(),
-            client: self.client.as_ref().map(|client| {
-                match client.try_insert(
-                    addr, Default::default(), &client.guard()
-                ) {
-                    Ok(res) => res,
-                    Err(err) => err.current,
-                }.clone()
-            })
+            client: self.client.as_ref().map(|client| client.get(addr)),
         }
     }
 }
 
-impl metrics::Source for ServerMetrics {
+impl metrics::Source for ListenerMetrics {
     fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
         if let Some(client) = self.client.as_ref() {
-            let client = client.iter(&client.guard()).map(|(k, v)| {
+            let client = client.all().iter().map(|(k, v)| {
                 (k.to_string(), v.clone())
             }).collect::<Vec<_>>();
 
@@ -716,7 +715,7 @@ impl metrics::Source for ServerMetrics {
     }
 }
 
-impl ServerMetrics {
+impl ListenerMetrics {
     const CLIENT_OPEN_METRIC: Metric = Metric::new(
         "rtr_client_connections",
         "number of open client connections by a client address",
@@ -771,6 +770,50 @@ impl ServerMetrics {
         "number of bytes written by an RTR target",
         MetricType::Counter, MetricUnit::Byte
     );
+}
+
+
+//------------ PerAddrMetrics ------------------------------------------------
+
+/// A map of metrics per client address.
+#[derive(Debug, Default)]
+struct PerAddrMetrics {
+    addrs: ArcSwap<Vec<(IpAddr, Arc<MetricsData>)>>,
+    write: Mutex<()>,
+}
+
+impl PerAddrMetrics {
+    fn get(&self, addr: IpAddr) -> Arc<MetricsData> {
+        // See if we have that address already.
+        let addrs = self.addrs.load();
+        if let Ok(idx) = addrs.binary_search_by(|x| x.0.cmp(&addr)) {
+            return addrs[idx].1.clone()
+        }
+
+        // We don’t. Create a new slice with the address included.
+        let _write = self.write.lock().expect("poisoned lock");
+
+        // Re-load self.addrs, it may have changed since.
+        let addrs = self.addrs.load();
+        let idx = match addrs.binary_search_by(|x| x.0.cmp(&addr)) {
+            Ok(idx) => return addrs[idx].1.clone(),
+            Err(idx) => idx,
+        };
+
+        // Make a new self.addrs, by placing the new item in the right spot,
+        // it’ll be automatically sorted.
+        let mut new_addrs = Vec::with_capacity(addrs.len() + 1);
+        new_addrs.extend_from_slice(&addrs[..idx]);
+        new_addrs.push((addr, Default::default()));
+        new_addrs.extend_from_slice(&addrs[idx..]);
+        let res = new_addrs[idx].1.clone();
+        self.addrs.store(new_addrs.into());
+        res
+    }
+
+    fn all(&self) -> impl Deref<Target = Arc<Vec<(IpAddr, Arc<MetricsData>)>>> {
+        self.addrs.load()
+    }
 }
 
 

@@ -18,7 +18,6 @@ chrono          = "0.4.31"
 clap            = { version = "~4.4", features = [ "cargo", "derive" ] }
 crossbeam-utils = "0.8.4"
 daemonbase      = "0.1.0"
-flurry          = "0.5.1"
 futures-util    = "0.3"
 hyper           = { version = "0.14.8", features = [ "server", "stream" ] }
 log             = "0.4"
