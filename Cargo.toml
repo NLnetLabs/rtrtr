@@ -18,7 +18,8 @@ chrono          = "0.4.31"
 clap            = { version = "~4.4", features = [ "cargo", "derive" ] }
 crossbeam-utils = "0.8.4"
 daemonbase      = "0.1.0"
-futures         = "0.3"
+flurry          = "0.5.1"
+futures-util    = "0.3"
 hyper           = { version = "0.14.8", features = [ "server", "stream" ] }
 log             = "0.4"
 pin-project-lite = "0.2.4"
@@ -32,10 +33,12 @@ serde_json      = "1.0"
 slab            = "0.4.2"
 tokio           = { version = "1.6", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"]}
 tokio-rustls    = "0.24.1"
-tokio-stream    = { version = "0.1", features = ["net"] }
 toml            = "0.8.2"
 url             = { version = "2.2", features = ["serde"] }
 webpki-roots    = "0.25.2"
+
+[target.'cfg(unix)'.dependencies]
+nix             = { version = "0.27.1", features = ["fs", "mman", "net", "process", "socket", "user"] }
 
 [features]
 default = [ "socks" ]

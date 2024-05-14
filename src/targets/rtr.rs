@@ -1,31 +1,36 @@
 /// RTR servers as a target.
 
 use std::{cmp, io};
-use std::fs::File;
 use std::sync::Arc;
-use std::net::SocketAddr;
+use std::sync::atomic::{
+    AtomicI64, AtomicU32, AtomicU64, AtomicUsize,
+};
+use std::sync::atomic::Ordering::Relaxed;
+use std::net::{IpAddr, SocketAddr};
 use std::net::TcpListener as StdTcpListener;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use arc_swap::ArcSwap;
+use chrono::{DateTime, TimeZone, Utc};
 use daemonbase::config::ConfigPath;
 use daemonbase::error::ExitError;
-use futures::{TryFuture, ready};
+use flurry::HashMap;
+use futures_util::{Stream, pin_mut};
 use log::{debug, error};
-use pin_project_lite::pin_project;
 use serde::Deserialize;
 use rpki::rtr::payload::Timing;
-use rpki::rtr::server::{NotifySender, Server, PayloadSource};
+use rpki::rtr::server::{NotifySender, Server, Socket, PayloadSource};
 use rpki::rtr::state::{Serial, State};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::{Accept, TlsAcceptor};
-use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
-use tokio_rustls::server::TlsStream;
-use tokio_stream::wrappers::TcpListenerStream;
-use crate::payload;
+use tokio_rustls::TlsAcceptor;
+use crate::{metrics, payload};
 use crate::comms::{Link, UnitUpdate};
 use crate::manager::Component;
+use crate::metrics::{Metric, MetricType, MetricUnit};
+use crate::utils::tls;
+use crate::utils::tls::MaybeTlsTcpStream;
 
 
 //------------ Tcp -----------------------------------------------------------
@@ -52,6 +57,11 @@ pub struct Tcp {
 
     /// The RTR expire interval.
     expire: Option<u32>,
+
+    /// Keep per-client metrics?
+    #[serde(default)]
+    #[serde(rename = "client-metrics")]
+    client_metrics: bool,
 }
 
 impl Tcp {
@@ -61,12 +71,19 @@ impl Tcp {
     }
 
     /// Runs the target.
-    pub async fn run(self, component: Component) -> Result<(), ExitError> {
+    pub async fn run(
+        self, mut component: Component
+    ) -> Result<(), ExitError> {
         let notify = NotifySender::new();
         let target = Source::new(self.history_size, self.timing());
+        let metrics = Arc::new(ServerMetrics::new(self.client_metrics));
+        component.register_metrics(metrics.clone());
 
         for &addr in &self.listen {
-            self.spawn_listener(addr, target.clone(), notify.clone())?;
+            RtrListener::spawn(
+                addr, None, None,
+                target.clone(), notify.clone(), metrics.clone()
+            )?;
         }
 
         self.run_loop(component, target, notify).await
@@ -77,7 +94,7 @@ impl Tcp {
         mut self,
         component: Component,
         target: Source,
-        mut notify: NotifySender
+        mut notify: NotifySender,
     ) -> Result<(), ExitError> {
         loop {
             let update = self.unit.query().await;
@@ -91,41 +108,6 @@ impl Tcp {
                 notify.notify()
             }
         }
-    }
-
-    /// Spawns a single listener onto the current runtime.
-    fn spawn_listener(
-        &self, addr: SocketAddr, target: Source, notify: NotifySender,
-    ) -> Result<(), ExitError> {
-        let listener = match StdTcpListener::bind(addr) {
-            Ok(listener) => listener,
-            Err(err) => {
-                error!("Can’t bind to {}: {}", addr, err);
-                return Err(ExitError::default())
-            }
-        };
-        if let Err(err) = listener.set_nonblocking(true) {
-            error!(
-                "Fatal: failed to set listener {} to non-blocking: {}.",
-                addr, err
-            );
-            return Err(ExitError::default());
-        }
-        let listener = match TcpListener::from_std(listener) {
-            Ok(listener) => listener,
-            Err(err) => {
-                error!("Fatal error listening on {}: {}", addr, err);
-                return Err(ExitError::default())
-            }
-        };
-        tokio::spawn(async move {
-            let listener = TcpListenerStream::new(listener);
-            let server = Server::new(listener, notify, target);
-            if server.run().await.is_err() {
-                error!("Fatal error listening on {}.", addr);
-            }
-        });
-        Ok(())
     }
 
     fn timing(&self) -> Timing {
@@ -162,127 +144,32 @@ pub struct Tls {
 
 impl Tls {
     /// Runs the target.
-    pub async fn run(self, component: Component) -> Result<(), ExitError> {
-        let acceptor = TlsAcceptor::from(Arc::new(self.create_tls_config()?));
+    pub async fn run(
+        self, mut component: Component
+    ) -> Result<(), ExitError> {
+        let acceptor = TlsAcceptor::from(Arc::new(
+            tls::create_server_config(
+                component.name(), &self.certificate, &self.key
+            )?
+        ));
         let notify = NotifySender::new();
         let target = Source::new(self.tcp.history_size, self.tcp.timing());
+        let metrics = Arc::new(ServerMetrics::new(self.tcp.client_metrics));
+        component.register_metrics(metrics.clone());
+
         for &addr in &self.tcp.listen {
-            self.spawn_listener(
-                addr, acceptor.clone(), target.clone(), notify.clone()
+            RtrListener::spawn(
+                addr, Some(acceptor.clone()), None,
+                target.clone(), notify.clone(), metrics.clone(),
             )?;
         }
 
         self.tcp.run_loop(component, target, notify).await
     }
-
-    /// Creates the TLS server config.
-    fn create_tls_config(&self) -> Result<ServerConfig, ExitError> {
-        let certs = rustls_pemfile::certs(
-            &mut io::BufReader::new(
-                File::open(&self.certificate).map_err(|err| {
-                    error!(
-                        "Failed to open TLS certificate file '{}': {}.",
-                        self.certificate.display(), err
-                    );
-                    ExitError::default()
-                })?
-            )
-        ).map_err(|err| {
-            error!(
-                "Failed to read TLS certificate file '{}': {}.",
-                self.certificate.display(), err
-            );
-            ExitError::default()
-        }).map(|mut certs| {
-            certs.drain(..).map(Certificate).collect()
-        })?;
-
-        let key = rustls_pemfile::pkcs8_private_keys(
-            &mut io::BufReader::new(
-                File::open(&self.key).map_err(|err| {
-                    error!(
-                        "Failed to open TLS key file '{}': {}.",
-                        self.key.display(), err
-                    );
-                    ExitError::default()
-                })?
-            )
-        ).map_err(|err| {
-            error!(
-                "Failed to read TLS key file '{}': {}.",
-                self.key.display(), err
-            );
-            ExitError::default()
-        }).and_then(|mut certs| {
-            if certs.is_empty() {
-                error!(
-                    "TLS key file '{}' does not contain any usable keys.",
-                    self.key.display()
-                );
-                return Err(ExitError::default())
-            }
-            if certs.len() != 1 {
-                error!(
-                    "TLS key file '{}' contains multiple keys.",
-                    self.key.display()
-                );
-                return Err(ExitError::default())
-            }
-            Ok(PrivateKey(certs.pop().unwrap()))
-        })?;
-
-        ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|err| {
-                error!("Failed to create TLS server config: {}", err);
-                ExitError::default()
-            })
-    }
-
-    /// Spawns a single listener onto the current runtime.
-    fn spawn_listener(
-        &self, addr: SocketAddr, config: TlsAcceptor,
-        target: Source, notify: NotifySender,
-    ) -> Result<(), ExitError> {
-        let listener = match StdTcpListener::bind(addr) {
-            Ok(listener) => listener,
-            Err(err) => {
-                error!("Can’t bind to {}: {}", addr, err);
-                return Err(ExitError::default())
-            }
-        };
-        if let Err(err) = listener.set_nonblocking(true) {
-            error!(
-                "Fatal: failed to set listener {} to non-blocking: {}.",
-                addr, err
-            );
-            return Err(ExitError::default());
-        }
-        let listener = match TcpListener::from_std(listener) {
-            Ok(listener) => listener,
-            Err(err) => {
-                error!("Fatal error listening on {}: {}", addr, err);
-                return Err(ExitError::default())
-            }
-        };
-        tokio::spawn(async move {
-            use futures::StreamExt;
-
-            let listener = TcpListenerStream::new(listener).map(|sock| {
-                sock.map(|sock| TlsSocket::new(&config , sock))
-            });
-            let server = Server::new(listener, notify, target);
-            if server.run().await.is_err() {
-                error!("Fatal error listening on {}.", addr);
-            }
-        });
-        Ok(())
-    }
-
 }
 
+
+//============ Data ==========================================================
 
 //------------ Source --------------------------------------------------------
 
@@ -438,155 +325,612 @@ impl SourceData {
 }
 
 
-//----------- TlsSocket ------------------------------------------------------
+//============ Sockets =======================================================
 
-pin_project! {
-    #[project = TlsSocketProj]
-    enum TlsSocket {
-        Accept { #[pin] fut: Accept<MyTcpStream> },
-        Stream { #[pin] fut: TlsStream<MyTcpStream> },
-        Empty,
+//------------ RtrListener --------------------------------------------------
+
+/// A wrapper around an TCP listener that produces RTR streams.
+struct RtrListener {
+    tcp: TcpListener,
+    tls: Option<TlsAcceptor>,
+    keepalive: Option<Duration>,
+    server_metrics: Arc<ServerMetrics>,
+}
+
+impl RtrListener {
+    fn spawn(
+        addr: SocketAddr,
+        tls: Option<TlsAcceptor>,
+        keepalive: Option<Duration>,
+        target: Source,
+        notify: NotifySender,
+        server_metrics: Arc<ServerMetrics>,
+    ) -> Result<(), ExitError> {
+        let listener = match StdTcpListener::bind(addr) {
+            Ok(listener) => listener,
+            Err(err) => {
+                error!("Can’t bind to {}: {}", addr, err);
+                return Err(ExitError::default())
+            }
+        };
+        if let Err(err) = listener.set_nonblocking(true) {
+            error!(
+                "Fatal: failed to set listener {} to non-blocking: {}.",
+                addr, err
+            );
+            return Err(ExitError::default());
+        }
+        let listener = match TcpListener::from_std(listener) {
+            Ok(tcp) => Self { tcp, tls, keepalive, server_metrics },
+            Err(err) => {
+                error!("Fatal error listening on {}: {}", addr, err);
+                return Err(ExitError::default())
+            }
+        };
+        tokio::spawn(async move {
+            let server = Server::new(listener, notify, target);
+            if server.run().await.is_err() {
+                error!("Fatal error in RTR server on {}.", addr);
+            }
+        });
+        Ok(())
     }
 }
 
-impl TlsSocket {
-    fn new(acceptor: &TlsAcceptor, sock: TcpStream) -> Self {
-        Self::Accept { fut: acceptor.accept(MyTcpStream { sock }) }
-    }
+impl Stream for RtrListener {
+    type Item = Result<RtrStream, io::Error>;
 
-    fn poll_accept(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Pin<&mut Self>, io::Error>> {
-        match self.as_mut().project() {
-            TlsSocketProj::Accept { fut } => {
-                match ready!(fut.try_poll(cx)) {
-                    Ok(fut) => {
-                        self.set(Self::Stream { fut });
-                        Poll::Ready(Ok(self))
-                    }
-                    Err(err) => {
-                        self.set(Self::Empty);
-                        Poll::Ready(Err(err))
-                    }
+    fn poll_next(
+        self: Pin<&mut Self>,
+        ctx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        match self.tcp.poll_accept(ctx) {
+            Poll::Ready(Ok((sock, addr))) => {
+                match RtrStream::new(
+                    sock, addr,
+                    self.tls.as_ref(),
+                    self.keepalive,
+                    &self.server_metrics
+                ) {
+                    Ok(stream) => Poll::Ready(Some(Ok(stream))),
+                    Err(_) => Poll::Pending,
                 }
             }
-            TlsSocketProj::Stream { .. } => Poll::Ready(Ok(self)),
-            TlsSocketProj::Empty => panic!("polling a concluded future")
+            Poll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
 
-impl rpki::rtr::server::Socket for TlsSocket { }
 
-impl AsyncRead for TlsSocket {
+//------------ RtrStream ----------------------------------------------------
+
+/// A wrapper around a stream socket that takes care of updating metrics.
+struct RtrStream {
+    sock: MaybeTlsTcpStream,
+    metrics: ClientMetrics,
+}
+
+impl RtrStream {
+    #[allow(clippy::redundant_async_block)] // False positive
+    fn new(
+        sock: TcpStream,
+        addr: SocketAddr,
+        tls: Option<&TlsAcceptor>,
+        keepalive: Option<Duration>,
+        server_metrics: &ServerMetrics,
+    ) -> Result<Self, io::Error> {
+        if let Some(duration) = keepalive {
+            Self::set_keepalive(&sock, duration)?
+        }
+        let metrics = server_metrics.get_client(addr.ip());
+        metrics.update(|metrics| metrics.inc_open());
+        Ok(RtrStream {
+            sock: MaybeTlsTcpStream::new(sock, tls),
+            metrics
+        })
+    }
+
+    #[cfg(unix)]
+    fn set_keepalive(
+        sock: &TcpStream, duration: Duration
+    ) -> Result<(), io::Error>{
+        use nix::sys::socket::{setsockopt, sockopt};
+
+        (|fd, duration: Duration| {
+            setsockopt(fd, sockopt::KeepAlive, &true)?;
+
+            // The attributes are copied from the definitions in
+            // nix::sys::socket::sockopt. Let’s hope they never change.
+
+            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            setsockopt(
+                fd, sockopt::TcpKeepAlive,
+                &u32::try_from(duration.as_secs()).unwrap_or(u32::MAX)
+            )?;
+
+            #[cfg(any(
+                target_os = "android",
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "linux",
+                target_os = "nacl"
+            ))]
+            setsockopt(
+                fd, sockopt::TcpKeepIdle,
+                &u32::try_from(duration.as_secs()).unwrap_or(u32::MAX)
+            )?;
+
+            #[cfg(not(target_os = "openbsd"))]
+            setsockopt(
+                fd, sockopt::TcpKeepInterval,
+                &u32::try_from(duration.as_secs()).unwrap_or(u32::MAX)
+            )?;
+
+            Ok(())
+        })(sock, duration).map_err(|err: nix::errno::Errno| {
+            io::Error::new(io::ErrorKind::Other, err)
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn set_keepalive(
+        _sock: &TcpStream, _duration: Duration
+    ) -> Result<(), io::Error>{
+        Ok(())
+    }
+}
+
+impl Socket for RtrStream {
+    fn update(&self, state: State, reset: bool) {
+        self.metrics.update(|metrics| {
+            metrics.update_now(state.serial(), reset)
+        });
+    }
+}
+
+impl AsyncRead for RtrStream {
     fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>
+        mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf
     ) -> Poll<Result<(), io::Error>> {
-        let mut this = match ready!(self.poll_accept(cx)) {
-            Ok(this) => this,
-            Err(err) => return Poll::Ready(Err(err))
-        };
-        match this.as_mut().project() {
-            TlsSocketProj::Stream { fut } => {
-                fut.poll_read(cx, buf)
-            }
-            _ => unreachable!()
+        let len = buf.filled().len();
+        let sock = &mut self.sock;
+        pin_mut!(sock);
+        let res = sock.poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = res {
+            let len = buf.filled().len().saturating_sub(len) as u64;
+            self.metrics.update(|metrics| metrics.inc_bytes_read(len));
         }
-    }
-}
-
-impl AsyncWrite for TlsSocket {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8]
-    ) -> Poll<Result<usize, io::Error>> {
-        let mut this = match ready!(self.poll_accept(cx)) {
-            Ok(this) => this,
-            Err(err) => return Poll::Ready(Err(err))
-        };
-        match this.as_mut().project() {
-            TlsSocketProj::Stream { fut } => {
-                fut.poll_write(cx, buf)
-            }
-            _ => unreachable!()
-        }
-    }
-
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>
-    ) -> Poll<Result<(), io::Error>> {
-        let mut this = match ready!(self.poll_accept(cx)) {
-            Ok(this) => this,
-            Err(err) => return Poll::Ready(Err(err))
-        };
-        match this.as_mut().project() {
-            TlsSocketProj::Stream { fut } => {
-                fut.poll_flush(cx)
-            }
-            _ => unreachable!()
-        }
-    }
-
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>
-    ) -> Poll<Result<(), io::Error>> {
-        let mut this = match ready!(self.poll_accept(cx)) {
-            Ok(this) => this,
-            Err(err) => return Poll::Ready(Err(err))
-        };
-        match this.as_mut().project() {
-            TlsSocketProj::Stream { fut } => {
-                fut.poll_shutdown(cx)
-            }
-            _ => unreachable!()
-        }
-    }
-}
-
-
-pin_project! {
-    struct MyTcpStream { #[pin] sock: TcpStream }
-}
-
-impl AsyncRead for MyTcpStream {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>
-    ) -> Poll<Result<(), io::Error>> {
-        let res = self.as_mut().project().sock.poll_read(cx, buf);
         res
     }
 }
 
-impl AsyncWrite for MyTcpStream {
+impl AsyncWrite for RtrStream {
     fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8]
+        mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]
     ) -> Poll<Result<usize, io::Error>> {
-        let res = self.as_mut().project().sock.poll_write(cx, buf);
+        let sock = &mut self.sock;
+        pin_mut!(sock);
+        let res = sock.poll_write(cx, buf);
+        if let Poll::Ready(Ok(n)) = res {
+            self.metrics.update(|metrics| metrics.inc_bytes_written(n as u64))
+        }
         res
     }
 
     fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>
+        mut self: Pin<&mut Self>, cx: &mut Context
     ) -> Poll<Result<(), io::Error>> {
-        self.as_mut().project().sock.poll_flush(cx)
+        let sock = &mut self.sock;
+        pin_mut!(sock);
+        sock.poll_flush(cx)
     }
 
     fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>
+        mut self: Pin<&mut Self>, cx: &mut Context
     ) -> Poll<Result<(), io::Error>> {
-        self.as_mut().project().sock.poll_shutdown(cx)
+        let sock = &mut self.sock;
+        pin_mut!(sock);
+        sock.poll_shutdown(cx)
+    }
+}
+
+impl Drop for RtrStream {
+    fn drop(&mut self) {
+        self.metrics.update(|metrics| metrics.dec_open())
+    }
+}
+
+
+//============ Metrics =======================================================
+
+//------------ ServerMetrics -------------------------------------------------
+
+struct ServerMetrics {
+    global: Arc<MetricsData>,
+    client: Option<HashMap<IpAddr, Arc<MetricsData>>>,
+}
+
+impl ServerMetrics {
+    fn new(client_metrics: bool) -> Self {
+        Self {
+            global: Default::default(),
+            client: client_metrics.then(Default::default),
+        }
+    }
+
+    fn get_client(&self, addr: IpAddr) -> ClientMetrics {
+        ClientMetrics {
+            global: self.global.clone(),
+            client: self.client.as_ref().map(|client| {
+                match client.try_insert(
+                    addr, Default::default(), &client.guard()
+                ) {
+                    Ok(res) => res,
+                    Err(err) => err.current,
+                }.clone()
+            })
+        }
+    }
+}
+
+impl metrics::Source for ServerMetrics {
+    fn append(&self, unit_name: &str, target: &mut metrics::Target)  {
+        if let Some(client) = self.client.as_ref() {
+            let client = client.iter(&client.guard()).map(|(k, v)| {
+                (k.to_string(), v.clone())
+            }).collect::<Vec<_>>();
+
+            target.append(
+                &Self::CLIENT_OPEN_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        records.label_value(&[("addr", addr)], metric.open());
+                    }
+                }
+            );
+            target.append(
+                &Self::SERIAL_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        match metric.serial() {
+                            Some(serial) => {
+                                records.label_value(
+                                    &[("addr", addr)], serial
+                                );
+                            }
+                            None => {
+                                records.label_value(
+                                    &[("addr", addr)], "-1"
+                                );
+                            }
+                        }
+                    }
+                }
+            );
+            target.append(
+                &Self::UPDATED_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        match metric.updated() {
+                            Some(time) => {
+                                let duration = Utc::now() - time;
+                                records.label_value(
+                                    &[("addr", addr)],
+                                    format_args!(
+                                        "{}.{:03}",
+                                        duration.num_seconds(),
+                                        duration.num_milliseconds() % 1000,
+                                    )
+                                );
+                            }
+                            None => {
+                                records.label_value(
+                                    &[("addr", addr)], "-1"
+                                );
+                            }
+                        }
+                    }
+                }
+            );
+            target.append(
+                &Self::LAST_RESET_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        match metric.last_reset() {
+                            Some(time) => {
+                                let duration = Utc::now() - time;
+                                records.label_value(
+                                    &[("addr", addr)],
+                                    format_args!(
+                                        "{}.{:03}",
+                                        duration.num_seconds(),
+                                        duration.num_milliseconds() % 1000,
+                                    )
+                                );
+                            }
+                            None => {
+                                records.label_value(
+                                    &[("addr", addr)], "-1"
+                                );
+                            }
+                        }
+                    }
+                }
+            );
+            target.append(
+                &Self::RESET_QUERIES_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        records.label_value(
+                            &[("addr", addr)],
+                            metric.reset_queries()
+                        );
+                    }
+                }
+            );
+            target.append(
+                &Self::SERIAL_QUERIES_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        records.label_value(
+                            &[("addr", addr)],
+                            metric.serial_queries()
+                        );
+                    }
+                }
+            );
+            target.append(
+                &Self::CLIENT_READ_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        records.label_value(
+                            &[("addr", addr)],
+                            metric.bytes_read()
+                        );
+                    }
+                }
+            );
+            target.append(
+                &Self::CLIENT_WRITE_METRIC, Some(unit_name),
+                |records| {
+                    for (addr, metric) in &client {
+                        records.label_value(
+                            &[("addr", addr)],
+                            metric.bytes_written()
+                        );
+                    }
+                }
+            );
+        }
+
+        target.append_simple(
+            &Self::OPEN_METRIC, Some(unit_name), self.global.open()
+        );
+        target.append_simple(
+            &Self::READ_METRIC, Some(unit_name), self.global.bytes_read()
+        );
+        target.append_simple(
+            &Self::WRITE_METRIC, Some(unit_name), self.global.bytes_written()
+        );
+    }
+}
+
+impl ServerMetrics {
+    const CLIENT_OPEN_METRIC: Metric = Metric::new(
+        "rtr_client_connections",
+        "number of open client connections by a client address",
+        MetricType::Gauge, MetricUnit::Total
+    );
+    const SERIAL_METRIC: Metric = Metric::new(
+        "rtr_client_serial", "last serial seen by a client address",
+        MetricType::Gauge, MetricUnit::Total
+    );
+    const UPDATED_METRIC: Metric = Metric::new(
+        "rtr_client_last_update",
+        "seconds since last update by a client address",
+        MetricType::Gauge, MetricUnit::Second
+    );
+    const LAST_RESET_METRIC: Metric = Metric::new(
+        "rtr_client_last_reset",
+        "seconds since last cache reset by a client address",
+        MetricType::Gauge, MetricUnit::Second
+    );
+    const RESET_QUERIES_METRIC: Metric = Metric::new(
+        "rtr_client_reset_queries",
+        "number of reset queries by a client address",
+        MetricType::Counter, MetricUnit::Total
+    );
+    const SERIAL_QUERIES_METRIC: Metric = Metric::new(
+        "rtr_client_serial_queries",
+        "number of serial queries by a client address",
+        MetricType::Counter, MetricUnit::Total
+    );
+    const CLIENT_READ_METRIC: Metric = Metric::new(
+        "rtr_client_read",
+        "number of bytes read from a client address",
+        MetricType::Counter, MetricUnit::Byte
+    );
+    const CLIENT_WRITE_METRIC: Metric = Metric::new(
+        "rtr_client_write",
+        "number of bytes written to a client address",
+        MetricType::Counter, MetricUnit::Byte
+    );
+    const OPEN_METRIC: Metric = Metric::new(
+        "rtr_connections",
+        "number of currently open RTR client connections",
+        MetricType::Gauge, MetricUnit::Total
+    );
+    const READ_METRIC: Metric = Metric::new(
+        "rtr_read",
+        "number of bytes read by an RTR target",
+        MetricType::Counter, MetricUnit::Byte
+    );
+    const WRITE_METRIC: Metric = Metric::new(
+        "rtr_write",
+        "number of bytes written by an RTR target",
+        MetricType::Counter, MetricUnit::Byte
+    );
+}
+
+
+//------------ ClientMetrics -------------------------------------------------
+
+/// The metrics held by a connection.
+#[derive(Debug)]
+struct ClientMetrics {
+    global: Arc<MetricsData>,
+    client: Option<Arc<MetricsData>>,
+}
+
+impl ClientMetrics {
+    fn update(&self, op: impl Fn(&MetricsData)) {
+        op(&self.global);
+        if let Some(client) = self.client.as_ref() {
+            op(client)
+        }
+    }
+}
+
+
+//------------ MetricsData ---------------------------------------------------
+
+#[derive(Debug)]
+pub struct MetricsData {
+    /// The number of currently open connections.
+    open: AtomicUsize,
+
+    /// The serial number of the last successful update.
+    ///
+    /// This is actually an option with the value of `u32::MAX` serving as
+    /// `None`.
+    serial: AtomicU32,
+
+    /// The time the last successful update finished.
+    ///
+    /// This is an option of the unix timestamp. The value of `i64::MIN`
+    /// serves as a `None`.
+    updated: AtomicI64,
+
+    /// The time the last successful cache reset finished.
+    ///
+    /// This is an option of the unix timestamp. The value of `i64::MIN`
+    /// serves as a `None`.
+    last_reset: AtomicI64,
+
+    /// The number of successful reset queries.
+    reset_queries: AtomicU32,
+
+    /// The number of successful serial queries.
+    serial_queries: AtomicU32,
+
+    /// The number of bytes read.
+    bytes_read: AtomicU64,
+
+    /// The number of bytes written.
+    bytes_written: AtomicU64,
+}
+
+impl Default for MetricsData {
+    fn default() -> Self {
+        Self {
+            open: AtomicUsize::new(0),
+            serial: AtomicU32::new(u32::MAX),
+            updated: AtomicI64::new(i64::MIN),
+            last_reset: AtomicI64::new(i64::MIN),
+            reset_queries: AtomicU32::new(0),
+            serial_queries: AtomicU32::new(0),
+            bytes_read: AtomicU64::new(0),
+            bytes_written: AtomicU64::new(0),
+        }
+    }
+}
+
+impl MetricsData {
+    fn open(&self) -> usize {
+        self.open.load(Relaxed)
+    }
+
+    /// Increases the count of open connections.
+    fn inc_open(&self) {
+        self.open.fetch_add(1, Relaxed);
+    }
+
+    /// Increases the count of open connections.
+    fn dec_open(&self) {
+        self.open.fetch_sub(1, Relaxed);
+    }
+
+    fn serial(&self) -> Option<u32> {
+        match self.serial.load(Relaxed) {
+            u32::MAX => None,
+            other => Some(other),
+        }
+    }
+
+    /// A successful update with the given serial number has finished now.
+    ///
+    /// Updates the serial number and update time accordingly.
+    fn update_now(&self, serial: Serial, reset: bool) {
+        self.serial.store(serial.into(), Relaxed);
+        self.updated.store(Utc::now().timestamp(), Relaxed);
+        if reset {
+            self.last_reset.store(Utc::now().timestamp(), Relaxed);
+            self.reset_queries.fetch_add(1, Relaxed);
+        }
+        else {
+            self.serial_queries.fetch_add(1, Relaxed);
+        }
+    }
+
+    /// Returns the time of the last successful update.
+    ///
+    /// Returns `None` if there never was a successful update.
+    fn updated(&self) -> Option<DateTime<Utc>> {
+        match self.updated.load(Relaxed) {
+            i64::MIN => None,
+            other => Utc.timestamp_opt(other, 0).single()
+        }
+    }
+
+    /// Returns the time of the last successful reset update.
+    ///
+    /// Returns `None` if there never was a successful update.
+    fn last_reset(&self) -> Option<DateTime<Utc>> {
+        match self.last_reset.load(Relaxed) {
+            i64::MIN => None,
+            other => Utc.timestamp_opt(other, 0).single()
+        }
+    }
+
+    /// Returns the number of successful reset queries.
+    fn reset_queries(&self) -> u32 {
+        self.reset_queries.load(Relaxed)
+    }
+
+    /// Returns the number of successful serial queries.
+    fn serial_queries(&self) -> u32 {
+        self.serial_queries.load(Relaxed)
+    }
+
+    /// Returns the total number of bytes read from this client.
+    fn bytes_read(&self) -> u64 {
+        self.bytes_read.load(Relaxed)
+    }
+
+    /// Increases the number of bytes read from this client.
+    fn inc_bytes_read(&self, count: u64) {
+        self.bytes_read.fetch_add(count, Relaxed);
+    }
+
+    /// Returns the total number of bytes written to this client.
+    fn bytes_written(&self) -> u64 {
+        self.bytes_written.load(Relaxed)
+    }
+
+    /// Increases the number of bytes written to this client.
+    fn inc_bytes_written(&self, count: u64) {
+        self.bytes_written.fetch_add(count, Relaxed);
     }
 }
 

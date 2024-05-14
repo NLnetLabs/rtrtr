@@ -5,7 +5,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use daemonbase::error::ExitError;
 use chrono::{DateTime, Utc};
-use futures::stream;
+use futures_util::stream;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use hyper::header::{IF_NONE_MATCH, IF_MODIFIED_SINCE};
 use hyper::http::response;

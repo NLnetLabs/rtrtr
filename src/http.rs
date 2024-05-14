@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
 use daemonbase::error::ExitError;
-use futures::pin_mut;
+use futures_util::pin_mut;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use hyper::server::accept::Accept;
 use hyper::service::{make_service_fn, service_fn};
