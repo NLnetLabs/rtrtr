@@ -461,14 +461,6 @@ impl ContentType {
 
 //------------ Wrapped sockets -----------------------------------------------
 
-/*
-/// A TCP listener wrapped for use with Hyper.
-struct HttpAccept {
-    sock: TcpListener,
-}
-*/
-
-
 /// A TCP stream wrapped for use with Hyper.
 struct HttpStream {
     sock: TcpStream,
