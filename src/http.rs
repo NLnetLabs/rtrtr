@@ -420,7 +420,7 @@ impl ResponseBuilder {
         self.finalize(Full::new(body.into()))
     }
 
-    /// Finalies the response by adding an empty body.
+    /// Finalizes the response by adding an empty body.
     pub fn empty(self) -> Response {
         self.finalize(Empty::new())
     }
