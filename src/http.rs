@@ -425,6 +425,7 @@ impl ResponseBuilder {
         self.finalize(Empty::new())
     }
 
+    /// Finalizes the response by adding a streaming body.
     pub fn stream<S>(self, body: S) -> Response
     where
         S: Stream<Item = Bytes> + Send + Sync + 'static
