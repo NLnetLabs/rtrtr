@@ -297,6 +297,11 @@ history-size
 
        If this value is missing, it defaults to 10.
 
+client-metrics
+      A boolean value which, if present and set to true, enables providing
+      metrics per client address.
+
+
 The ``"rtr-tls"`` target has the following *additional* configuration
 options:
 
