@@ -86,7 +86,7 @@ impl Tcp {
             )?;
         }
 
-        self.run_loop(component, target, notify).await
+        self.run_loop(component, target, notify, metrics).await
     }
 
     /// Runs the target’s main loop.
@@ -95,6 +95,7 @@ impl Tcp {
         component: Component,
         target: Source,
         mut notify: NotifySender,
+        metrics: Arc<ListenerMetrics>,
     ) -> Result<(), ExitError> {
         loop {
             let update = self.unit.query().await;
@@ -104,7 +105,7 @@ impl Tcp {
                     component.name(), payload.set().len()
                 );
             }
-            if target.update(update) {
+            if target.update(update, &metrics) {
                 notify.notify()
             }
         }
@@ -165,7 +166,7 @@ impl Tls {
             )?;
         }
 
-        self.tcp.run_loop(component, target, notify).await
+        self.tcp.run_loop(component, target, notify, metrics).await
     }
 }
 
@@ -200,7 +201,11 @@ impl Source {
     /// Updates the source from the provided unit update.
     ///
     /// Returns whether there is a new data set and clients need notifying.
-    fn update(&self, update: UnitUpdate) -> bool {
+    fn update(
+        &self,
+        update: UnitUpdate,
+        metrics: &ListenerMetrics,
+    ) -> bool {
         let payload = match update {
             UnitUpdate::Payload(payload) => payload,
             _ => return false,
@@ -246,6 +251,11 @@ impl Source {
             }
         };
 
+        metrics.serial.store(new_data.state.serial().into(), Relaxed);
+        metrics.payload_size.store(
+            new_data.current.as_ref().map(|set| set.len()).unwrap_or(0),
+            Relaxed
+        );
         self.data.store(new_data.into());
         true
     }
@@ -564,6 +574,12 @@ struct ListenerMetrics {
     ///
     /// If this is `None`, per-client metrics are disabled.
     client: Option<PerAddrMetrics>,
+
+    /// Our current serial number.
+    serial: AtomicU32,
+
+    /// The number of entries in the current payload set.
+    payload_size: AtomicUsize,
 }
 
 impl ListenerMetrics {
@@ -575,6 +591,8 @@ impl ListenerMetrics {
         Self {
             global: Default::default(),
             client: client_metrics.then(Default::default),
+            serial: Default::default(),
+            payload_size: Default::default(),
         }
     }
 
@@ -603,7 +621,7 @@ impl metrics::Source for ListenerMetrics {
                 }
             );
             target.append(
-                &Self::SERIAL_METRIC, Some(unit_name),
+                &Self::CLIENT_SERIAL_METRIC, Some(unit_name),
                 |records| {
                     for (addr, metric) in &client {
                         match metric.serial() {
@@ -718,6 +736,13 @@ impl metrics::Source for ListenerMetrics {
         }
 
         target.append_simple(
+            &Self::SERIAL_METRIC, Some(unit_name), self.serial.load(Relaxed)
+        );
+        target.append_simple(
+            &Self::PAYLOAD_SIZE_METRIC, Some(unit_name),
+            self.payload_size.load(Relaxed)
+        );
+        target.append_simple(
             &Self::OPEN_METRIC, Some(unit_name), self.global.open()
         );
         target.append_simple(
@@ -735,7 +760,7 @@ impl ListenerMetrics {
         "number of open client connections by a client address",
         MetricType::Gauge, MetricUnit::Total
     );
-    const SERIAL_METRIC: Metric = Metric::new(
+    const CLIENT_SERIAL_METRIC: Metric = Metric::new(
         "rtr_client_serial", "last serial seen by a client address",
         MetricType::Gauge, MetricUnit::Total
     );
@@ -783,6 +808,15 @@ impl ListenerMetrics {
         "rtr_write",
         "number of bytes written by an RTR target",
         MetricType::Counter, MetricUnit::Byte
+    );
+    const SERIAL_METRIC: Metric = Metric::new(
+        "rtr_target_serial", "current serial of an RTR target",
+        MetricType::Gauge, MetricUnit::Total
+    );
+    const PAYLOAD_SIZE_METRIC: Metric = Metric::new(
+        "rtr_target_payload_size",
+        "number of items in current payload set of an RTR target",
+        MetricType::Gauge, MetricUnit::Total
     );
 }
 
