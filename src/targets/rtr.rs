@@ -899,7 +899,7 @@ impl MetricsData {
         self.open.fetch_add(1, Relaxed);
     }
 
-    /// Increases the count of open connections.
+    /// Decreases the count of open connections.
     fn dec_open(&self) {
         self.open.fetch_sub(1, Relaxed);
     }
