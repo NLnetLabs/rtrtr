@@ -110,6 +110,7 @@ impl Tcp {
         }
     }
 
+    /// Returns the RTR timing based on the configured values.
     fn timing(&self) -> Timing {
         let mut res = Timing::default();
         if let Some(refresh) = self.refresh {
@@ -181,6 +182,8 @@ struct Source {
 
     /// The maximum nummber of diffs to keep.
     history_size: usize,
+
+    /// The RTR timing values.
     timing: Timing,
 }
 
@@ -338,6 +341,7 @@ struct RtrListener {
 }
 
 impl RtrListener {
+    /// Spawns the a listener socket onto the current Tokio runtime.
     fn spawn(
         addr: SocketAddr,
         tls: Option<TlsAcceptor>,
@@ -412,6 +416,7 @@ struct RtrStream {
 }
 
 impl RtrStream {
+    /// Creates a new RTR connection stream.
     #[allow(clippy::redundant_async_block)] // False positive
     fn new(
         sock: TcpStream,
@@ -431,6 +436,7 @@ impl RtrStream {
         })
     }
 
+    /// Sets the TCP keepalive if configured.
     #[cfg(unix)]
     fn set_keepalive(
         sock: &TcpStream, duration: Duration
@@ -473,6 +479,9 @@ impl RtrStream {
         })
     }
 
+    /// Sets the TCP keepalive if configured.
+    ///
+    /// This is the non-Unix version that is actually a no-op.
     #[cfg(not(unix))]
     fn set_keepalive(
         _sock: &TcpStream, _duration: Duration
@@ -558,6 +567,10 @@ struct ListenerMetrics {
 }
 
 impl ListenerMetrics {
+    /// Creates a new listener metrics value.
+    ///
+    /// If `client_metrics` is `true`, the value will keep per-client address
+    /// metrics. Otherwise it will only keep global metrics.
     fn new(client_metrics: bool) -> Self {
         Self {
             global: Default::default(),
@@ -565,6 +578,7 @@ impl ListenerMetrics {
         }
     }
 
+    /// Returns a client metrics value for the given address.
     fn get_client(&self, addr: IpAddr) -> ClientMetrics {
         ClientMetrics {
             global: self.global.clone(),
@@ -783,6 +797,7 @@ struct PerAddrMetrics {
 }
 
 impl PerAddrMetrics {
+    /// Returns the metrics data for the given address.
     fn get(&self, addr: IpAddr) -> Arc<MetricsData> {
         // See if we have that address already.
         let addrs = self.addrs.load();
@@ -811,6 +826,7 @@ impl PerAddrMetrics {
         res
     }
 
+    /// Returns the metrics for all the addresses.
     fn all(&self) -> impl Deref<Target = Arc<Vec<(IpAddr, Arc<MetricsData>)>>> {
         self.addrs.load()
     }
@@ -827,6 +843,10 @@ struct ClientMetrics {
 }
 
 impl ClientMetrics {
+    /// Updates the client metrics.
+    ///
+    /// The method takes a closure that is run either once or twice, depending
+    /// on whether per-client address metrics are enabled.
     fn update(&self, op: impl Fn(&MetricsData)) {
         op(&self.global);
         if let Some(client) = self.client.as_ref() {
@@ -890,6 +910,7 @@ impl Default for MetricsData {
 }
 
 impl MetricsData {
+    /// Return the number of currently open connections.
     fn open(&self) -> usize {
         self.open.load(Relaxed)
     }
@@ -904,6 +925,9 @@ impl MetricsData {
         self.open.fetch_sub(1, Relaxed);
     }
 
+    /// Returns the serial number last seen.
+    ///
+    /// Returns `None` if no client has yet successfully retrieved data.
     fn serial(&self) -> Option<u32> {
         match self.serial.load(Relaxed) {
             u32::MAX => None,
