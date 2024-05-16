@@ -3,6 +3,7 @@
 
 use serde::Deserialize;
 use crate::payload;
+use crate::http::ContentType;
 use super::json;
 
 //------------ Format --------------------------------------------------------
@@ -16,9 +17,9 @@ pub enum Format {
 }
 
 impl Format {
-    pub fn content_type(self) -> &'static str {
+    pub fn content_type(self) -> ContentType {
         match self {
-            Format::Json => "application/json",
+            Format::Json => ContentType::JSON,
         }
     }
 
