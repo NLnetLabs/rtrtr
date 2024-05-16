@@ -357,7 +357,10 @@ where
         let sock = match sock {
             Ok(sock) => sock,
             Err(err) => {
-                warn!("Unit {}: {}", target.name, err);
+                warn!(
+                    "Unit {}: failed to connect to server: {}",
+                    target.name, err
+                );
                 return Err(target)
             }
         };
