@@ -17,7 +17,7 @@ use chrono::{TimeZone, Utc};
 use daemonbase::config::ConfigPath;
 use futures_util::pin_mut;
 use futures_util::future::{select, Either};
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use pin_project_lite::pin_project;
 use rpki::rtr::client::{Client, PayloadError, PayloadTarget, PayloadUpdate};
 use rpki::rtr::payload::{Action, Payload, Timing};
@@ -26,12 +26,10 @@ use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 use tokio::time::{timeout_at, Instant};
-use tokio_rustls::{
-    TlsConnector, client::TlsStream,
-    rustls::ClientConfig, rustls::OwnedTrustAnchor, rustls::RootCertStore,
-    rustls::client::ServerName, 
-};
-use webpki::TrustAnchor;
+use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+use tokio_rustls::rustls::pki_types::ServerName;
 use crate::metrics;
 use crate::comms::{Gate, GateMetrics, GateStatus, Terminated, UnitUpdate};
 use crate::manager::Component;
@@ -103,7 +101,7 @@ struct TlsState {
     tls: Tls,
 
     /// The name of the server.
-    domain: ServerName,
+    domain: ServerName<'static>,
 
     /// The TLS configuration for connecting to the server.
     connector: TlsConnector,
@@ -138,7 +136,7 @@ impl Tls {
     /// Converts the server address into the name for certificate validation.
     fn get_domain_name(
         &self, unit_name: &str
-    ) -> Result<ServerName, Terminated> {
+    ) -> Result<ServerName<'static>, Terminated> {
         let host = if let Some((host, port)) = self.remote.rsplit_once(':') {
             if port.parse::<u16>().is_ok() {
                 host
@@ -150,7 +148,7 @@ impl Tls {
         else {
             self.remote.as_ref()
         };
-        ServerName::try_from(host).map_err(|err| {
+        ServerName::try_from(host).map(|res| res.to_owned()).map_err(|err| {
             error!(
                 "Unit {}: Invalid remote name '{}': {}'",
                 unit_name, host, err
@@ -163,17 +161,9 @@ impl Tls {
     fn build_connector(
         &self, unit_name: &str
     ) -> Result<TlsConnector, Terminated> {
-        let mut root_certs = RootCertStore::empty();
-        root_certs.add_trust_anchors(
-            webpki_roots::TLS_SERVER_ROOTS.iter().map(
-            |ta| {
-                OwnedTrustAnchor::from_subject_spki_name_constraints(
-                    ta.subject,
-                    ta.spki,
-                    ta.name_constraints,
-                )
-            },
-        ));
+        let mut root_certs = RootCertStore {
+            roots: Vec::from(webpki_roots::TLS_SERVER_ROOTS)
+        };
         for path in &self.cacerts {
             let mut file = io::BufReader::new(
                 File::open(path).map_err(|err| {
@@ -184,41 +174,31 @@ impl Tls {
                     Terminated
                 })?
             );
-            let certs = rustls_pemfile::certs(&mut file).map_err(|err| {
-                error!(
-                    "Unit {}: failed to read cacert file '{}': {}.",
-                    unit_name, path.display(), err,
-                );
-                Terminated
-            })?;
-            let trust_anchors = certs.iter().filter_map(|cert| {
-                match TrustAnchor::try_from_cert_der(&cert[..]) {
-                    Ok(ta) => {
-                        Some(
-                            OwnedTrustAnchor
-                                ::from_subject_spki_name_constraints(
-                                    ta.subject,
-                                    ta.spki,
-                                    ta.name_constraints,
-                                )
-                        )
-                    }
+            for cert in rustls_pemfile::certs(&mut file) {
+                let cert = match cert {
+                    Ok(cert) => cert,
                     Err(err) => {
-                        info!(
-                            "Unit {}: cecert file '{}' contained an invalid \
-                             certificate that was ignored ({})",
+                        error!(
+                            "Unit {}: failed to read certificate file '{}': \
+                             {}",
                             unit_name, path.display(), err
                         );
-                        None
+                        return Err(Terminated)
                     }
+                };
+                if let Err(err) = root_certs.add(cert) {
+                    error!(
+                        "Unit {}: failed to add TLS certificate \
+                         from file '{}': {}",
+                        unit_name, path.display(), err
+                    );
+                    return Err(Terminated)
                 }
-            });
-            root_certs.add_trust_anchors(trust_anchors);
+            }
         }
 
         Ok(TlsConnector::from(Arc::new(
             ClientConfig::builder()
-                .with_safe_defaults()
                 .with_root_certificates(root_certs)
                 .with_no_client_auth()
         )))

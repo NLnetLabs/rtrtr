@@ -20,7 +20,7 @@ use std::sync::atomic::AtomicUsize;
 use chrono::{DateTime, Utc};
 use crossbeam_utils::atomic::AtomicCell;
 use futures_util::pin_mut;
-use futures_util::future::{select, Either, Future};
+use futures_util::future::{pending, select, Either, Future};
 use slab::Slab;
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
@@ -436,7 +436,7 @@ impl Link {
         let conn = match self.connection {
             ConnectionStatus::Active(ref mut conn) => conn,
             ConnectionStatus::Unconnected | ConnectionStatus::Gone => {
-                return futures_util::future::pending().await
+                return pending().await
             }
         };
         match conn.updates.recv().await {

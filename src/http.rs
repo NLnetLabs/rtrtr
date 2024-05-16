@@ -15,17 +15,25 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
+use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use daemonbase::error::ExitError;
 use futures_util::pin_mut;
-use hyper::{Body, Method, Request, Response, StatusCode};
-use hyper::server::accept::Accept;
-use hyper::service::{make_service_fn, service_fn};
+use futures_util::stream::{Stream, StreamExt};
+use http_body_util::{BodyExt, Empty, Full, StreamBody};
+use http_body_util::combinators::BoxBody;
+use hyper::{Method, StatusCode};
+use hyper::body::{Body, Frame};
+use hyper::http::response::Builder;
+use hyper::service::service_fn;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use log::{debug, error};
 use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
 use crate::metrics;
+use crate::utils::http::format_http_date;
 
 
 //------------ Server --------------------------------------------------------
@@ -75,15 +83,15 @@ impl Server {
                 return Err(ExitError::default());
             }
             debug!("HTTP server listening on {}", addr);
-            listeners.push(listener);
+            listeners.push((listener, addr));
         }
 
         // Now spawn the listeners onto the runtime. This way, they will start
         // doing their thing as soon as the runtime is started.
-        for listener in listeners {
+        for (listener, addr) in listeners {
             runtime.spawn(
                 Self::single_listener(
-                    listener, metrics.clone(), resources.clone()
+                    listener, *addr, metrics.clone(), resources.clone()
                 )
             );
         }
@@ -96,22 +104,10 @@ impl Server {
     /// listener encounters an error.
     async fn single_listener(
         listener: StdListener,
+        addr: SocketAddr,
         metrics: metrics::Collection,
         resources: Resources,
     ) {
-        let make_service = make_service_fn(|_conn| {
-            let metrics = metrics.clone();
-            let resources = resources.clone();
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req| {
-                    let metrics = metrics.clone();
-                    let resources = resources.clone();
-                    async move {
-                        Self::handle_request(req, &metrics, &resources).await
-                    }
-                }))
-            }
-        });
         let listener = match TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(err) => {
@@ -119,19 +115,41 @@ impl Server {
                 return
             }
         };
-        if let Err(err) = hyper::Server::builder(
-            HttpAccept { sock: listener }
-        ).serve(make_service).await {
-            error!("HTTP server error: {}", err);
+        loop {
+            let stream = match listener.accept().await {
+                Ok((stream, _addr)) => stream,
+                Err(err) => {
+                    error!("Fatal error in HTTP server {}: {}", addr, err);
+                    break;
+                }
+            };
+            let metrics = metrics.clone();
+            let resources = resources.clone();
+            tokio::task::spawn(async move {
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    TokioExecutor::new()
+                ).serve_connection(
+                    TokioIo::new(stream),
+                    service_fn(move |req| {
+                        let metrics = metrics.clone();
+                        let resources = resources.clone();
+                        async move {
+                            Self::handle_request(
+                                req, &metrics, &resources
+                            ).await
+                        }
+                    })
+                ).await;
+            });
         }
     }
 
     /// Handles a single HTTP request.
     async fn handle_request(
-        req: Request<Body>,
+        req: Request,
         metrics: &metrics::Collection,
         resources: &Resources,
-    ) -> Result<Response<Body>, Infallible> {
+    ) -> Result<Response, Infallible> {
         if *req.method() != Method::GET {
             return Ok(Self::method_not_allowed())
         }
@@ -148,41 +166,33 @@ impl Server {
     }
 
     /// Produces the response for a call to the `/metrics` endpoint.
-    fn metrics(metrics: &metrics::Collection) -> Response<Body> {
-        Response::builder()
-        .header("Content-Type", "text/plain; version=0.0.4")
-        .body(
-            metrics.assemble(metrics::OutputFormat::Prometheus).into()
-        )
-        .unwrap()
+    fn metrics(metrics: &metrics::Collection) -> Response {
+        ResponseBuilder::ok()
+        .content_type(ContentType::PROMETHEUS)
+        .body(metrics.assemble(metrics::OutputFormat::Prometheus))
     }
 
     /// Produces the response for a call to the `/status` endpoint.
-    fn status(metrics: &metrics::Collection) -> Response<Body> {
-        Response::builder()
-        .header("Content-Type", "text/plain")
+    fn status(metrics: &metrics::Collection) -> Response {
+        ResponseBuilder::ok()
+        .content_type(ContentType::TEXT)
         .body(
-            metrics.assemble(metrics::OutputFormat::Plain).into()
+            metrics.assemble(metrics::OutputFormat::Plain)
         )
-        .unwrap()
     }
 
     /// Produces the response for a Method Not Allowed error.
-    fn method_not_allowed() -> Response<Body> {
-        Response::builder()
-        .status(StatusCode::METHOD_NOT_ALLOWED)
-        .header("Content-Type", "text/plain")
-        .body("Method Not Allowed".into())
-        .unwrap()
+    fn method_not_allowed() -> Response {
+        ResponseBuilder::method_not_allowed()
+        .content_type(ContentType::TEXT)
+        .body("Method Not Allowed")
     }
 
     /// Produces the response for a Not Found error.
-    fn not_found() -> Response<Body> {
-        Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .header("Content-Type", "text/plain")
-        .body("Not Found".into())
-        .unwrap()
+    fn not_found() -> Response {
+        ResponseBuilder::not_found()
+        .content_type(ContentType::TEXT)
+        .body("Not Found")
     }
 }
 
@@ -238,8 +248,8 @@ impl Resources {
     /// Returns some response if any of the registered processors actually
     /// processed the particular request or `None` otherwise.
     pub fn process_request(
-        &self, request: &Request<Body>
-    ) -> Option<Response<Body>> {
+        &self, request: &Request,
+    ) -> Option<Response> {
         let sources = self.sources.load();
         for item in sources.iter() {
             if let Some(process) = item.process.upgrade() {
@@ -281,59 +291,176 @@ pub trait ProcessRequest: Send + Sync {
     /// some response. This can be an error response. Otherwise it should
     /// return `None`.
     fn process_request(
-        &self, request: &Request<Body>
-    ) -> Option<Response<Body>>;
+        &self, request: &Request
+    ) -> Option<Response>;
 }
 
 impl<T: ProcessRequest> ProcessRequest for Arc<T> {
     fn process_request(
-        &self, request: &Request<Body>
-    ) -> Option<Response<Body>> {
+        &self, request: &Request
+    ) -> Option<Response> {
         AsRef::<T>::as_ref(self).process_request(request)
     }
 }
 
 impl<F> ProcessRequest for F
-where F: Fn(&Request<Body>) -> Option<Response<Body>> + Sync + Send {
+where F: Fn(&Request) -> Option<Response> + Sync + Send {
     fn process_request(
-        &self, request: &Request<Body>
-    ) -> Option<Response<Body>> {
+        &self, request: &Request
+    ) -> Option<Response> {
         (self)(request)
     }
 }
 
 
-//------------ Wrapped sockets -----------------------------------------------
+//------------ Request -------------------------------------------------------
 
-/// A TCP listener wrapped for use with Hyper.
-struct HttpAccept {
-    sock: TcpListener,
+pub type Request = hyper::Request<hyper::body::Incoming>;
+
+
+//------------ Response ------------------------------------------------------
+
+pub type Response = hyper::Response<BoxBody<Bytes, Infallible>>;
+
+
+//------------ ResponseBuilder -----------------------------------------------
+
+#[derive(Debug)]
+pub struct ResponseBuilder {
+    builder: Builder,
 }
 
-impl Accept for HttpAccept {
-    type Conn = HttpStream;
-    type Error = io::Error;
+impl ResponseBuilder {
+    /// Creates a new builder with the given status.
+    pub fn new(status: StatusCode) -> Self {
+        ResponseBuilder { builder:  Builder::new().status(status) }
+    }
 
-    fn poll_accept(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context
-    ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-        let sock = &mut self.sock;
-        pin_mut!(sock);
-        match sock.poll_accept(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Ok((sock, _addr))) => {
-                Poll::Ready(Some(Ok(HttpStream {
-                    sock,
-                })))
-            }
-            Poll::Ready(Err(err)) => {
-                Poll::Ready(Some(Err(err)))
-            }
+    /// Creates a new builder for a 200 OK response.
+    pub fn ok() -> Self {
+        Self::new(StatusCode::OK)
+    }
+
+    /// Creates a new builder for a Service Unavailable response.
+    pub fn service_unavailable() -> Self {
+        Self::new(StatusCode::SERVICE_UNAVAILABLE)
+    }
+
+    /// Creates a new builder for a Bad Request response.
+    pub fn bad_request() -> Self {
+        Self::new(StatusCode::BAD_REQUEST)
+    }
+
+    /// Creates a new builder for a Not Found response.
+    pub fn not_found() -> Self {
+        Self::new(StatusCode::NOT_FOUND)
+    }
+
+    /// Creates a new builder for a Not Modified response.
+    pub fn not_modified() -> Self {
+        Self::new(StatusCode::NOT_MODIFIED)
+    }
+
+    /// Creates a new builder for a Method Not Allowed response.
+    pub fn method_not_allowed() -> Self {
+        Self::new(StatusCode::METHOD_NOT_ALLOWED)
+    }
+
+    /// Creates a new builder for a Moved Permanently response.
+    pub fn moved_permanently() -> Self {
+        Self::new(StatusCode::MOVED_PERMANENTLY)
+    }
+
+    /// Adds the content type header.
+    pub fn content_type(self, content_type: ContentType) -> Self {
+        ResponseBuilder {
+            builder: self.builder.header("Content-Type", content_type.0)
         }
+    }
+
+    /// Adds the ETag header.
+    pub fn etag(self, etag: &str) -> Self {
+        ResponseBuilder {
+            builder: self.builder.header("ETag", etag)
+        }
+    }
+
+    /// Adds the Last-Modified header.
+    pub fn last_modified(self, last_modified: DateTime<Utc>) -> Self {
+        ResponseBuilder {
+            builder: self.builder.header(
+                "Last-Modified",
+                format_http_date(last_modified)
+            )
+        }
+    }
+
+    /// Adds the Location header.
+    #[allow(dead_code)]
+    pub fn location(self, location: &str) -> Self {
+        ResponseBuilder {
+            builder: self.builder.header(
+                "Location",
+                location
+            )
+        }
+    }
+
+    fn finalize<B>(self, body: B) -> Response
+    where
+        B: Body<Data = Bytes, Error = Infallible> + Send + Sync + 'static
+    {
+        self.builder.body(
+            body.boxed()
+        ).expect("broken HTTP response builder")
+    }
+
+    /// Finalizes the response by adding a body.
+    pub fn body(self, body: impl Into<Bytes>) -> Response {
+        self.finalize(Full::new(body.into()))
+    }
+
+    /// Finalizes the response by adding an empty body.
+    pub fn empty(self) -> Response {
+        self.finalize(Empty::new())
+    }
+
+    /// Finalizes the response by adding a streaming body.
+    pub fn stream<S>(self, body: S) -> Response
+    where
+        S: Stream<Item = Bytes> + Send + Sync + 'static
+    {
+        self.finalize(
+            StreamBody::new(body.map(|item| {
+                Ok(Frame::data(item))
+            }))
+        )
     }
 }
 
+
+//------------ ContentType ---------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct ContentType(&'static [u8]);
+
+impl ContentType {
+    pub const CSV: ContentType = ContentType(
+        b"text/csv;charset=utf-8;header=present"
+    );
+    pub const JSON: ContentType = ContentType(b"application/json");
+    pub const TEXT: ContentType = ContentType(b"text/plain;charset=utf-8");
+    pub const PROMETHEUS: ContentType = ContentType(
+        b"text/plain; version=0.0.4"
+    );
+
+    pub fn external(value: &'static [u8]) -> Self {
+        ContentType(value)
+    }
+}
+
+
+//------------ Wrapped sockets -----------------------------------------------
 
 /// A TCP stream wrapped for use with Hyper.
 struct HttpStream {
