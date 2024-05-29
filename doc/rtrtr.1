@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "RTRTR" "1" "Jun 13, 2022" "0.2.3-dev" "RTRTR"
+.TH "RTRTR" "1" "May 29, 2024" "0.3.0-rc1" "RTRTR"
 .SH NAME
 rtrtr \- RPKI data proxy
 .SH SYNOPSIS
@@ -189,8 +189,8 @@ syslog. The default value if this entry is missing is daemon.
 .SH RTR UNITS
 .sp
 There are two units that download RPKI data sets from an upstream server
-using the RPKI\-to\-Router protocol (RTR). The unit of type \fB"rtr"\fP uses
-unencrypted RTR while \fB"rtr\-tls"\fP uses RTR over TLS.
+using the RPKI\-to\-Router protocol (RTR). The unit of type \fB\(dqrtr\(dq\fP uses
+unencrypted RTR while \fB\(dqrtr\-tls\(dq\fP uses RTR over TLS.
 .sp
 The RTR units have the following configuration options:
 .INDENT 0.0
@@ -201,7 +201,7 @@ must contain both an address and a port separated by a colon. The
 address can be given as a an IP address, enclosed in square brackets
 for IPv6, or a host name.
 .sp
-For the \fB"rtr\-tls"\fP unit, the address portion will be used to verify
+For the \fB\(dqrtr\-tls\(dq\fP unit, the address portion will be used to verify
 the server certificate against.
 .sp
 This option is mandatory.
@@ -213,11 +213,11 @@ to reconnect to the server if it closed the connection.
 If this option is missing, the default of 60 seconds is used.
 .TP
 .B cacerts
-Only used with the \fB"rtr\-tls"\fP type, a list of paths to files that
+Only used with the \fB\(dqrtr\-tls\(dq\fP type, a list of paths to files that
 contain one or more PEM encoded certificates that should be trusted
 when verifying a TLS server certificate.
 .sp
-The \fB"rtr\-tls"\fP unit also uses the usual set of web trust anchors, so
+The \fB\(dqrtr\-tls\(dq\fP unit also uses the usual set of web trust anchors, so
 this option is only necessary when the RTR server doesn’t use a server
 certificate that would be trusted by web browser. This is, for
 instance, the case if the server uses a self\-signed certificate in
@@ -225,11 +225,11 @@ which case this certificate needs to be added via this option.
 .UNINDENT
 .SH JSON UNIT
 .sp
-A unit of type \fB"json"\fP imports and updates an RPKI data set through a
+A unit of type \fB\(dqjson\(dq\fP imports and updates an RPKI data set through a
 JSON\-encoded file. It accepts the JSON format used by most relying party
 packages.
 .sp
-The \fB"json"\fP unit has the following configuration options:
+The \fB\(dqjson\(dq\fP unit has the following configuration options:
 .INDENT 0.0
 .TP
 .B uri
@@ -252,11 +252,11 @@ succeeded or not.
 .UNINDENT
 .SH ANY UNIT
 .sp
-A unit of type \fB"any"\fP will pick one data set from one of a number of
+A unit of type \fB\(dqany\(dq\fP will pick one data set from one of a number of
 source units. The unit will only pick a source if it has an updated data set
 and can therefore be used to fall back to a different unit if one fails.
 .sp
-The \fB"any"\fP unit has the following configuration options:
+The \fB\(dqany\(dq\fP unit has the following configuration options:
 .INDENT 0.0
 .TP
 .B sources
@@ -268,14 +268,24 @@ A boolean value specifying whether the unit should pick a source unit
 at random. If the value is \fBfalse\fP or not given, the source units are
 picked in the order given.
 .UNINDENT
+.SH MERGE UNIT
+.sp
+A unit of type \fB\(dqmerge\(dq\fP will merge the data from all data sets of its
+source units. It has the following configuration options:
+.INDENT 0.0
+.TP
+.B sources
+A list of strings each containing the name of a unit to use as a
+source.
+.UNINDENT
 .SH SLURM UNIT
 .sp
-A unit of type \fB"slurm"\fP will apply local exception rules to a data set
+A unit of type \fB\(dqslurm\(dq\fP will apply local exception rules to a data set
 provided by another unit. These rules are defined through local JSON files as
 described in \fI\%RFC 8416\fP\&. They allow to both filter out existing entries in a
 data set as well as add new entries.
 .sp
-The \fB"slurm"\fP unit has the following configuration options:
+The \fB\(dqslurm\(dq\fP unit has the following configuration options:
 .INDENT 0.0
 .TP
 .B source
@@ -291,8 +301,8 @@ to be restarted if the files are updated.
 .SH RTR TARGETS
 .sp
 There are two types of targets that provide a data set as an RTR server. The
-target of type \fB"rtr"\fP provides the data set over unencrypted RTR while
-the type \fB"rtr\-tls"\fP offers the set through RTR over TLS.
+target of type \fB\(dqrtr\(dq\fP provides the data set over unencrypted RTR while
+the type \fB\(dqrtr\-tls\(dq\fP offers the set through RTR over TLS.
 .sp
 The RTR targets have the following configuration options:
 .INDENT 0.0
@@ -313,9 +323,13 @@ the data set a client may fall behind before having to fetch the full
 data set again.
 .sp
 If this value is missing, it defaults to 10.
+.TP
+.B client\-metrics
+A boolean value which, if present and set to true, enables providing
+metrics per client address.
 .UNINDENT
 .sp
-The \fB"rtr\-tls"\fP target has the following \fIadditional\fP configuration
+The \fB\(dqrtr\-tls\(dq\fP target has the following \fIadditional\fP configuration
 options:
 .INDENT 0.0
 .TP
@@ -329,10 +343,10 @@ certificate to be used as the private key by the TLS server.
 .UNINDENT
 .SH HTTP TARGET
 .sp
-A target of type \fB"http"\fP will offer the data set provided by a unit for
+A target of type \fB\(dqhttp\(dq\fP will offer the data set provided by a unit for
 download through the HTTP server.
 .sp
-The \fB"http"\fP target has the following configuration options:
+The \fB\(dqhttp\(dq\fP target has the following configuration options:
 .INDENT 0.0
 .TP
 .B path
@@ -345,7 +359,7 @@ start with a slash.
 .TP
 .B format
 A string value specifying the format of the data set to be offered.
-Currently, this has to be \fB"json"\fP for the JSON format.
+Currently, this has to be \fB\(dqjson\(dq\fP for the JSON format.
 .TP
 .B unit
 A string value specifying the name of the unit that provides the data
@@ -382,6 +396,6 @@ debugging.
 .SH AUTHOR
 NLnet Labs
 .SH COPYRIGHT
-2019–2022, NLnet Labs
+2019–2024, NLnet Labs
 .\" Generated by docutils manpage writer.
 .
