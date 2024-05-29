@@ -22,7 +22,7 @@ New
 * The RTR timer values can now be configured for the RTR target. ([#106])
 * The RTR target now produces metrics. By setting `client-metrics: true`
   in its configuration, the target produces separate metrics for each
-  client address. ([#115])
+  client address. ([#115], [#117])
 * Log changes made by the `slurm` unit to updates. ([#87])
 * The `slurm` unit now updates its data set if it discovers that the Slurm
   files have changed. ([#89])
@@ -54,6 +54,7 @@ Other Changes
 [#111]: https://github.com/NLnetLabs/rtrtr/pull/111
 [#113]: https://github.com/NLnetLabs/rtrtr/pull/113
 [#115]: https://github.com/NLnetLabs/rtrtr/pull/115
+[#117]: https://github.com/NLnetLabs/rtrtr/pull/117
 
 
 ## 0.2.2
