@@ -1,6 +1,8 @@
 # Change Log
 
-## Unreleased future version
+## 0.3.0-rc1
+
+Released 2024-05-29.
 
 Breaking Changes
 
@@ -39,7 +41,6 @@ Other Changes
 
 * Upgrade the packaging and Docker build workflow to allow for
   cross-compilation. ([#90])
-
 
 [#87]: https://github.com/NLnetLabs/rtrtr/pull/87
 [#88]: https://github.com/NLnetLabs/rtrtr/pull/88
