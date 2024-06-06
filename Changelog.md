@@ -1,6 +1,17 @@
 # Change Log
 
-## 0.3.0 ‘Filmed Before A Live Studio Audience’
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug Fixes
+
+Other changes
+
+
+## 0.3.0 ‘Filmed Before a Live Studio Audience’
 
 Released 2024-06-06.
 
