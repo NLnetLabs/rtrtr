@@ -1,10 +1,10 @@
 # Change Log
 
-## Unreleased next version
+## 0.3.0 ‘Filmed Before A Live Studio Audience’
 
-Bug Fixes
+Released 2024-06-06.
 
-Other Changes
+There have been no changes since 0.3.0-rc1.
 
 
 ## 0.3.0-rc1
