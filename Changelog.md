@@ -8,6 +8,9 @@ New
 
 Bug Fixes
 
+* Correctly interpret missing `-v` and `-q` options as using the log level
+  specified in the config file. (via daemonbase 0.1.2)
+
 Other changes
 
 
