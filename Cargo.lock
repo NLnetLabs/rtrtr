@@ -245,9 +245,9 @@ checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
 
 [[package]]
 name = "daemonbase"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7f635dcc2d7f5427a17e95a08ae529b7228d1a5f6c902449a6ceb58483bde2f"
+checksum = "1633f8b2a2a1beb427c6719ec89fd428d3503369dc1cc03a283da5a5697ed43b"
 dependencies = [
  "chrono",
  "clap",
