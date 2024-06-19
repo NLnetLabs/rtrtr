@@ -1,17 +1,15 @@
 # Change Log
 
-## Unreleased next version
+## 0.3.1-rc1
 
-Breaking changes
-
-New
+Released 2024-06-19.
 
 Bug Fixes
 
 * Correctly interpret missing `-v` and `-q` options as using the log level
-  specified in the config file. (via daemonbase 0.1.2)
+  specified in the config file. (via [daemonbase 0.1.2])
 
-Other changes
+[daemonbase 0.1.2]: https://github.com/NLnetLabs/daemonbase/releases/tag/v0.1.2
 
 
 ## 0.3.0 ‘Filmed Before a Live Studio Audience’
