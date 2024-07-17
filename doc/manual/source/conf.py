@@ -41,7 +41,7 @@ version = semver.get('package').get('version')
 
 try:
     response_versions = requests.get(
-        f"https://readthedocs.org/api/v2/version/?project__slug=routinator&active=true",
+        f"https://readthedocs.org/api/v2/version/?project__slug=rtrtr&active=true",
         timeout=2,
     ).json()
     versions = [
@@ -171,14 +171,14 @@ html_context = {
         # "downloads": downloads,
         # "subprojects": subprojects,
 
-        'slug': "routinator",
+        'slug': "rtrtr",
         'rtd_language': language,
         'canonical_url': html_baseurl,
 
         'conf_py_path': "/doc/manual/source/",
 
         'github_user': "NLnetLabs",
-        'github_repo': "routinator",
+        'github_repo': "rtrtr",
         'github_version': os.environ.get("READTHEDOCS_GIT_IDENTIFIER", "main"),
         'display_github': True,
         'READTHEDOCS': True,
