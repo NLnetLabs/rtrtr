@@ -263,13 +263,13 @@ impl SourceReader {
     ) -> Result<Option<Self>, Failed> {
         match source {
             Source::Http {
-                ref url, ref client, ref mut etag, ref mut last_modified
+                url, ref client, ref mut etag, ref mut last_modified
             } => {
                 Self::open_http(
                     url, client, last_modified, etag, component
                 ).await
             }
-            Source::File { ref path, ref mut last_modified } => {
+            Source::File { path, ref mut last_modified } => {
                 Self::open_file(path, last_modified, component).await
             }
         }
