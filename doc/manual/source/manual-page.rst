@@ -222,6 +222,15 @@ refresh
       This value is used independently of whether the previous fetch has
       succeeded or not.
 
+identity
+      A string value specifying a path to a file containing a client
+      certificate and a private key in PEM format. Optionally, the file can
+      also contain any additional certificate necessary for client
+      authentication.
+
+      The certificate is used when communicating with an HTTPS server to
+      fetch the JSON data.
+
 Any Unit
 --------
 

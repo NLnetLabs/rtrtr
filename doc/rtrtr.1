@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "RTRTR" "1" "Jun 19, 2024" "0.3.1-dev" "RTRTR"
+.TH "RTRTR" "1" "Jul 23, 2024" "0.3.1-dev" "RTRTR"
 .SH NAME
 rtrtr \- RPKI data proxy
 .SH SYNOPSIS
@@ -249,6 +249,15 @@ attempting to re\-fetch the file.
 .sp
 This value is used independently of whether the previous fetch has
 succeeded or not.
+.TP
+.B identity
+A string value specifying a path to a file containing a client
+certificate and a private key in PEM format. Optionally, the file can
+also contain any additional certificate necessary for client
+authentication.
+.sp
+The certificate is used when communicating with an HTTPS server to
+fetch the JSON data.
 .UNINDENT
 .SH ANY UNIT
 .sp
@@ -282,7 +291,7 @@ source.
 .sp
 A unit of type \fB\(dqslurm\(dq\fP will apply local exception rules to a data set
 provided by another unit. These rules are defined through local JSON files as
-described in \fI\%RFC 8416\fP\&. They allow to both filter out existing entries in a
+described in \X'tty: link https://datatracker.ietf.org/doc/html/rfc8416.html'\fI\%RFC 8416\fP\X'tty: link'\&. They allow to both filter out existing entries in a
 data set as well as add new entries.
 .sp
 The \fB\(dqslurm\(dq\fP unit has the following configuration options:
