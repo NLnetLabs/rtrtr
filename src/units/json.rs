@@ -90,6 +90,9 @@ impl Json {
                 Terminated
             })?;
             builder = builder.identity(identity);
+            debug!("Unit {}: successfully loaded client certificate.",
+                component.name()
+            );
         }
         builder.build().map_err(|err| {
             error!("Unit {}: Failed to initialize HTTP client: {}.",
