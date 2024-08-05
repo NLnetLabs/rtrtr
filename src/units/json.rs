@@ -1,15 +1,15 @@
 //! JSON clients.
 
-use std::{cmp, io};
+use std::{cmp, fs, io};
+use std::fs::metadata;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
-use std::fs::metadata;
 use chrono::{DateTime, Utc};
 use bytes::{Buf, Bytes, BytesMut};
 use daemonbase::config::ConfigPath;
 use daemonbase::error::Failed;
-use log::{debug, warn};
-use reqwest::header;
+use log::{debug, error, warn};
+use reqwest::{header, tls};
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use tokio::fs::File;
@@ -25,7 +25,7 @@ use crate::utils::http::{format_http_date, parse_http_date};
 
 //------------ Json ----------------------------------------------------------
 
-/// An unit that regularly fetches a JSON-encoded VRP set.
+/// A unit that regularly fetches a JSON-encoded VRP set.
 #[derive(Debug, Deserialize)]
 pub struct Json {
     /// The URI of the JSON source.
@@ -33,23 +33,82 @@ pub struct Json {
 
     /// How many seconds to wait before refreshing the data.
     refresh: u64,
+
+    /// Path to a file with a client certificate and private key.
+    #[serde(default, deserialize_with = "deserialize_identity")]
+    identity: Option<ConfigPath>,
 }
 
 impl Json {
     pub async fn run(
-        mut self, mut component: Component, mut gate: Gate
+        self, mut component: Component, mut gate: Gate
     ) -> Result<(), Terminated> {
         component.register_metrics(gate.metrics());
+        let mut source = self.create_source(&component)?;
         loop {
-            self.step(&component, &mut gate).await?;
+            self.step(&mut source, &component, &mut gate).await?;
             self.wait(&mut gate).await?;
         }
     }
 
+    fn create_source(
+        &self, component: &Component
+    ) -> Result<Source, Terminated> {
+        match self.uri {
+            SourceUri::Http(ref url) => {
+                Ok(Source::Http {
+                    url,
+                    client: self.http_client(component)?,
+                    last_modified: None,
+                    etag: None,
+                })
+            }
+            SourceUri::File(ref path) => {
+                Ok(Source::File { path, last_modified: None })
+            }
+        }
+    }
+
+    fn http_client(
+        &self, component: &Component
+    ) -> Result<reqwest::Client, Terminated> {
+        let mut builder = component.http_client().map_err(|err| {
+            error!("Unit {}: {}", component.name(), err);
+            Terminated
+        })?;
+        if let Some(identity) = self.identity.as_ref() {
+            let data = fs::read(identity).map_err(|err| {
+                error!("Unit {}: cannot read identity file {}: {}",
+                    component.name(), identity.display(), err
+                );
+                Terminated
+            })?;
+            let identity = tls::Identity::from_pem(&data).map_err(|err| {
+                error!("Unit {}: cannot parse identity file {}: {}",
+                    component.name(), identity.display(), err
+                );
+                Terminated
+            })?;
+            builder = builder.identity(identity);
+            debug!("Unit {}: successfully loaded client certificate.",
+                component.name()
+            );
+        }
+        builder.build().map_err(|err| {
+            error!("Unit {}: Failed to initialize HTTP client: {}.",
+                component.name(), err
+            );
+            Terminated
+        })
+    }
+
     async fn step(
-        &mut self, component: &Component, gate: &mut Gate
+        &self,
+        source: &mut Source<'_>,
+        component: &Component,
+        gate: &mut Gate
     ) -> Result<(), Terminated> {
-        match gate.process_until(self.fetch_json(component)).await? {
+        match gate.process_until(self.fetch_json(source, component)).await? {
             Ok(Some(res)) => {
                 if gate.update(UnitUpdate::Payload(res)).await {
                     debug!(
@@ -81,12 +140,9 @@ impl Json {
     }
 
     async fn fetch_json(
-        &mut self, component: &Component
+        &self, source: &mut Source<'_>, component: &Component
     ) -> Result<Option<payload::Update>, Failed> {
-        let reader = match HttpReader::open(
-            &mut self.uri,
-            component,
-        ).await? {
+        let reader = match SourceReader::open(source, component).await? {
             Some(reader) => reader,
             None => {
                 debug!("Unit {}: Source not modified.", component.name());
@@ -133,7 +189,7 @@ impl Json {
         }
     }
 
-    async fn wait(&mut self, gate: &mut Gate) -> Result<(), Terminated> {
+    async fn wait(&self, gate: &mut Gate) -> Result<(), Terminated> {
         let end = Instant::now() + Duration::from_secs(self.refresh);
         while end > Instant::now() {
             match timeout_at(end, gate.process()).await {
@@ -148,24 +204,14 @@ impl Json {
 }
 
 
-//------------ SourceUri ----------------------------------------------------
+//------------ SourceUri -----------------------------------------------------
 
 /// The URI of the unit’s source.
-///
-/// This also contains the runtime status for the source which is perhaps a
-/// bit cheeky.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(try_from = "String")]
 enum SourceUri {
-    Http {
-        url: Url,
-        last_modified: Option<DateTime<Utc>>,
-        etag: Option<Bytes>,
-    },
-    File {
-        path: ConfigPath,
-        last_modified: Option<SystemTime>,
-    }
+    Http(Url),
+    File(ConfigPath),
 }
 
 impl TryFrom<String> for SourceUri {
@@ -173,49 +219,60 @@ impl TryFrom<String> for SourceUri {
 
     fn try_from(mut src: String) -> Result<Self, Self::Error> {
         if src.starts_with("file:") {
-            let src = src.split_off(5);
-            Ok(SourceUri::File {
-                path: src.into(),
-                last_modified: None,
-            })
+            Ok(SourceUri::File(src.split_off(5).into()))
         }
         else {
-            let url = Url::from_str(&src)?;
-            Ok(SourceUri::Http {
-                url,
-                last_modified: None,
-                etag: None
-            })
+            Ok(SourceUri::Http(Url::from_str(&src)?))
         }
     }
 }
 
 
-//------------ HttpReader ----------------------------------------------------
+//------------ Source --------------------------------------------------------
 
-struct HttpReader {
-    source: ReaderSource,
+/// Information about the data source of the unit.
+#[derive(Clone, Debug)]
+enum Source<'a> {
+    Http {
+        url: &'a Url,
+        client: reqwest::Client,
+        last_modified: Option<DateTime<Utc>>,
+        etag: Option<Bytes>,
+    },
+    File {
+        path: &'a ConfigPath,
+        last_modified: Option<SystemTime>,
+    }
+}
+
+
+//------------ SourceReader ----------------------------------------------------
+
+struct SourceReader {
+    reader: Reader,
     chunk: Bytes,
     rt: tokio::runtime::Handle,
 }
 
-enum ReaderSource {
+enum Reader {
     File(File),
     Http(reqwest::Response),
 }
 
-impl HttpReader {
+impl SourceReader {
     async fn open(
-        uri: &mut SourceUri, 
+        source: &mut Source<'_>, 
         component: &Component,
     ) -> Result<Option<Self>, Failed> {
-        match uri {
-            SourceUri::Http {
-                ref url, ref mut etag, ref mut last_modified
+        match source {
+            Source::Http {
+                url, ref client, ref mut etag, ref mut last_modified
             } => {
-                Self::open_http(url, last_modified, etag, component).await
+                Self::open_http(
+                    url, client, last_modified, etag, component
+                ).await
             }
-            SourceUri::File { ref path, ref mut last_modified } => {
+            Source::File { path, ref mut last_modified } => {
                 Self::open_file(path, last_modified, component).await
             }
         }
@@ -223,12 +280,13 @@ impl HttpReader {
 
     async fn open_http(
         uri: &Url, 
+        client: &reqwest::Client,
         last_modified: &mut Option<DateTime<Utc>>,
         etag: &mut Option<Bytes>,
         component: &Component,
     ) -> Result<Option<Self>, Failed> {
         // Create and send the request.
-        let mut request = component.http_client().get(uri.clone());
+        let mut request = client.get(uri.clone());
         if let Some(etag) = etag.as_ref() {
             request = request.header(
                 header::IF_NONE_MATCH, etag.as_ref()
@@ -264,7 +322,7 @@ impl HttpReader {
         *last_modified = Self::parse_last_modified(&response);
 
         // And we are good to go!
-        Ok(Some(Self::new(ReaderSource::Http(response))))
+        Ok(Some(Self::new(Reader::Http(response))))
     }
 
     async fn open_file(
@@ -282,7 +340,7 @@ impl HttpReader {
         }
 
         let res = Self::new(
-            ReaderSource::File(
+            Reader::File(
                 File::open(path).await.map_err(|err| {
                     warn!(
                         "Unit {}: Failed to open file {}: {}.",
@@ -301,9 +359,9 @@ impl HttpReader {
         Ok(Some(res))
     }
 
-    fn new(source: ReaderSource) -> Self {
-        HttpReader {
-            source,
+    fn new(reader: Reader) -> Self {
+        SourceReader {
+            reader,
             chunk: Bytes::new(),
             rt: tokio::runtime::Handle::current()
         }
@@ -313,8 +371,8 @@ impl HttpReader {
         if !self.chunk.is_empty() {
             return Ok(true)
         }
-        match self.source {
-            ReaderSource::File(ref mut file) => {
+        match self.reader{
+            Reader::File(ref mut file) => {
                 let mut buf = BytesMut::with_capacity(16384);
                 let read = self.rt.block_on(file.read_buf(&mut buf))?;
                 if read == 0 {
@@ -322,7 +380,7 @@ impl HttpReader {
                 }
                 self.chunk = buf.freeze();
             }
-            ReaderSource::Http(ref mut response) => {
+            Reader::Http(ref mut response) => {
                 let chunk = self.rt.block_on(response.chunk()).map_err(|err| {
                     io::Error::new(
                         io::ErrorKind::Other,
@@ -389,7 +447,7 @@ impl HttpReader {
     }
 }
 
-impl io::Read for HttpReader {
+impl io::Read for SourceReader {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         if !self.prepare_chunk()? {
             return Ok(0)
@@ -400,5 +458,14 @@ impl io::Read for HttpReader {
         self.chunk.advance(len);
         Ok(len)
     }
+}
+
+
+//------------ Helper Functions ------------------------------------------------
+
+fn deserialize_identity<'de, D: serde::Deserializer<'de>>(
+    deserializer: D
+) -> Result<Option<ConfigPath>, D::Error> {
+    ConfigPath::deserialize(deserializer).map(Some)
 }
 

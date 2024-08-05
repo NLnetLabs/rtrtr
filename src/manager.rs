@@ -10,7 +10,6 @@ use clap::crate_version;
 use daemonbase::error::Failed;
 use log::error;
 use serde::Deserialize;
-use reqwest::{Certificate, Client as HttpClient};
 use tokio::runtime;
 use crate::{http, metrics};
 use crate::comms::{Gate, GateAgent, Link};
@@ -53,8 +52,8 @@ pub struct Component {
     /// The component’s name.
     name: Arc<str>,
 
-    /// An HTTP client.
-    http_client: HttpClient,
+    /// The HTTP client config.
+    http_config: Arc<HttpClientConfig>,
 
     /// A reference to the metrics collection.
     metrics: metrics::Collection,
@@ -67,23 +66,18 @@ impl Component {
     /// Creates a new component from its, well, components.
     fn new(
         name: String,
-        http_client: HttpClient,
+        http_config: Arc<HttpClientConfig>,
         metrics: metrics::Collection,
         http_resources: http::Resources,
     ) -> Self {
         Component {
-            name: name.into(), http_client, metrics, http_resources,
+            name: name.into(), http_config, metrics, http_resources,
         }
     }
 
     /// Returns the name of the component.
     pub fn name(&self) -> &Arc<str> {
         &self.name
-    }
-
-    /// Returns a reference to an HTTP Client.
-    pub fn http_client(&self) -> &HttpClient {
-        &self.http_client
     }
 
     /// Register a metrics source.
@@ -97,6 +91,69 @@ impl Component {
     ) {
         self.http_resources.register(Arc::downgrade(&process))
     }
+
+    /// Creates a new HTTP client for the component.
+    pub fn http_client(&self) -> Result<reqwest::ClientBuilder, String> {
+        let mut builder = reqwest::Client::builder();
+        
+        #[cfg(feature = "socks")]
+        for proxy in &self.http_config.proxies {
+            let proxy = match reqwest::Proxy::all(proxy) {
+                Ok(proxy) => proxy,
+                Err(err) => {
+                    return Err(format!(
+                        "Invalid rrdp-proxy '{}': {}", proxy, err
+                    ));
+                }
+            };
+            builder = builder.proxy(proxy);
+        }
+
+        for path in &self.http_config.root_certs {
+            builder = builder.add_root_certificate(
+                Self::load_cert(path)?
+            );
+        }
+
+        builder = builder.user_agent(
+            match self.http_config.user_agent.as_ref() {
+                Some(agent) => agent.as_str(),
+                None => concat!("RTRTR ", crate_version!()),
+            }
+        );
+
+        if let Some(addr) = self.http_config.local_addr {
+            builder = builder.local_address(addr)
+        }
+
+        Ok(builder)
+    }
+
+    /// Loads a WebPKI trusted certificate.
+    fn load_cert(path: &Path) -> Result<reqwest::Certificate, String> {
+        let mut file = match fs::File::open(path) {
+            Ok(file) => file,
+            Err(err) => {
+                return Err(format!(
+                    "Cannot open rrdp-root-cert file '{}': {}'",
+                    path.display(), err
+                ));
+            }
+        };
+        let mut data = Vec::new();
+        if let Err(err) = io::Read::read_to_end(&mut file, &mut data) {
+            return Err(format!(
+                "Cannot read rrdp-root-cert file '{}': {}'",
+                path.display(), err
+            ));
+        }
+        reqwest::Certificate::from_pem(&data).map_err(|err| {
+            format!(
+                "Cannot decode rrdp-root-cert file '{}': {}'",
+                path.display(), err
+            )
+        })
+    }
 }
 
 
@@ -105,14 +162,14 @@ impl Component {
 /// A manager for components and auxiliary services.
 #[derive(Default)]
 pub struct Manager {
-    /// The currently active units represented by agents to their gates..
+    /// The currently active units represented by agents to their gates.
     units: HashMap<String, GateAgent>,
 
     /// Gates for newly loaded, not yet spawned units.
     pending: HashMap<String, Gate>,
 
-    /// An HTTP client.
-    http_client: HttpClient,
+    /// The HTTP client config.
+    http_config: Arc<HttpClientConfig>,
 
     /// The metrics collection maintained by this managers.
     metrics: metrics::Collection,
@@ -124,81 +181,11 @@ pub struct Manager {
 
 impl Manager {
     /// Creates a new manager.
-    pub fn new(http_config: &HttpClientConfig) -> Result<Self, Failed> {
-        let mut builder = HttpClient::builder();
-        
-        #[cfg(feature = "socks")]
-        for proxy in &http_config.proxies {
-            let proxy = match reqwest::Proxy::all(proxy) {
-                Ok(proxy) => proxy,
-                Err(err) => {
-                    error!(
-                        "Invalid rrdp-proxy '{}': {}", proxy, err
-                    );
-                    return Err(Failed)
-                }
-            };
-            builder = builder.proxy(proxy);
-        }
-
-        for path in &http_config.root_certs {
-            builder = builder.add_root_certificate(
-                Self::load_cert(path)?
-            );
-        }
-
-        builder = builder.user_agent(
-            match http_config.user_agent.as_ref() {
-                Some(agent) => agent.as_str(),
-                None => concat!("RTRTR ", crate_version!()),
-            }
-        );
-
-        if let Some(addr) = http_config.local_addr {
-            builder = builder.local_address(addr)
-        }
-
-        let client = match builder.build() {
-            Ok(client) => client,
-            Err(err) => {
-                error!("Failed to initialize HTTP client: {}.", err);
-                return Err(Failed)
-            }
-        };
-
-        Ok(Manager {
-            http_client: client,
+    pub fn new(http_config: &HttpClientConfig) -> Self {
+        Self {
+            http_config: http_config.clone().into(),
             .. Default::default()
-        })
-    }
-
-    /// Loads a WebPKI trusted certificate.
-    fn load_cert(path: &Path) -> Result<Certificate, Failed> {
-        let mut file = match fs::File::open(path) {
-            Ok(file) => file,
-            Err(err) => {
-                error!(
-                    "Cannot open rrdp-root-cert file '{}': {}'",
-                    path.display(), err
-                );
-                return Err(Failed);
-            }
-        };
-        let mut data = Vec::new();
-        if let Err(err) = io::Read::read_to_end(&mut file, &mut data) {
-            error!(
-                "Cannot read rrdp-root-cert file '{}': {}'",
-                path.display(), err
-            );
-            return Err(Failed);
         }
-        Certificate::from_pem(&data).map_err(|err| {
-            error!(
-                "Cannot decode rrdp-root-cert file '{}': {}'",
-                path.display(), err
-            );
-            Failed
-        })
     }
 
     /// Loads the given config file.
@@ -234,7 +221,7 @@ impl Manager {
             }
         };
 
-        let mut manager = Self::new(&config.http_client)?;
+        let mut manager = Self::new(&config.http_client);
 
         // All entries in the thread-local that have a gate are new. They must
         // appear in config’s units or we have unresolved links.
@@ -341,7 +328,7 @@ impl Manager {
                 }
             };
             let controller = Component::new(
-                name, self.http_client.clone(), self.metrics.clone(),
+                name, self.http_config.clone(), self.metrics.clone(),
                 self.http_resources.clone()
             );
             runtime.spawn(unit.run(controller, gate));
@@ -349,7 +336,7 @@ impl Manager {
 
         for (name, target) in targets.targets.drain() {
             let controller = Component::new(
-                name, self.http_client.clone(), self.metrics.clone(),
+                name, self.http_config.clone(), self.metrics.clone(),
                 self.http_resources.clone()
             );
             runtime.spawn(target.run(controller));
