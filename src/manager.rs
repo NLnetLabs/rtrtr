@@ -92,7 +92,7 @@ impl Component {
         self.http_resources.register(Arc::downgrade(&process))
     }
 
-    /// Creates a new HTTP client for the component
+    /// Creates a new HTTP client for the component.
     pub fn http_client(&self) -> Result<reqwest::ClientBuilder, String> {
         let mut builder = reqwest::Client::builder();
         
@@ -162,7 +162,7 @@ impl Component {
 /// A manager for components and auxiliary services.
 #[derive(Default)]
 pub struct Manager {
-    /// The currently active units represented by agents to their gates..
+    /// The currently active units represented by agents to their gates.
     units: HashMap<String, GateAgent>,
 
     /// Gates for newly loaded, not yet spawned units.

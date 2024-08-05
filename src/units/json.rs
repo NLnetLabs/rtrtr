@@ -25,7 +25,7 @@ use crate::utils::http::{format_http_date, parse_http_date};
 
 //------------ Json ----------------------------------------------------------
 
-/// An unit that regularly fetches a JSON-encoded VRP set.
+/// A unit that regularly fetches a JSON-encoded VRP set.
 #[derive(Debug, Deserialize)]
 pub struct Json {
     /// The URI of the JSON source.
