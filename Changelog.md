@@ -1,14 +1,12 @@
 # Change Log
 
-## Unreleased next version
+## 0.3.1-rc2
+
+Released 2024-08-14.
 
 New
 
 * Add support for client certificates in the `json` unit. ([#124])
-
-Bug Fixes
-
-Other changes
 
 [#124]: https://github.com/NLnetLabs/rtrtr/pull/124
 
