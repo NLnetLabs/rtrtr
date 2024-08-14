@@ -4,7 +4,7 @@
 
 New
 
-* Add support for client certificates in the `json` unit. ([#124"])
+* Add support for client certificates in the `json` unit. ([#124])
 
 Bug Fixes
 
