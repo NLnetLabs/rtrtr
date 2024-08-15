@@ -83,12 +83,7 @@ impl Json {
                 );
                 Terminated
             })?;
-            let identity = tls::Identity::from_pem(&data).map_err(|err| {
-                error!("Unit {}: cannot parse identity file {}: {}",
-                    component.name(), identity.display(), err
-                );
-                Terminated
-            })?;
+            let identity = self.load_identity(&data, component)?;
             builder = builder.identity(identity);
             debug!("Unit {}: successfully loaded client certificate.",
                 component.name()
@@ -96,6 +91,30 @@ impl Json {
         }
         builder.build().map_err(|err| {
             error!("Unit {}: Failed to initialize HTTP client: {}.",
+                component.name(), err
+            );
+            Terminated
+        })
+    }
+
+    #[cfg(not(feature = "native-tls"))]
+    fn load_identity(
+        &self, data: &[u8], component: &Component
+    ) -> Result<tls::Identity, Terminated> {
+        tls::Identity::from_pem(data).map_err(|err| {
+            error!("Unit {}: cannot parse native TLS identity file: {:?}",
+                component.name(), err
+            );
+            Terminated
+        })
+    }
+
+    #[cfg(feature = "native-tls")]
+    fn load_identity(
+        &self, data: &[u8], component: &Component
+    ) -> Result<tls::Identity, Terminated> {
+        tls::Identity::from_pkcs12_der(data, "").map_err(|err| {
+            error!("Unit {}: cannot parse rustls identity file: {:?}",
                 component.name(), err
             );
             Terminated
