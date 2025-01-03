@@ -4,6 +4,9 @@
 
 Bug Fixes
 
+* Log a message when a Slurm file fails to load. ([082b7db])
+
+[082b7db]: https://github.com/NLnetLabs/rtrtr/commit/082b7db8bed80375d3466b4a9ffdf7a818051459
 
 ## 0.3.1-rc2
 
