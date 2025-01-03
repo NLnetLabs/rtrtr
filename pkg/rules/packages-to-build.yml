@@ -51,9 +51,6 @@ test-mode:
 
 test-exclude:
   - pkg: 'rtrtr'
-    image: 'rockylinux:9'
-    mode: 'upgrade-from-published'
-  - pkg: 'rtrtr'
-    image: 'debian:bookworm'
+    image: 'ubuntu:noble'
     mode: 'upgrade-from-published'
 
