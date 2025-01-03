@@ -1,11 +1,19 @@
 # Change Log
 
-## Unreleased next version
+## 0.3.1-rc3
 
-Bug Fixes
+Released 2025-01-03.
+
+Bug fixes
 
 * Log a message when a Slurm file fails to load. ([082b7db])
 
+Other changes
+
+* Removed building of packages for Ubuntu 16.04 and 18.04 and Debian
+  Stretch and added Ubuntu 24.04.
+
+[#130]: https://github.com/NLnetLabs/rtrtr/pull/130
 [082b7db]: https://github.com/NLnetLabs/rtrtr/commit/082b7db8bed80375d3466b4a9ffdf7a818051459
 
 ## 0.3.1-rc2
