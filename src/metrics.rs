@@ -275,7 +275,7 @@ pub struct Records<'a> {
     unit_name: Option<&'a str>,
 }
 
-impl<'a> Records<'a> {
+impl Records<'_> {
     /// Appends a simple value to the metrics target.
     ///
     /// The value is simply output via the `Display` trait.
