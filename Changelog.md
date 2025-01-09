@@ -1,5 +1,16 @@
 # Change Log
 
+## Unreleased next version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.3.1 ‘Some Checks Haven’t Completed Yet’
 
 Released 2025-01-09.
