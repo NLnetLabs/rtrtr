@@ -1,8 +1,10 @@
 # Change Log
 
-## Unreleased next version
+## 0.3.1 ‘Some Checks Haven’t Completed Yet’
 
-Bug fixes
+Released 2025-01-09.
+
+There have been no changes since 0.3.1-rc3.
 
 
 ## 0.3.1-rc3
