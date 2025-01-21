@@ -27,6 +27,7 @@ use crate::utils::http::{format_http_date, parse_http_date};
 
 /// A unit that regularly fetches a JSON-encoded VRP set.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Json {
     /// The URI of the JSON source.
     uri: SourceUri,
@@ -37,6 +38,15 @@ pub struct Json {
     /// Path to a file with a client certificate and private key.
     #[serde(default, deserialize_with = "deserialize_identity")]
     identity: Option<ConfigPath>,
+
+    /// Use the native-tls backend.
+    #[cfg(feature = "native-tls")]
+    #[serde(default)]
+    native_tls: bool,
+
+    /// Only use TLS up to version 1.2.
+    #[serde(default)]
+    tls_12: bool,
 }
 
 impl Json {
@@ -76,6 +86,18 @@ impl Json {
             error!("Unit {}: {}", component.name(), err);
             Terminated
         })?;
+
+        #[cfg(feature = "native-tls")]
+        if self.native_tls {
+            builder = builder.use_native_tls();
+        }
+
+        if self.tls_12 {
+            builder = builder.max_tls_version(
+                tls::Version::TLS_1_2
+            );
+        }
+
         if let Some(identity) = self.identity.as_ref() {
             let data = fs::read(identity).map_err(|err| {
                 error!("Unit {}: cannot read identity file {}: {}",
@@ -102,7 +124,7 @@ impl Json {
         &self, data: &[u8], component: &Component
     ) -> Result<tls::Identity, Terminated> {
         tls::Identity::from_pem(data).map_err(|err| {
-            error!("Unit {}: cannot parse native TLS identity file: {:?}",
+            error!("Unit {}: cannot parse rustls TLS identity file: {:?}",
                 component.name(), err
             );
             Terminated
@@ -113,8 +135,8 @@ impl Json {
     fn load_identity(
         &self, data: &[u8], component: &Component
     ) -> Result<tls::Identity, Terminated> {
-        tls::Identity::from_pkcs12_der(data, "").map_err(|err| {
-            error!("Unit {}: cannot parse rustls identity file: {:?}",
+        tls::Identity::from_pkcs8_pem(data, data).map_err(|err| {
+            error!("Unit {}: cannot parse native identity file: {:?}",
                 component.name(), err
             );
             Terminated
