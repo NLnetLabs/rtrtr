@@ -2,7 +2,7 @@
 name = "rtrtr"
 version = "0.3.2-dev"
 edition = "2021"
-rust-version = "1.71.1"
+rust-version = "1.74.1"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A versatile tool for managing route filters"
 repository = "https://github.com/NLnetLabs/rtrtr"
