@@ -110,7 +110,7 @@ impl TryFrom<JsonAspa> for Aspa {
     fn try_from(
         JsonAspa {
             providers,
-            customer_asid: JsonAsn(customer),
+            customer: JsonAsn(customer),
         }: JsonAspa,
     ) -> Result<Self, Self::Error> {
         let provider_asns =
@@ -171,7 +171,10 @@ impl From<Vrp> for JsonVrp {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct JsonAspa {
     /// The customer ASN.
-    customer_asid: JsonAsn,
+    ///
+    /// For rpki-client compatibility, "customer_asid" is also supported
+    #[serde(alias = "customer_asid")]
+    customer: JsonAsn,
     /// The provider ASNs.
     providers: Vec<JsonAsn>,
 }
@@ -179,7 +182,7 @@ struct JsonAspa {
 impl From<Aspa> for JsonAspa {
     fn from(aspa: Aspa) -> Self {
         Self {
-            customer_asid: JsonAsn(aspa.payload.customer),
+            customer: JsonAsn(aspa.payload.customer),
             providers: aspa
                 .payload
                 .providers
@@ -256,7 +259,7 @@ fn format_origin(origin: RouteOrigin, last: bool) -> Vec<u8> {
 
 fn format_aspa(aspa: AspaPayload, last: bool) -> Vec<u8> {
     format!(
-        r#"    {{ "customer_asid": {}, "providers": {:?} }}{}"#,
+        r#"    {{ "customer": {}, "providers": {:?} }}{}"#,
         aspa.customer.into_u32(),
         aspa.providers.iter().map(|a| a.into_u32()).collect::<Vec<_>>(),
         if last { "\n" } else { ",\n" },
@@ -428,14 +431,14 @@ mod test {
             s(vec![
                 Payload::Aspa(AspaPayload { customer: 42u32.into(), providers: ProviderAsns::try_from_iter(vec![44u32.into(), 45u32.into()]).unwrap() }),
             ]),
-            "{\n  \"aspas\": [\n    { \"customer_asid\": 42, \"providers\": [44, 45] }\n  ]\n}",
+            "{\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] }\n  ]\n}",
         );
         assert_eq!(
             s(vec![
                 Payload::Aspa(AspaPayload { customer: 42u32.into(), providers: ProviderAsns::try_from_iter(vec![44u32.into(), 45u32.into()]).unwrap() }),
                 Payload::Aspa(AspaPayload { customer: 45u32.into(), providers: ProviderAsns::try_from_iter(vec![46u32.into(), 47u32.into()]).unwrap() }),
             ]),
-            "{\n  \"aspas\": [\n    { \"customer_asid\": 42, \"providers\": [44, 45] },\n    { \"customer_asid\": 45, \"providers\": [46, 47] }\n  ]\n}",
+            "{\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] },\n    { \"customer\": 45, \"providers\": [46, 47] }\n  ]\n}",
         );
 
         assert_eq!(
@@ -445,7 +448,7 @@ mod test {
                 Payload::Aspa(AspaPayload { customer: 45u32.into(), providers: ProviderAsns::try_from_iter(vec![46u32.into(), 47u32.into()]).unwrap() }),
                 Payload::Origin(RouteOrigin::new(MaxLenPrefix::new("fd00:1235::/32".parse().unwrap(), Some(48)).unwrap(), 42u32.into())),
             ]),
-            "{\n  \"roas\": [\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1234::/32\", \"maxLength\": 48, \"ta\": \"N/A\" },\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1235::/32\", \"maxLength\": 48, \"ta\": \"N/A\" }\n  ],\n  \"aspas\": [\n    { \"customer_asid\": 42, \"providers\": [44, 45] },\n    { \"customer_asid\": 45, \"providers\": [46, 47] }\n  ]\n}",
+            "{\n  \"roas\": [\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1234::/32\", \"maxLength\": 48, \"ta\": \"N/A\" },\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1235::/32\", \"maxLength\": 48, \"ta\": \"N/A\" }\n  ],\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] },\n    { \"customer\": 45, \"providers\": [46, 47] }\n  ]\n}",
         );
     }
 }
