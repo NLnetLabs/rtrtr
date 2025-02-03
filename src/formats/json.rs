@@ -76,15 +76,18 @@ impl Vrp {
 impl TryFrom<JsonVrp> for Vrp {
     type Error = MaxLenError;
 
-    fn try_from(json: JsonVrp) -> Result<Self, Self::Error> {
-        MaxLenPrefix::new(json.prefix, Some(json.max_length)).map(|prefix| {
-            Vrp {
-                payload: RouteOrigin::new(prefix, json.asn),
-            }
+    fn try_from(
+        JsonVrp {
+            prefix,
+            max_length,
+            asn: JsonAsn(asn),
+        }: JsonVrp,
+    ) -> Result<Self, Self::Error> {
+        MaxLenPrefix::new(prefix, Some(max_length)).map(|prefix| Vrp {
+            payload: RouteOrigin::new(prefix, asn),
         })
     }
 }
-
 
 //------------ Aspa ----------------------------------------------------------
 
@@ -104,20 +107,36 @@ impl Aspa {
 impl TryFrom<JsonAspa> for Aspa {
     type Error = ProviderAsnsError;
 
-    fn try_from(json: JsonAspa) -> Result<Self, Self::Error> {
-        let providers = ProviderAsns::try_from_iter(json.providers.into_iter())?;
+    fn try_from(
+        JsonAspa {
+            providers,
+            customer_asid: JsonAsn(customer),
+        }: JsonAspa,
+    ) -> Result<Self, Self::Error> {
+        let provider_asns =
+            ProviderAsns::try_from_iter(providers.into_iter().map(|JsonAsn(asn)| asn))?;
         Ok(Self {
             payload: AspaPayload {
-                customer: json.customer_asid,
-                providers,
+                customer,
+                providers: provider_asns,
             },
         })
     }
 }
 
-
 //============ Serialization =================================================
 
+//------------ JsonAsn -------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct JsonAsn(
+    #[serde(
+        serialize_with = "Asn::serialize_as_str",
+        deserialize_with = "Asn::deserialize_from_any"
+    )]
+    Asn,
+);
 
 //------------ JsonVrp -------------------------------------------------------
 
@@ -130,11 +149,7 @@ struct JsonVrp {
     prefix: Prefix,
 
     /// The ASN member.
-    #[serde(
-        serialize_with = "Asn::serialize_as_str",
-        deserialize_with = "Asn::deserialize_from_any",
-    )]
-    asn: Asn,
+    asn: JsonAsn,
 
     /// The max-length member.
     #[serde(rename = "maxLength")]
@@ -145,7 +160,7 @@ impl From<Vrp> for JsonVrp {
     fn from(vrp: Vrp) -> Self {
         JsonVrp {
             prefix: vrp.payload.prefix.prefix(),
-            asn: vrp.payload.asn,
+            asn: JsonAsn(vrp.payload.asn),
             max_length: vrp.payload.prefix.resolved_max_len(),
         }
     }
@@ -156,16 +171,21 @@ impl From<Vrp> for JsonVrp {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct JsonAspa {
     /// The customer ASN.
-    customer_asid: Asn,
+    customer_asid: JsonAsn,
     /// The provider ASNs.
-    providers: Vec<Asn>,
+    providers: Vec<JsonAsn>,
 }
 
 impl From<Aspa> for JsonAspa {
     fn from(aspa: Aspa) -> Self {
         Self {
-            customer_asid: aspa.payload.customer,
-            providers: aspa.payload.providers.iter().collect(),
+            customer_asid: JsonAsn(aspa.payload.customer),
+            providers: aspa
+                .payload
+                .providers
+                .iter()
+                .map(|asn| JsonAsn(asn))
+                .collect(),
         }
     }
 }
