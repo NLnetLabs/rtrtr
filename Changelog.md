@@ -6,9 +6,14 @@ Breaking changes
 
 New
 
+* Add ASPA support to JSON input and output. ([#132] by [@devsnek])
+
 Bug fixes
 
 Other changes
+
+[#132]: https://github.com/NLnetLabs/rtrtr/pull/132
+[@devsnek]: https://github.com/devsnek
 
 
 ## 0.3.1 ‘Some Checks Haven’t Completed Yet’
