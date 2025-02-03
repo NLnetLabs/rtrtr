@@ -10,10 +10,14 @@ New
 
 Bug fixes
 
+* Fix rtr-tls target having certificate and key options reversed. ([#133] by [@ember-ana])
+
 Other changes
 
 [#132]: https://github.com/NLnetLabs/rtrtr/pull/132
+[#133]: https://github.com/NLnetLabs/rtrtr/pull/133
 [@devsnek]: https://github.com/devsnek
+[@ember-ana]: https://github.com/ember-ana
 
 
 ## 0.3.1 ‘Some Checks Haven’t Completed Yet’
