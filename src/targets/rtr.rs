@@ -151,7 +151,7 @@ impl Tls {
     ) -> Result<(), ExitError> {
         let acceptor = TlsAcceptor::from(Arc::new(
             tls::create_server_config(
-                component.name(), &self.certificate, &self.key
+                component.name(), &self.key, &self.certificate
             )?
         ));
         let notify = NotifySender::new();
