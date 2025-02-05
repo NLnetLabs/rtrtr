@@ -187,7 +187,7 @@ impl From<Aspa> for JsonAspa {
                 .payload
                 .providers
                 .iter()
-                .map(|asn| JsonAsn(asn))
+                .map(JsonAsn)
                 .collect(),
         }
     }
