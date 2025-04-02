@@ -76,15 +76,18 @@ impl Vrp {
 impl TryFrom<JsonVrp> for Vrp {
     type Error = MaxLenError;
 
-    fn try_from(json: JsonVrp) -> Result<Self, Self::Error> {
-        MaxLenPrefix::new(json.prefix, Some(json.max_length)).map(|prefix| {
-            Vrp {
-                payload: RouteOrigin::new(prefix, json.asn),
-            }
+    fn try_from(
+        JsonVrp {
+            prefix,
+            max_length,
+            asn: JsonAsn(asn),
+        }: JsonVrp,
+    ) -> Result<Self, Self::Error> {
+        MaxLenPrefix::new(prefix, Some(max_length)).map(|prefix| Vrp {
+            payload: RouteOrigin::new(prefix, asn),
         })
     }
 }
-
 
 //------------ Aspa ----------------------------------------------------------
 
@@ -104,20 +107,36 @@ impl Aspa {
 impl TryFrom<JsonAspa> for Aspa {
     type Error = ProviderAsnsError;
 
-    fn try_from(json: JsonAspa) -> Result<Self, Self::Error> {
-        let providers = ProviderAsns::try_from_iter(json.providers.into_iter())?;
+    fn try_from(
+        JsonAspa {
+            providers,
+            customer: JsonAsn(customer),
+        }: JsonAspa,
+    ) -> Result<Self, Self::Error> {
+        let provider_asns =
+            ProviderAsns::try_from_iter(providers.into_iter().map(|JsonAsn(asn)| asn))?;
         Ok(Self {
             payload: AspaPayload {
-                customer: json.customer_asid,
-                providers,
+                customer,
+                providers: provider_asns,
             },
         })
     }
 }
 
-
 //============ Serialization =================================================
 
+//------------ JsonAsn -------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct JsonAsn(
+    #[serde(
+        serialize_with = "Asn::serialize_as_str",
+        deserialize_with = "Asn::deserialize_from_any"
+    )]
+    Asn,
+);
 
 //------------ JsonVrp -------------------------------------------------------
 
@@ -130,11 +149,7 @@ struct JsonVrp {
     prefix: Prefix,
 
     /// The ASN member.
-    #[serde(
-        serialize_with = "Asn::serialize_as_str",
-        deserialize_with = "Asn::deserialize_from_any",
-    )]
-    asn: Asn,
+    asn: JsonAsn,
 
     /// The max-length member.
     #[serde(rename = "maxLength")]
@@ -145,7 +160,7 @@ impl From<Vrp> for JsonVrp {
     fn from(vrp: Vrp) -> Self {
         JsonVrp {
             prefix: vrp.payload.prefix.prefix(),
-            asn: vrp.payload.asn,
+            asn: JsonAsn(vrp.payload.asn),
             max_length: vrp.payload.prefix.resolved_max_len(),
         }
     }
@@ -156,16 +171,24 @@ impl From<Vrp> for JsonVrp {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct JsonAspa {
     /// The customer ASN.
-    customer_asid: Asn,
+    ///
+    /// For rpki-client compatibility, "customer_asid" is also supported
+    #[serde(alias = "customer_asid")]
+    customer: JsonAsn,
     /// The provider ASNs.
-    providers: Vec<Asn>,
+    providers: Vec<JsonAsn>,
 }
 
 impl From<Aspa> for JsonAspa {
     fn from(aspa: Aspa) -> Self {
         Self {
-            customer_asid: aspa.payload.customer,
-            providers: aspa.payload.providers.iter().collect(),
+            customer: JsonAsn(aspa.payload.customer),
+            providers: aspa
+                .payload
+                .providers
+                .iter()
+                .map(JsonAsn)
+                .collect(),
         }
     }
 }
@@ -236,7 +259,7 @@ fn format_origin(origin: RouteOrigin, last: bool) -> Vec<u8> {
 
 fn format_aspa(aspa: AspaPayload, last: bool) -> Vec<u8> {
     format!(
-        r#"    {{ "customer_asid": {}, "providers": {:?} }}{}"#,
+        r#"    {{ "customer": {}, "providers": {:?} }}{}"#,
         aspa.customer.into_u32(),
         aspa.providers.iter().map(|a| a.into_u32()).collect::<Vec<_>>(),
         if last { "\n" } else { ",\n" },
@@ -408,14 +431,14 @@ mod test {
             s(vec![
                 Payload::Aspa(AspaPayload { customer: 42u32.into(), providers: ProviderAsns::try_from_iter(vec![44u32.into(), 45u32.into()]).unwrap() }),
             ]),
-            "{\n  \"aspas\": [\n    { \"customer_asid\": 42, \"providers\": [44, 45] }\n  ]\n}",
+            "{\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] }\n  ]\n}",
         );
         assert_eq!(
             s(vec![
                 Payload::Aspa(AspaPayload { customer: 42u32.into(), providers: ProviderAsns::try_from_iter(vec![44u32.into(), 45u32.into()]).unwrap() }),
                 Payload::Aspa(AspaPayload { customer: 45u32.into(), providers: ProviderAsns::try_from_iter(vec![46u32.into(), 47u32.into()]).unwrap() }),
             ]),
-            "{\n  \"aspas\": [\n    { \"customer_asid\": 42, \"providers\": [44, 45] },\n    { \"customer_asid\": 45, \"providers\": [46, 47] }\n  ]\n}",
+            "{\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] },\n    { \"customer\": 45, \"providers\": [46, 47] }\n  ]\n}",
         );
 
         assert_eq!(
@@ -425,7 +448,7 @@ mod test {
                 Payload::Aspa(AspaPayload { customer: 45u32.into(), providers: ProviderAsns::try_from_iter(vec![46u32.into(), 47u32.into()]).unwrap() }),
                 Payload::Origin(RouteOrigin::new(MaxLenPrefix::new("fd00:1235::/32".parse().unwrap(), Some(48)).unwrap(), 42u32.into())),
             ]),
-            "{\n  \"roas\": [\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1234::/32\", \"maxLength\": 48, \"ta\": \"N/A\" },\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1235::/32\", \"maxLength\": 48, \"ta\": \"N/A\" }\n  ],\n  \"aspas\": [\n    { \"customer_asid\": 42, \"providers\": [44, 45] },\n    { \"customer_asid\": 45, \"providers\": [46, 47] }\n  ]\n}",
+            "{\n  \"roas\": [\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1234::/32\", \"maxLength\": 48, \"ta\": \"N/A\" },\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1235::/32\", \"maxLength\": 48, \"ta\": \"N/A\" }\n  ],\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] },\n    { \"customer\": 45, \"providers\": [46, 47] }\n  ]\n}",
         );
     }
 }

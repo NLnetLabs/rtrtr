@@ -7,6 +7,7 @@ Breaking changes
 New
 
 * Add ASPA support to JSON input and output. ([#132] by [@devsnek])
+* ASPA JSON compatibility with krill & routinator ([#134] by [@ember-ana])
 
 Bug fixes
 
@@ -16,6 +17,7 @@ Other changes
 
 [#132]: https://github.com/NLnetLabs/rtrtr/pull/132
 [#133]: https://github.com/NLnetLabs/rtrtr/pull/133
+[#134]: https://github.com/NLnetLabs/rtrtr/pull/134
 [@devsnek]: https://github.com/devsnek
 [@ember-ana]: https://github.com/ember-ana
 
