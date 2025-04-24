@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "rtrtr"
-version = "0.3.2-rc1"
+version = "0.3.2-dev"
 dependencies = [
  "arbitrary",
  "arc-swap",

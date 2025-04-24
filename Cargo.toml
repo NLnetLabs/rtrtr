@@ -1,6 +1,6 @@
 [package]
 name = "rtrtr"
-version = "0.3.2-rc1"
+version = "0.3.2-dev"
 edition = "2021"
 rust-version = "1.81.0"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
