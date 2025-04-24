@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crossbeam_utils::atomic::AtomicCell;
 use futures_util::future::{select, select_all, Either, FutureExt};
 use log::debug;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use serde::Deserialize;
 use crate::{metrics, payload};
 use crate::metrics::{Metric, MetricType, MetricUnit};
@@ -126,7 +126,7 @@ impl Any {
         // source at random and then loop around. That’s not truly random but
         // deterministic.
         let mut next = if self.random {
-            thread_rng().gen_range(0..self.sources.len())
+            rand::rng().random_range(0..self.sources.len())
         }
         else if let Some(curr) = curr {
             (curr + 1) % self.sources.len()
