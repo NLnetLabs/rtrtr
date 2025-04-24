@@ -231,6 +231,21 @@ identity
       The certificate is used when communicating with an HTTPS server to
       fetch the JSON data.
 
+tls-12
+      A boolean value specifying whether the maximum TLS version to use when
+      fetching an ``https:`` URI should be TLS 1.2. If this value is missing
+      or ``false``, TLS 1.3 is used as well.
+
+native-tls
+      A boolean value specifying whether the native TLS implementation should
+      be used when fetching ``https:`` URIs. If enabled, RTRTR will use
+      SChannel on Windows, Security.framework on macOS, and OpenSSL
+      anywhere else. Otherwise, Rustls is used everywhere.
+
+      This option is only available if RTRTR was explicitly build with the
+      ``native-tls`` feature flag. 
+
+
 Any Unit
 --------
 
