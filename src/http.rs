@@ -266,7 +266,7 @@ impl Resources {
 impl fmt::Debug for Resources {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let len = self.sources.load().len();
-        write!(f, "Resource({} processors)", len)
+        write!(f, "Resource({len} processors)")
     }
 }
 

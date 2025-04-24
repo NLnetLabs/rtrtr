@@ -102,7 +102,7 @@ impl Component {
                 Ok(proxy) => proxy,
                 Err(err) => {
                     return Err(format!(
-                        "Invalid rrdp-proxy '{}': {}", proxy, err
+                        "Invalid rrdp-proxy '{proxy}': {err}"
                     ));
                 }
             };
@@ -238,7 +238,7 @@ impl Manager {
                     for mut link in load.links {
                         link.resolve_config(&file);
                         errs.push(link.mark(
-                            format!("unresolved link to unit '{}'", name)
+                            format!("unresolved link to unit '{name}'")
                         ))
                     }
                 }
@@ -292,7 +292,7 @@ impl Manager {
             if let Some(gate) = load.gate {
                 if !units.units.contains_key(&name) {
                     errs.push(
-                        format!("unresolved link to unit '{}'", name)
+                        format!("unresolved link to unit '{name}'")
                     )
                 }
                 else {

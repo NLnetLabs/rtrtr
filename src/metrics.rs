@@ -101,7 +101,7 @@ impl Collection {
 impl fmt::Debug for Collection {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let len = self.sources.load().len();
-        write!(f, "Collection({} sources)", len)
+        write!(f, "Collection({len} sources)")
     }
 }
 
@@ -287,14 +287,14 @@ impl Records<'_> {
                 );
                 if let Some(unit_name) = self.unit_name {
                     write!(&mut self.target.target,
-                        "{{component=\"{}\"}}", unit_name
+                        "{{component=\"{unit_name}\"}}"
                     ).unwrap();
                 }
-                writeln!(&mut self.target.target, " {}", value).unwrap()
+                writeln!(&mut self.target.target, " {value}").unwrap()
             }
             OutputFormat::Plain => {
                 self.target.append_metric_name(self.metric, self.unit_name);
-                writeln!(&mut self.target.target, ": {}", value).unwrap()
+                writeln!(&mut self.target.target, ": {value}").unwrap()
             }
         }
     }
@@ -316,33 +316,33 @@ impl Records<'_> {
                 let mut comma = false;
                 if let Some(unit_name) = self.unit_name {
                     write!(&mut self.target.target,
-                        "component=\"{}\"", unit_name
+                        "component=\"{unit_name}\""
                     ).unwrap();
                     comma = true;
                 }
                 for (name, value) in labels {
                     if comma {
                         write!(&mut self.target.target,
-                            ", {}=\"{}\"", name, value
+                            ", {name}=\"{value}\""
                         ).unwrap();
                     }
                     else {
                         write!(&mut self.target.target,
-                            "{}=\"{}\"", name, value
+                            "{name}=\"{value}\""
                         ).unwrap();
                         comma = true;
                     }
                 }
-                writeln!(&mut self.target.target, "}} {}", value).unwrap()
+                writeln!(&mut self.target.target, "}} {value}").unwrap()
             }
             OutputFormat::Plain => {
                 self.target.append_metric_name(self.metric, self.unit_name);
                 for (name, value) in labels {
                     write!(&mut self.target.target,
-                        " {}={}", name, value
+                        " {name}={value}"
                     ).unwrap();
                 }
-                writeln!(&mut self.target.target, ": {}", value).unwrap()
+                writeln!(&mut self.target.target, ": {value}").unwrap()
             }
         }
     }
