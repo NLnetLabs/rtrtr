@@ -382,9 +382,8 @@ impl SourceReader {
             }
             Reader::Http(ref mut response) => {
                 let chunk = self.rt.block_on(response.chunk()).map_err(|err| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("failed to read HTTP response: {}", err)
+                    io::Error::other(
+                        format!("failed to read HTTP response: {err}")
                     )
                 })?;
                 self.chunk = match chunk {

@@ -110,7 +110,7 @@ impl TargetController {
 
         match self.rx.try_recv() {
             Ok(update) => {
-                Err(format!("expected no update, got {:?}", update))
+                Err(format!("expected no update, got {update:?}"))
             }
             Err(TryRecvError::Empty) => Ok(()),
             Err(TryRecvError::Disconnected) => {
@@ -126,14 +126,14 @@ impl TargetController {
     pub async fn recv_payload(&mut self) -> Result<payload::Update, String> {
         match self.recv().await? {
             UnitUpdate::Payload(payload) => Ok(payload),
-            other => Err(format!("expected payload, got {:?}", other)),
+            other => Err(format!("expected payload, got {other:?}")),
         }
     }
 
     pub async fn recv_stalled(&mut self) -> Result<(), String> {
         match self.recv().await? {
             UnitUpdate::Stalled => Ok(()),
-            other => Err(format!("expected stalled status, got {:?}", other))
+            other => Err(format!("expected stalled status, got {other:?}"))
         }
     }
 }
