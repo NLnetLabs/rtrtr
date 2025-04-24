@@ -43,6 +43,8 @@ nix             = { version = "0.29.0", features = ["fs", "mman", "net", "proces
 [features]
 default = [ "socks" ]
 arbitrary = [ "dep:arbitrary", "chrono/arbitrary", "rpki/arbitrary" ]
+native-tls = [ "reqwest/native-tls" ]
+native-tls-vendored = [ "reqwest/native-tls-vendored" ]
 socks = [ "reqwest/socks" ]
 
 [dev-dependencies]

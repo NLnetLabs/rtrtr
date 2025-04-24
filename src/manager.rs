@@ -122,6 +122,11 @@ impl Component {
             }
         );
 
+        #[cfg(feature = "native-tls")]
+        {
+            builder = builder.use_native_tls();
+        }
+
         if let Some(addr) = self.http_config.local_addr {
             builder = builder.local_address(addr)
         }
