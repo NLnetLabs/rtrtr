@@ -8,18 +8,32 @@ New
 
 * Add ASPA support to JSON input and output. ([#132] by [@devsnek])
 * ASPA JSON compatibility with krill & routinator ([#134] by [@ember-ana])
+* The `json` can now use the native TLS implementations of Windows and
+  macOS. This needs to be enabled during compile time through the
+  `native-tls` feature and then for a unit through the new `native-tls`
+  option. When enabled, this uses TLS via OpenSSL rather than Rustls on
+  other systems. ([#137])
+* The `json` unit can now be forced to stick to TLS 1.2 or less via the
+  new `tls-12` option. ([#137])
 
 Bug fixes
 
-* Fix rtr-tls target having certificate and key options reversed. ([#133] by [@ember-ana])
+* Fix rtr-tls target having certificate and key options reversed. ([#133]
+  by [@ember-ana])
+* Fixes to RTR handling via [rpki-rs 0.18.6].
 
 Other changes
+
+* The minimum supported Rust version is now 1.81. ([#138])
 
 [#132]: https://github.com/NLnetLabs/rtrtr/pull/132
 [#133]: https://github.com/NLnetLabs/rtrtr/pull/133
 [#134]: https://github.com/NLnetLabs/rtrtr/pull/134
+[#137]: https://github.com/NLnetLabs/rtrtr/pull/137
+[#138]: https://github.com/NLnetLabs/rtrtr/pull/138
 [@devsnek]: https://github.com/devsnek
 [@ember-ana]: https://github.com/ember-ana
+[rpki-rs 0.18.6]: https://github.com/NLnetLabs/rpki-rs/releases/tag/v0.18.6
 
 
 ## 0.3.1 ‘Some Checks Haven’t Completed Yet’
