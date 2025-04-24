@@ -1,8 +1,8 @@
 # Change Log
 
-## Unreleased next version
+## 0.3.2-rc1
 
-Breaking changes
+Released 2025-04-24.
 
 New
 
@@ -21,6 +21,9 @@ Bug fixes
 * Fix rtr-tls target having certificate and key options reversed. ([#133]
   by [@ember-ana])
 * Fixes to RTR handling via [rpki-rs 0.18.6].
+* The `working-dir` option was accidentally used as the path for the PID
+  file. Now the `pid-file` option is used as intended. (via
+  [daemonbase 0.1.3])
 
 Other changes
 
@@ -34,6 +37,8 @@ Other changes
 [@devsnek]: https://github.com/devsnek
 [@ember-ana]: https://github.com/ember-ana
 [rpki-rs 0.18.6]: https://github.com/NLnetLabs/rpki-rs/releases/tag/v0.18.6
+[daemonbase 0.1.3]: https://github.com/NLnetLabs/daemonbase/releases/tag/v0.1.3
+
 
 
 ## 0.3.1 ‘Some Checks Haven’t Completed Yet’
