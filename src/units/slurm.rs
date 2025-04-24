@@ -6,7 +6,7 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime};
 use arc_swap::ArcSwap;
 use daemonbase::config::ConfigPath;
-use log::debug;
+use log::{debug, error};
 use rpki::slurm::{SlurmFile, ValidationOutputFilters};
 use serde::Deserialize;
 use tokio::sync::Notify;
@@ -170,9 +170,15 @@ impl ExceptionSetData {
                     modified.iter_mut().zip(self.files.iter())
                 )
             {
-                // We simply ignore any errors for now.
-                if let Ok(true) = Self::update_file(path, modified, content) {
-                    updated = true;
+                match Self::update_file(path, modified, content) {
+                    Ok(true) => updated = true,
+                    Ok(false) => { }
+                    Err(err) => {
+                        error!(
+                            "Failed to read SLURM file {}: {}",
+                            path.display(), err
+                        );
+                    }
                 }
             }
 
@@ -199,14 +205,16 @@ impl ExceptionSetData {
             }
         }
 
-        content.store(Arc::new(
+        let slurm = fs::File::open(path).and_then(|file| {
             SlurmFile::from_reader(
-                io::BufReader::new(
-                    fs::File::open(path)?
-                )
-            )?.into()
-        ));
+                io::BufReader::new(file)
+            ).map_err(Into::into)
+        });
+
         *old_modified = Some(new_modified);
+
+        let slurm = slurm?;
+        content.store(Arc::new(slurm.into()));
         debug!("Updated Slurm file {}", path.display());
         Ok(true)
     }

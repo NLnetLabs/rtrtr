@@ -2,8 +2,48 @@
 
 ## Unreleased next version
 
-Bug Fixes
+Breaking changes
 
+New
+
+* Add ASPA support to JSON input and output. ([#132] by [@devsnek])
+* ASPA JSON compatibility with krill & routinator ([#134] by [@ember-ana])
+
+Bug fixes
+
+* Fix rtr-tls target having certificate and key options reversed. ([#133] by [@ember-ana])
+
+Other changes
+
+[#132]: https://github.com/NLnetLabs/rtrtr/pull/132
+[#133]: https://github.com/NLnetLabs/rtrtr/pull/133
+[#134]: https://github.com/NLnetLabs/rtrtr/pull/134
+[@devsnek]: https://github.com/devsnek
+[@ember-ana]: https://github.com/ember-ana
+
+
+## 0.3.1 ‘Some Checks Haven’t Completed Yet’
+
+Released 2025-01-09.
+
+There have been no changes since 0.3.1-rc3.
+
+
+## 0.3.1-rc3
+
+Released 2025-01-03.
+
+Bug fixes
+
+* Log a message when a Slurm file fails to load. ([082b7db])
+
+Other changes
+
+* Removed building of packages for Ubuntu 16.04 and 18.04 and Debian
+  Stretch and added Ubuntu 24.04.
+
+[#130]: https://github.com/NLnetLabs/rtrtr/pull/130
+[082b7db]: https://github.com/NLnetLabs/rtrtr/commit/082b7db8bed80375d3466b4a9ffdf7a818051459
 
 ## 0.3.1-rc2
 

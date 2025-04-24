@@ -1,8 +1,8 @@
 [package]
 name = "rtrtr"
-version = "0.3.1-dev"
+version = "0.3.2-dev"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.74.1"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 description = "A versatile tool for managing route filters"
 repository = "https://github.com/NLnetLabs/rtrtr"
@@ -26,7 +26,7 @@ log             = "0.4"
 pin-project-lite = "0.2.4"
 rand            = "0.8.3"
 reqwest         = { version = "0.12.5", default-features = false, features = ["blocking", "rustls-tls"] }
-rpki            = { version = "0.18.2", features = ["crypto", "rtr", "slurm"] }
+rpki            = { version = "0.18.5", features = ["crypto", "rtr", "slurm"] }
 rustls-pemfile  = "2.1.2"
 serde           = { version = "1", features = ["derive"] }
 serde_json      = "1"
@@ -46,7 +46,6 @@ arbitrary = [ "dep:arbitrary", "chrono/arbitrary", "rpki/arbitrary" ]
 native-tls = [ "reqwest/native-tls" ]
 native-tls-vendored = [ "reqwest/native-tls-vendored" ]
 socks = [ "reqwest/socks" ]
-
 
 [dev-dependencies]
 stderrlog       = "0.6"

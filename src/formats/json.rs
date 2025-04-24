@@ -19,7 +19,8 @@
 
 use rpki::resources::asn::Asn;
 use rpki::resources::addr::{MaxLenError, MaxLenPrefix, Prefix};
-use rpki::rtr::payload::{RouteOrigin, Payload, PayloadRef};
+use rpki::rtr::payload::{Aspa as AspaPayload, Payload, PayloadRef, RouteOrigin};
+use rpki::rtr::pdu::{ProviderAsns, ProviderAsnsError};
 use rpki::rtr::server::PayloadSet;
 use serde::{Deserialize, Serialize};
 use crate::payload;
@@ -34,6 +35,8 @@ use crate::payload;
 pub struct Set {
     /// The list of VRPs.
     roas: Vec<Vrp>,
+    /// The list of ASPAs.
+    aspas: Option<Vec<Aspa>>,
 }
 
 impl Set {
@@ -42,6 +45,11 @@ impl Set {
         let mut res = payload::PackBuilder::empty();
         for item in self.roas {
             let _ = res.insert(item.into_payload());
+        }
+        if let Some(aspas) = self.aspas {
+            for item in aspas {
+                let _ = res.insert(item.into_payload());
+            }
         }
         res.finalize().into()
     }
@@ -68,18 +76,67 @@ impl Vrp {
 impl TryFrom<JsonVrp> for Vrp {
     type Error = MaxLenError;
 
-    fn try_from(json: JsonVrp) -> Result<Self, Self::Error> {
-        MaxLenPrefix::new(json.prefix, Some(json.max_length)).map(|prefix| {
-            Vrp {
-                payload: RouteOrigin::new(prefix, json.asn),
-            }
+    fn try_from(
+        JsonVrp {
+            prefix,
+            max_length,
+            asn: JsonAsn(asn),
+        }: JsonVrp,
+    ) -> Result<Self, Self::Error> {
+        MaxLenPrefix::new(prefix, Some(max_length)).map(|prefix| Vrp {
+            payload: RouteOrigin::new(prefix, asn),
         })
     }
 }
 
+//------------ Aspa ----------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(try_from = "JsonAspa", into = "JsonAspa")]
+struct Aspa {
+    /// The payload of the ASPA.
+    payload: AspaPayload,
+}
+
+impl Aspa {
+    fn into_payload(self) -> Payload {
+        Payload::Aspa(self.payload)
+    }
+}
+
+impl TryFrom<JsonAspa> for Aspa {
+    type Error = ProviderAsnsError;
+
+    fn try_from(
+        JsonAspa {
+            providers,
+            customer: JsonAsn(customer),
+        }: JsonAspa,
+    ) -> Result<Self, Self::Error> {
+        let provider_asns =
+            ProviderAsns::try_from_iter(providers.into_iter().map(|JsonAsn(asn)| asn))?;
+        Ok(Self {
+            payload: AspaPayload {
+                customer,
+                providers: provider_asns,
+            },
+        })
+    }
+}
 
 //============ Serialization =================================================
 
+//------------ JsonAsn -------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+struct JsonAsn(
+    #[serde(
+        serialize_with = "Asn::serialize_as_str",
+        deserialize_with = "Asn::deserialize_from_any"
+    )]
+    Asn,
+);
 
 //------------ JsonVrp -------------------------------------------------------
 
@@ -90,13 +147,9 @@ impl TryFrom<JsonVrp> for Vrp {
 struct JsonVrp {
     /// The prefix member.
     prefix: Prefix,
-    
+
     /// The ASN member.
-    #[serde(
-        serialize_with = "Asn::serialize_as_str",
-        deserialize_with = "Asn::deserialize_from_any",
-    )]
-    asn: Asn,
+    asn: JsonAsn,
 
     /// The max-length member.
     #[serde(rename = "maxLength")]
@@ -107,12 +160,38 @@ impl From<Vrp> for JsonVrp {
     fn from(vrp: Vrp) -> Self {
         JsonVrp {
             prefix: vrp.payload.prefix.prefix(),
-            asn: vrp.payload.asn,
+            asn: JsonAsn(vrp.payload.asn),
             max_length: vrp.payload.prefix.resolved_max_len(),
         }
     }
 }
 
+//------------ JsonAspa ------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct JsonAspa {
+    /// The customer ASN.
+    ///
+    /// For rpki-client compatibility, "customer_asid" is also supported
+    #[serde(alias = "customer_asid")]
+    customer: JsonAsn,
+    /// The provider ASNs.
+    providers: Vec<JsonAsn>,
+}
+
+impl From<Aspa> for JsonAspa {
+    fn from(aspa: Aspa) -> Self {
+        Self {
+            customer: JsonAsn(aspa.payload.customer),
+            providers: aspa
+                .payload
+                .providers
+                .iter()
+                .map(JsonAsn)
+                .collect(),
+        }
+    }
+}
 
 //============ Output ========================================================
 
@@ -128,19 +207,34 @@ pub struct OutputStream {
 }
 
 /// The state of the stream.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum StreamState {
-    /// We need to write the header next.
-    Header,
+    /// `{`
+    Start,
 
-    /// We need to write the first element next.
-    First,
+    /// `"roas": [`
+    RoaStart,
 
-    /// We need to write more elements.
-    Body,
+    /// { .. }
+    RoaBody,
 
-    /// We are done!
-    Done
+    /// `"]"`
+    RoaEnd,
+
+    /// `"aspas": [`
+    AspaStart,
+
+    /// { .. }
+    AspaBody,
+
+    /// `']'`
+    AspaEnd,
+
+    /// `'}'`
+    End,
+
+    /// None
+    Done,
 }
 
 impl OutputStream {
@@ -148,20 +242,28 @@ impl OutputStream {
     pub fn new(set: payload::Set) -> Self {
         OutputStream {
             iter: set.into_owned_iter(),
-            state: StreamState::Header,
+            state: StreamState::Start,
         }
     }
+}
 
-    /// Returns the next route origin in the payload set.
-    pub fn next_origin(&mut self) -> Option<RouteOrigin> {
-        loop {
-            match self.iter.next() {
-                Some(PayloadRef::Origin(value)) => return Some(value),
-                None => return None,
-                _ => {}
-            }
-        }
-    }
+fn format_origin(origin: RouteOrigin, last: bool) -> Vec<u8> {
+    format!(
+        r#"    {{ "asn": "{}", "prefix": "{}", "maxLength": {}, "ta": "N/A" }}{}"#,
+        origin.asn,
+        origin.prefix.prefix(),
+        origin.prefix.resolved_max_len(),
+        if last { "\n" } else { ",\n" },
+    ).into_bytes()
+}
+
+fn format_aspa(aspa: AspaPayload, last: bool) -> Vec<u8> {
+    format!(
+        r#"    {{ "customer": {}, "providers": {:?} }}{}"#,
+        aspa.customer.into_u32(),
+        aspa.providers.iter().map(|a| a.into_u32()).collect::<Vec<_>>(),
+        if last { "\n" } else { ",\n" },
+    ).into_bytes()
 }
 
 impl Iterator for OutputStream {
@@ -169,49 +271,85 @@ impl Iterator for OutputStream {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {
-            StreamState::Header => {
-                self.state = StreamState::First;
-                Some(b"{\n  \"roas\": [\n".to_vec())
+            StreamState::Start => {
+                self.state = match self.iter.peek() {
+                    Some(Payload::Origin(_)) => StreamState::RoaStart,
+                    Some(Payload::Aspa(_)) => StreamState::AspaStart,
+                    Some(Payload::RouterKey(_)) => StreamState::End,
+                    None => StreamState::End,
+                };
+                Some(b"{\n".to_vec())
             }
-            StreamState::First => {
-                match self.next_origin() {
-                    Some(payload) => {
-                        self.state = StreamState::Body;
-                        Some(format!(
-                            "    {{ \"asn\": \"{}\", \"prefix\": \"{}\", \
-                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
-                            payload.asn,
-                            payload.prefix.prefix(),
-                            payload.prefix.resolved_max_len(),
-                        ).into_bytes())
-                    }
-                    None => {
-                        self.state = StreamState::Done;
-                        Some(b"\n  ]\n}".to_vec())
-                    }
+            StreamState::RoaStart => {
+                self.state = StreamState::RoaBody;
+                Some(b"  \"roas\": [\n".to_vec())
+            }
+            StreamState::RoaBody => {
+                let Some(PayloadRef::Origin(payload)) = self.iter.next() else {
+                    unreachable!();
+                };
+
+                self.state = match self.iter.peek() {
+                    Some(Payload::Origin(_)) => StreamState::RoaBody,
+                    Some(Payload::Aspa(_)) => StreamState::RoaEnd,
+                    Some(Payload::RouterKey(_)) => StreamState::RoaEnd,
+                    None => StreamState::RoaEnd,
+                };
+
+                let last = self.state != StreamState::RoaBody;
+                Some(format_origin(payload, last))
+            }
+            StreamState::RoaEnd => {
+                self.state = match self.iter.peek() {
+                    Some(Payload::Origin(_)) => unreachable!(),
+                    Some(Payload::Aspa(_)) => StreamState::AspaStart,
+                    Some(Payload::RouterKey(_)) => StreamState::End,
+                    None => StreamState::End,
+                };
+                if self.state == StreamState::End {
+                    Some(b"  ]\n".to_vec())
+                } else {
+                    Some(b"  ],\n".to_vec())
                 }
             }
-            StreamState::Body => {
-                match self.next_origin() {
-                    Some(payload) => {
-                        Some(format!(
-                            ",\n    \
-                            {{ \"asn\": \"{}\", \"prefix\": \"{}\", \
-                            \"maxLength\": {}, \"ta\": \"N/A\" }}",
-                            payload.asn,
-                            payload.prefix.prefix(),
-                            payload.prefix.resolved_max_len(),
-                        ).into_bytes())
-                    }
-                    None => {
-                        self.state = StreamState::Done;
-                        Some(b"\n  ]\n}".to_vec())
-                    }
+            StreamState::AspaStart => {
+                self.state = StreamState::AspaBody;
+                Some(b"  \"aspas\": [\n".to_vec())
+            }
+            StreamState::AspaBody => {
+                let Some(PayloadRef::Aspa(payload)) = self.iter.next() else {
+                    unreachable!();
+                };
+                let payload = payload.clone();
+
+                self.state = match self.iter.peek() {
+                    Some(Payload::Origin(_)) => unreachable!(),
+                    Some(Payload::Aspa(_)) => StreamState::AspaBody,
+                    Some(Payload::RouterKey(_)) => StreamState::AspaEnd,
+                    None => StreamState::AspaEnd,
+                };
+
+                let last = self.state != StreamState::AspaBody;
+                Some(format_aspa(payload, last))
+            }
+            StreamState::AspaEnd => {
+                self.state = match self.iter.peek() {
+                    Some(Payload::Origin(_)) => unreachable!(),
+                    Some(Payload::Aspa(_)) => unreachable!(),
+                    Some(Payload::RouterKey(_)) => StreamState::End,
+                    None => StreamState::End,
+                };
+                if self.state == StreamState::End {
+                    Some(b"  ]\n".to_vec())
+                } else {
+                    Some(b"  ],\n".to_vec())
                 }
             }
-            StreamState::Done => {
-                None
+            StreamState::End => {
+                self.state = StreamState::Done;
+                Some(b"}".to_vec())
             }
+            StreamState::Done => None,
         }
     }
 }
@@ -256,6 +394,62 @@ mod test {
         check_set(serde_json::from_slice::<Set>(
             include_bytes!("../../test-data/vrps.rpki-client.json")
         ).unwrap());
+    }
+
+    #[test]
+    fn serialize() {
+        fn s(items: Vec<Payload>) -> String {
+            let mut res = payload::PackBuilder::empty();
+            for item in items {
+                res.insert(item).unwrap();
+            }
+            let set: payload::Set = res.finalize().into();
+            let output = OutputStream::new(set);
+            let mut out = vec![];
+            for item in output {
+                out.extend_from_slice(&item);
+            }
+            String::from_utf8(out).unwrap()
+        }
+
+        assert_eq!(s(vec![]), "{\n}");
+        assert_eq!(
+            s(vec![
+                Payload::Origin(RouteOrigin::new(MaxLenPrefix::new("fd00:1234::/32".parse().unwrap(), Some(48)).unwrap(), 42u32.into())),
+            ]),
+            "{\n  \"roas\": [\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1234::/32\", \"maxLength\": 48, \"ta\": \"N/A\" }\n  ]\n}"
+        );
+        assert_eq!(
+            s(vec![
+                Payload::Origin(RouteOrigin::new(MaxLenPrefix::new("fd00:1234::/32".parse().unwrap(), Some(48)).unwrap(), 42u32.into())),
+                Payload::Origin(RouteOrigin::new(MaxLenPrefix::new("fd00:1235::/32".parse().unwrap(), Some(48)).unwrap(), 42u32.into())),
+            ]),
+            "{\n  \"roas\": [\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1234::/32\", \"maxLength\": 48, \"ta\": \"N/A\" },\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1235::/32\", \"maxLength\": 48, \"ta\": \"N/A\" }\n  ]\n}",
+        );
+
+        assert_eq!(
+            s(vec![
+                Payload::Aspa(AspaPayload { customer: 42u32.into(), providers: ProviderAsns::try_from_iter(vec![44u32.into(), 45u32.into()]).unwrap() }),
+            ]),
+            "{\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] }\n  ]\n}",
+        );
+        assert_eq!(
+            s(vec![
+                Payload::Aspa(AspaPayload { customer: 42u32.into(), providers: ProviderAsns::try_from_iter(vec![44u32.into(), 45u32.into()]).unwrap() }),
+                Payload::Aspa(AspaPayload { customer: 45u32.into(), providers: ProviderAsns::try_from_iter(vec![46u32.into(), 47u32.into()]).unwrap() }),
+            ]),
+            "{\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] },\n    { \"customer\": 45, \"providers\": [46, 47] }\n  ]\n}",
+        );
+
+        assert_eq!(
+            s(vec![
+                Payload::Aspa(AspaPayload { customer: 42u32.into(), providers: ProviderAsns::try_from_iter(vec![44u32.into(), 45u32.into()]).unwrap() }),
+                Payload::Origin(RouteOrigin::new(MaxLenPrefix::new("fd00:1234::/32".parse().unwrap(), Some(48)).unwrap(), 42u32.into())),
+                Payload::Aspa(AspaPayload { customer: 45u32.into(), providers: ProviderAsns::try_from_iter(vec![46u32.into(), 47u32.into()]).unwrap() }),
+                Payload::Origin(RouteOrigin::new(MaxLenPrefix::new("fd00:1235::/32".parse().unwrap(), Some(48)).unwrap(), 42u32.into())),
+            ]),
+            "{\n  \"roas\": [\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1234::/32\", \"maxLength\": 48, \"ta\": \"N/A\" },\n    { \"asn\": \"AS42\", \"prefix\": \"fd00:1235::/32\", \"maxLength\": 48, \"ta\": \"N/A\" }\n  ],\n  \"aspas\": [\n    { \"customer\": 42, \"providers\": [44, 45] },\n    { \"customer\": 45, \"providers\": [46, 47] }\n  ]\n}",
+        );
     }
 }
 
