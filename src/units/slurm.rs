@@ -283,7 +283,7 @@ mod test {
         fn random_pack<T: Rng>(rng: &mut T, len: usize) -> payload::Pack {
             let mut res = payload::PackBuilder::empty();
             for _ in 0..len {
-                res.insert_unchecked(testrig::p(rng.gen()))
+                res.insert_unchecked(testrig::p(rng.random()))
             }
             res.finalize()
         }
@@ -322,7 +322,8 @@ mod test {
                         _ => None
                     }
                 }).collect(),
-                bgpsec: Vec::new()
+                bgpsec: Vec::new(),
+                aspa: None,
             },
             assertions: p3
         };

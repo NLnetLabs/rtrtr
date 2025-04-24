@@ -398,7 +398,7 @@ where
                 Ok(res) => Ok((state, Some(res))),
                 Err(err) => {
                     client.send_error(err).await?;
-                    Err(io::Error::new(io::ErrorKind::Other, err))
+                    Err(io::Error::other(err))
                 }
             }
         };

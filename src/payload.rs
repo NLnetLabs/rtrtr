@@ -1483,7 +1483,7 @@ mod test {
         fn random_vec<T: Rng>(rng: &mut T, len: usize) -> Vec<Payload> {
             let mut res = Vec::with_capacity(len);
             for _ in 0..len {
-                res.push(p(rng.gen()))
+                res.push(p(rng.random()))
             }
             res
         }

@@ -1,4 +1,4 @@
-/// RTR servers as a target.
+//! RTR servers as a target.
 
 use std::{cmp, io};
 use std::ops::Deref;
@@ -484,7 +484,7 @@ impl RtrStream {
 
             Ok(())
         })(sock, duration).map_err(|err: nix::errno::Errno| {
-            io::Error::new(io::ErrorKind::Other, err)
+            io::Error::other(err)
         })
     }
 
