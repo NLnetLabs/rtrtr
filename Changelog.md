@@ -1,10 +1,10 @@
 # Change Log
 
-## Unreleased next version
+## 0.3.2 ‘Based on a True Story’
 
-Bug fixes
+Released 2025-05-06.
 
-Other changes
+There have been no changes since 0.3.2-rc1.
 
 
 ## 0.3.2-rc1
