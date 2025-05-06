@@ -1,5 +1,16 @@
 # Change Log
 
+## Unreleased future version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.3.2 ‘Based on a True Story’
 
 Released 2025-05-06.
