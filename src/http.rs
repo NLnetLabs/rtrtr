@@ -463,6 +463,7 @@ impl ContentType {
 //------------ Wrapped sockets -----------------------------------------------
 
 /// A TCP stream wrapped for use with Hyper.
+#[allow(dead_code)]
 struct HttpStream {
     sock: TcpStream,
 }
