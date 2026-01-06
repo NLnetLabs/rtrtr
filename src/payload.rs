@@ -157,18 +157,15 @@ impl PackBuilder {
     /// The method fails with an appropriate error if there already is an
     /// element with the given payload in the set.
     pub fn insert(&mut self, payload: Payload) -> Result<(), PayloadError> {
-        match &payload {
+        if let Payload::Aspa(aspa) = &payload {
             // There is only one ASPA, so replace the previous one, whether
             // it's a withdrawal or announcement.
-            Payload::Aspa(aspa) => {
-                self.items.retain(|item| {
-                    match item {
-                        Payload::Aspa(item) => item.customer != aspa.customer,
-                        _ => true
-                    }
-                });
-            },
-            _ => {}
+            self.items.retain(|item| {
+                match item {
+                    Payload::Aspa(item) => item.customer != aspa.customer,
+                    _ => true
+                }
+            });
         };
         if self.items.insert(payload) {
             Ok(())
