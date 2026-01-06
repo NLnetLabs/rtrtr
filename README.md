@@ -3,7 +3,10 @@
 ![CI](https://github.com/NLnetLabs/rtrtr/workflows/ci/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/rtrtr/badge/?version=stable)](https://rtrtr.docs.nlnetlabs.nl/en/stable/?badge=stable)
 [![crates.io](https://img.shields.io/crates/v/rtrtr.svg?color=brightgreen)](https://crates.io/crates/rtrtr)
-[![Discord](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
+
+[![Discuss on Discourse](https://img.shields.io/badge/Discourse-NLnet_Labs-orange?logo=Discourse)](https://community.nlnetlabs.nl/c/rpki/11)
+[![Discord](https://img.shields.io/discord/818584154278199396?label=Discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
+[![Mastodon Follow](https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social)](https://social.nlnetlabs.nl/@nlnetlabs)
 
 RTRTR is an RPKI data proxy, designed to collect Validated ROA Payloads
 from one or more sources in multiple formats and dispatch it onwards. It 
