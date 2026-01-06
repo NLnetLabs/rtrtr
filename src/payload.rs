@@ -162,7 +162,8 @@ impl PackBuilder {
             // it's a withdrawal or announcement.
             self.items.retain(|item| {
                 match item {
-                    Payload::Aspa(item) => item.customer != aspa.customer,
+                    Payload::Aspa(item) => item.customer != aspa.customer
+                     || item.providers == aspa.providers,
                     _ => true
                 }
             });
