@@ -1013,7 +1013,12 @@ impl Diff {
         let res = res.finalize();
         let mut withdrawn: HashSet<_> = self.withdrawn.iter().collect();
         let res = res.filter(|item| {
-            !withdrawn.remove(item)
+            match item {
+                // XXX Maybe we should treat Router Keys separately too?
+                Payload::Aspa(aspa) => 
+                    !withdrawn.remove(&Payload::Aspa(aspa.withdraw())),
+                _ => !withdrawn.remove(item)
+            }
         });
         if !withdrawn.is_empty() {
             Err(PayloadError::UnknownWithdraw)
