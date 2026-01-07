@@ -181,6 +181,11 @@ impl PackBuilder {
         self.items.insert(payload);
     }
 
+    /// Retains only the elements specified by the predicate.
+    pub fn retain<F: FnMut(&Payload) -> bool>(&mut self, f: F) {
+        self.items.retain(f);
+    }
+
     /// Removes an existing element from the set.
     ///
     /// The method fails with an appropriate error if there is no such item.
@@ -963,8 +968,8 @@ impl SetBuilder {
 
 /// The differences between two payload sets.
 ///
-/// This is a list of additions to a set called _announcments_ and a list of
-/// removals called _withdrawals._ When iterated over, these two are provided
+/// This is a list of additions to a set called _announcements_ and a list of
+/// removals called _withdrawals_. When iterated over, these two are provided
 /// as a single list of pairs of [`Payload`] and [`Action`]s in order of the
 /// payload. This makes it relatively safe to apply non-atomically.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1208,6 +1213,18 @@ impl DiffBuilder {
     ) -> Result<(), PayloadError> {
         match action {
             Action::Announce => {
+                if let Payload::Aspa(aspa) = &payload {
+                    let _ = self.withdrawn.remove(
+                        &Payload::Aspa(aspa.withdraw())
+                    );
+                    let _ = self.announced.retain(|item| {
+                        match item {
+                            Payload::Aspa(item) => item.customer != aspa.customer
+                            || item.providers == aspa.providers,
+                            _ => true
+                        }
+                    });
+                }
                 if self.withdrawn.contains(&payload) {
                     return Err(PayloadError::Corrupt)
                 }
@@ -1217,6 +1234,10 @@ impl DiffBuilder {
                 if self.announced.contains(&payload) {
                     return Err(PayloadError::Corrupt)
                 }
+                let payload = match payload {
+                    Payload::Aspa(aspa) => Payload::Aspa(aspa.withdraw()),
+                    _ => payload
+                };
                 self.withdrawn.insert(payload)
             }
         }
@@ -1250,9 +1271,24 @@ impl DiffBuilder {
 
     /// Converts the builder into a diff.
     pub fn finalize(self) -> Diff {
+        let mut withdrawn = self.withdrawn;
+
+        let ann_customers: Vec<_> = self.announced.items.iter()
+            .filter_map(|p| p.as_aspa())
+            .map(|a| a.customer)
+            .collect();
+
+        withdrawn.retain(|item| {
+            match item {
+                Payload::Aspa(aspa) => 
+                    !ann_customers.contains(&aspa.customer),
+                _ => true,
+            }
+        });
+
         Diff {
             announced: self.announced.finalize(),
-            withdrawn: self.withdrawn.finalize(),
+            withdrawn: withdrawn.finalize(),
         }
     }
 }
