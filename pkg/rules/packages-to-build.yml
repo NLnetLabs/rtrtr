@@ -7,24 +7,24 @@ image:
   - "ubuntu:focal"    # ubuntu/20.04
   - "ubuntu:jammy"    # ubuntu/22.04
   - "ubuntu:noble"    # ubuntu/24.04
-  - "debian:buster"   # debian/10
   - "debian:bullseye" # debian/11
   - "debian:bookworm" # debian/12
-  - 'centos:7'
-  - 'rockylinux:8'    # compatible with EOL centos:8
-  - 'rockylinux:9'
+  - "debian:trixie"   # debian/13
+  - 'almalinux:8'    # compatible with EOL centos:8
+  - 'almalinux:9'
+  - 'almalinux:10'
 target:
   - 'x86_64'
 test-image:
   - ""
 include:
-  - image: "centos:7"
-    systemd_service_unit_file: pkg/common/rtrtr-minimal.rtrtr.service
-
-  - image: 'rockylinux:8'
+  - image: 'almalinux:8'
     systemd_service_unit_file: pkg/common/rtrtr.rtrtr.service
 
-  - image: 'rockylinux:9'
+  - image: 'almalinux:9'
+    systemd_service_unit_file: pkg/common/rtrtr.rtrtr.service
+
+  - image: 'almalinux:10'
     systemd_service_unit_file: pkg/common/rtrtr.rtrtr.service
 
   - pkg: "rtrtr"
@@ -35,16 +35,6 @@ include:
     image: 'debian:buster'
     target: 'arm-unknown-linux-musleabihf'
 
-  - pkg: 'rtrtr'
-    image: 'rockylinux:9'
-    target: 'x86_64'
-    test-image: 'almalinux:9'
-
-  - pkg: 'rtrtr'
-    image: 'rockylinux:9'
-    target: 'x86_64'
-    test-image: 'centos:9-Stream'
-
 test-mode:   
   - 'fresh-install'
   - 'upgrade-from-published'
@@ -52,5 +42,11 @@ test-mode:
 test-exclude:
   - pkg: 'rtrtr'
     image: 'ubuntu:noble'
+    mode: 'upgrade-from-published'
+  - pkg: 'rtrtr'
+    image: 'almalinux:10'
+    mode: 'upgrade-from-published'
+  - pkg: 'rtrtr'
+    image: 'debian:trixie'
     mode: 'upgrade-from-published'
 
