@@ -157,6 +157,17 @@ impl PackBuilder {
     /// The method fails with an appropriate error if there already is an
     /// element with the given payload in the set.
     pub fn insert(&mut self, payload: Payload) -> Result<(), PayloadError> {
+        if let Payload::Aspa(aspa) = &payload {
+            // There is only one ASPA, so replace the previous one, whether
+            // it's a withdrawal or announcement.
+            self.items.retain(|item| {
+                match item {
+                    Payload::Aspa(item) => item.customer != aspa.customer
+                     || item.providers == aspa.providers,
+                    _ => true
+                }
+            });
+        };
         if self.items.insert(payload) {
             Ok(())
         }
@@ -168,6 +179,11 @@ impl PackBuilder {
     /// Inserts a new element without checking.
     pub fn insert_unchecked(&mut self, payload: Payload) {
         self.items.insert(payload);
+    }
+
+    /// Retains only the elements specified by the predicate.
+    pub fn retain<F: FnMut(&Payload) -> bool>(&mut self, f: F) {
+        self.items.retain(f);
     }
 
     /// Removes an existing element from the set.
@@ -420,7 +436,7 @@ impl Set {
     }
 
     /// Returns an iterator over the set’s elements.
-    pub fn iter(&self) -> SetIter {
+    pub fn iter(&self) -> SetIter<'_> {
         SetIter::new(self)
     }
 
@@ -788,7 +804,7 @@ impl OwnedSetIter {
 }
 
 impl PayloadSet for OwnedSetIter {
-    fn next(&mut self) -> Option<PayloadRef> {
+    fn next(&mut self) -> Option<PayloadRef<'_>> {
         if let Some(item) =
             self.set.blocks.get(self.block)?.get_from_pack(self.item)
         {
@@ -952,8 +968,8 @@ impl SetBuilder {
 
 /// The differences between two payload sets.
 ///
-/// This is a list of additions to a set called _announcments_ and a list of
-/// removals called _withdrawals._ When iterated over, these two are provided
+/// This is a list of additions to a set called _announcements_ and a list of
+/// removals called _withdrawals_. When iterated over, these two are provided
 /// as a single list of pairs of [`Payload`] and [`Action`]s in order of the
 /// payload. This makes it relatively safe to apply non-atomically.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -978,7 +994,7 @@ impl Diff {
     }
 
     /// Returns an iterator over the set’s elements.
-    pub fn iter(&self) -> DiffIter {
+    pub fn iter(&self) -> DiffIter<'_> {
         DiffIter::new(self)
     }
 
@@ -1013,7 +1029,12 @@ impl Diff {
         let res = res.finalize();
         let mut withdrawn: HashSet<_> = self.withdrawn.iter().collect();
         let res = res.filter(|item| {
-            !withdrawn.remove(item)
+            match item {
+                // XXX Maybe we should treat Router Keys separately too?
+                Payload::Aspa(aspa) => 
+                    !withdrawn.remove(&Payload::Aspa(aspa.withdraw())),
+                _ => !withdrawn.remove(item)
+            }
         });
         if !withdrawn.is_empty() {
             Err(PayloadError::UnknownWithdraw)
@@ -1126,7 +1147,7 @@ impl OwnedDiffIter {
 }
 
 impl PayloadDiff for OwnedDiffIter {
-    fn next(&mut self) -> Option<(PayloadRef, Action)> {
+    fn next(&mut self) -> Option<(PayloadRef<'_>, Action)> {
         match (self.announced.peek(), self.withdrawn.peek()
         ) {
             (Some(_), None) => {
@@ -1192,6 +1213,18 @@ impl DiffBuilder {
     ) -> Result<(), PayloadError> {
         match action {
             Action::Announce => {
+                if let Payload::Aspa(aspa) = &payload {
+                    let _ = self.withdrawn.remove(
+                        &Payload::Aspa(aspa.withdraw())
+                    );
+                    let _ = self.announced.retain(|item| {
+                        match item {
+                            Payload::Aspa(item) => item.customer != aspa.customer
+                            || item.providers == aspa.providers,
+                            _ => true
+                        }
+                    });
+                }
                 if self.withdrawn.contains(&payload) {
                     return Err(PayloadError::Corrupt)
                 }
@@ -1201,6 +1234,10 @@ impl DiffBuilder {
                 if self.announced.contains(&payload) {
                     return Err(PayloadError::Corrupt)
                 }
+                let payload = match payload {
+                    Payload::Aspa(aspa) => Payload::Aspa(aspa.withdraw()),
+                    _ => payload
+                };
                 self.withdrawn.insert(payload)
             }
         }
@@ -1234,9 +1271,24 @@ impl DiffBuilder {
 
     /// Converts the builder into a diff.
     pub fn finalize(self) -> Diff {
+        let mut withdrawn = self.withdrawn;
+
+        let ann_customers: HashSet<_> = self.announced.items.iter()
+            .filter_map(|p| p.as_aspa())
+            .map(|a| a.customer)
+            .collect();
+
+        withdrawn.retain(|item| {
+            match item {
+                Payload::Aspa(aspa) => 
+                    !ann_customers.contains(&aspa.customer),
+                _ => true,
+            }
+        });
+
         Diff {
             announced: self.announced.finalize(),
-            withdrawn: self.withdrawn.finalize(),
+            withdrawn: withdrawn.finalize(),
         }
     }
 }
