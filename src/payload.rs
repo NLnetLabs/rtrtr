@@ -420,7 +420,7 @@ impl Set {
     }
 
     /// Returns an iterator over the set’s elements.
-    pub fn iter(&self) -> SetIter {
+    pub fn iter(&self) -> SetIter<'_> {
         SetIter::new(self)
     }
 
@@ -788,7 +788,7 @@ impl OwnedSetIter {
 }
 
 impl PayloadSet for OwnedSetIter {
-    fn next(&mut self) -> Option<PayloadRef> {
+    fn next(&mut self) -> Option<PayloadRef<'_>> {
         if let Some(item) =
             self.set.blocks.get(self.block)?.get_from_pack(self.item)
         {
@@ -978,7 +978,7 @@ impl Diff {
     }
 
     /// Returns an iterator over the set’s elements.
-    pub fn iter(&self) -> DiffIter {
+    pub fn iter(&self) -> DiffIter<'_> {
         DiffIter::new(self)
     }
 
@@ -1126,7 +1126,7 @@ impl OwnedDiffIter {
 }
 
 impl PayloadDiff for OwnedDiffIter {
-    fn next(&mut self) -> Option<(PayloadRef, Action)> {
+    fn next(&mut self) -> Option<(PayloadRef<'_>, Action)> {
         match (self.announced.peek(), self.withdrawn.peek()
         ) {
             (Some(_), None) => {
