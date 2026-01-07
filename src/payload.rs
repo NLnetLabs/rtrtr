@@ -1273,7 +1273,7 @@ impl DiffBuilder {
     pub fn finalize(self) -> Diff {
         let mut withdrawn = self.withdrawn;
 
-        let ann_customers: Vec<_> = self.announced.items.iter()
+        let ann_customers: HashSet<_> = self.announced.items.iter()
             .filter_map(|p| p.as_aspa())
             .map(|a| a.customer)
             .collect();
