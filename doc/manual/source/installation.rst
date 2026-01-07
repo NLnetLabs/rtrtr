@@ -28,12 +28,13 @@ to get started.
        these Debian versions:
 
          -  Debian Bullseye 11
-         -  Debian Buster 10
-         -  Debian Stretch 9
+         -  Debian Bookworm 12
+         -  Debian Trixie 13
 
        Packages for the ``amd64``/``x86_64`` architecture are available for
-       all listed versions. In addition, we offer ``armhf`` architecture
-       packages for Debian/Raspbian Bullseye, and ``arm64`` for Buster.
+       all listed versions. In addition, we offer ``armv7`` architecture
+       packages for Debian 13, 12, 11; ``arm64`` for Debian 13, 12, 11, and
+       ``armv6`` for Debian 11.
        
        First update the ``apt`` package index: 
 
@@ -101,10 +102,9 @@ to get started.
        To install an RTRTR package, you need the 64-bit version of one of
        these Ubuntu versions:
 
+         - Ubuntu Noble 24.04 (LTS)
          - Ubuntu Jammy 22.04 (LTS)
          - Ubuntu Focal 20.04 (LTS)
-         - Ubuntu Bionic 18.04 (LTS)
-         - Ubuntu Xenial 16.04 (LTS)
 
        Packages are available for the ``amd64``/``x86_64`` architecture only.
        
@@ -172,7 +172,7 @@ to get started.
    .. group-tab:: RHEL/CentOS
 
        To install an RTRTR package, you need Red Hat Enterprise Linux
-       (RHEL) 7 or 8, or compatible operating system such as Rocky Linux.
+       (RHEL) 8, 9, or 10, or compatible operating system such as Alma Linux.
        Packages are available for the ``amd64``/``x86_64`` architecture only.
        
        First create a file named :file:`/etc/yum.repos.d/nlnetlabs.repo`, enter
