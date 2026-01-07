@@ -5,7 +5,7 @@ System Requirements
 -------------------
 
 When choosing a system to run RTRTR on, make sure you have 1GB of available
-memory and 1GB of disk space. 
+memory and 1GB of disk space. More is recommended.
 
 Binary Packages
 ---------------
