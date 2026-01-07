@@ -80,6 +80,21 @@ copyright = "Copyright (c) 2021, NLnet Labs. All rights reserved."
 conf-files = ["/etc/rtrtr.conf"]
 systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false }
 
+[package.metadata.deb.variants.ubuntu-jammy]
+systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.ubuntu-focal]
+systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.debian-buster]
+systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.debian-bullseye]
+systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.debian-bullseye-armv7-unknown-linux-musleabihf]
+systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
 [package.metadata.deb.variants.minimal]
 
 # Cross compilation variants:
