@@ -1217,7 +1217,7 @@ impl DiffBuilder {
                     let _ = self.withdrawn.remove(
                         &Payload::Aspa(aspa.withdraw())
                     );
-                    let _ = self.announced.retain(|item| {
+                    self.announced.retain(|item| {
                         match item {
                             Payload::Aspa(item) => item.customer != aspa.customer
                             || item.providers == aspa.providers,
