@@ -1,8 +1,8 @@
 # Change Log
 
-## Unreleased future version
+## 0.3.3-rc1
 
-Breaking changes
+Released 2026-01-29.
 
 New
 
