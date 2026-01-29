@@ -63,7 +63,7 @@ impl Json {
 
     fn create_source(
         &self, component: &Component
-    ) -> Result<Source, Terminated> {
+    ) -> Result<Source<'_>, Terminated> {
         match self.uri {
             SourceUri::Http(ref url) => {
                 Ok(Source::Http {
