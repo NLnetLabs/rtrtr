@@ -6,9 +6,28 @@ Breaking changes
 
 New
 
+* Changed the version negotiation mechanism of the RTR client to follow
+  [draft-ietf-sidrops-8210bis]. (Via [rpki-rs#346])
+
 Bug fixes
 
+* Fixed various aspects of handling of ASPA PDUs:
+  * The provider AS set in withdrawal PDUs is now always empty. (Via
+    [rpki-rs#350])
+  * When updating an ASPA, there will not be a stray withdrawl any more.
+    ([#142])
+
 Other changes
+
+* Update the systems binary packages are built for. These are now:
+  * Debian Bullseye, Bookworm, and Trixie (ie., 11, 12, 13),
+  * Ubuntu Focal 20.04, Jammy 22.04, and Noble 24.04,
+  * Red Hat Enterprise Linux 8, 9, and 10 or compatible.
+
+[#142]: https://github.com/NLnetLabs/rtrtr/pull/142
+[rpki-rs#346]: https://github.com/NLnetLabs/rpki-rs/pull/346
+[rpki-rs#350]: https://github.com/NLnetLabs/rpki-rs/pull/350
+[draft-ietf-sidrops-8210bis]: https://datatracker.ietf.org/doc/draft-ietf-sidrops-8210bis/
 
 
 ## 0.3.2 ‘Based on a True Story’
