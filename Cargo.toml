@@ -83,9 +83,6 @@ systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = fal
 [package.metadata.deb.variants.ubuntu-jammy]
 systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
-[package.metadata.deb.variants.ubuntu-focal]
-systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
-
 [package.metadata.deb.variants.debian-buster]
 systemd-units = { unit-name = "rtrtr", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
