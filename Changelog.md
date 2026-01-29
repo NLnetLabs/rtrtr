@@ -21,7 +21,7 @@ Other changes
 
 * Update the systems binary packages are built for. These are now:
   * Debian Bullseye, Bookworm, and Trixie (ie., 11, 12, 13),
-  * Ubuntu Focal 20.04, Jammy 22.04, and Noble 24.04,
+  * Ubuntu Jammy 22.04 and Noble 24.04,
   * Red Hat Enterprise Linux 8, 9, and 10 or compatible.
 
 [#142]: https://github.com/NLnetLabs/rtrtr/pull/142

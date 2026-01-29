@@ -104,7 +104,6 @@ to get started.
 
          - Ubuntu Noble 24.04 (LTS)
          - Ubuntu Jammy 22.04 (LTS)
-         - Ubuntu Focal 20.04 (LTS)
 
        Packages are available for the ``amd64``/``x86_64`` architecture only.
        
