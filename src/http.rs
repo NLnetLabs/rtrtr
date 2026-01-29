@@ -7,18 +7,15 @@
 //! Server configuration happens via the [`Server`] struct that normally is
 //! part of the [`Config`](crate::config::Config).
 
-use std::{fmt, io};
+use std::fmt;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdListener;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
-use std::task::{Context, Poll};
 use arc_swap::ArcSwap;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use daemonbase::error::ExitError;
-use futures_util::pin_mut;
 use futures_util::stream::{Stream, StreamExt};
 use http_body_util::{BodyExt, Empty, Full, StreamBody};
 use http_body_util::combinators::BoxBody;
@@ -29,8 +26,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use log::{debug, error};
 use serde::Deserialize;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 use crate::metrics;
 use crate::utils::http::format_http_date;
@@ -456,50 +452,6 @@ impl ContentType {
 
     pub fn external(value: &'static [u8]) -> Self {
         ContentType(value)
-    }
-}
-
-
-//------------ Wrapped sockets -----------------------------------------------
-
-/// A TCP stream wrapped for use with Hyper.
-struct HttpStream {
-    sock: TcpStream,
-}
-
-impl AsyncRead for HttpStream {
-    fn poll_read(
-        mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf
-    ) -> Poll<Result<(), io::Error>> {
-        let sock = &mut self.sock;
-        pin_mut!(sock);
-        sock.poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for HttpStream {
-    fn poll_write(
-        mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]
-    ) -> Poll<Result<usize, io::Error>> {
-        let sock = &mut self.sock;
-        pin_mut!(sock);
-        sock.poll_write(cx, buf)
-    }
-
-    fn poll_flush(
-        mut self: Pin<&mut Self>, cx: &mut Context
-    ) -> Poll<Result<(), io::Error>> {
-        let sock = &mut self.sock;
-        pin_mut!(sock);
-        sock.poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>, cx: &mut Context
-    ) -> Poll<Result<(), io::Error>> {
-        let sock = &mut self.sock;
-        pin_mut!(sock);
-        sock.poll_shutdown(cx)
     }
 }
 
