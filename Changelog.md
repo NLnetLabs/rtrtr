@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.3.3 ‘Mischief, Gold, and Piracy’
+
+Released 2026-02-10.
+
+There have been no changes since 0.3.3-rc1.
+
+
 ## 0.3.3-rc1
 
 Released 2026-01-29.
