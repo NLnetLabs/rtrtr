@@ -18,20 +18,15 @@ Secure and redundant RTR connections
 Open source with community and professional support
    NLnet Labs offers `professional support services
    <https://www.nlnetlabs.nl/services/contracts/>`_ with a service-level
-   agreement. We also provide a `mailing list
-   <https://lists.nlnetlabs.nl/mailman/listinfo/rpki>`_ and `Discord server
-   <https://discord.gg/8dvKB5Ykhy>`_  for community support and to exchange
+   agreement. We also provide a `forum
+   <https://community.nlnetlabs.nl>`_ for community support and to exchange
    operational experiences. RTRTR is liberally licensed under the `BSD
    3-Clause license
    <https://github.com/NLnetLabs/rtrtr/blob/main/LICENSE>`_.
 
    .. only:: html
 
-      |discord| |mastodon|
-      
-      .. |discord| image:: https://img.shields.io/discord/818584154278199396   
-         :alt: Discord
-         :target: https://discord.gg/8dvKB5Ykhy
+      |mastodon|
 
       .. |mastodon| image:: https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social
          :alt: Mastodon
