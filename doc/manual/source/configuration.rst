@@ -143,7 +143,7 @@ Merge Unit
 
 The ``merge`` unit type is given any number of *other* units and combines
 the data from all of them. This ensures that it uses the data from all data
-sources even if data is (partially) missing from one source.
+sources, in case your router does not support multiple RTR connections.
 
 To configure this unit, specify a name, set the type to ``merge`` and list the
 sources that should be used. 
