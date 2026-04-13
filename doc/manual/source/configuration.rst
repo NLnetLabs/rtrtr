@@ -138,6 +138,22 @@ every time it needs to switch or whether it should go through the list in order.
     sources = [ "unit-1", "unit-2", "unit-3" ]
     random = false
 
+Merge Unit
+++++++++++
+
+The ``merge`` unit type is given any number of *other* units and combines
+the data from all of them. This ensures that it uses the data from all data
+sources, in case your router does not support multiple RTR connections.
+
+To configure this unit, specify a name, set the type to ``merge`` and list the
+sources that should be used. 
+
+.. code-block:: text
+
+    [units.any-unit-name]
+    type = "merge"
+    sources = [ "unit-1", "unit-2", "unit-3" ]
+
 SLURM Unit
 ++++++++++
 
