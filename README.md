@@ -21,8 +21,7 @@ a monitoring endpoint in plain text and Prometheus format.
 
 If you have feedback, we would love to hear from you. Don’t hesitate to [create
 an issue on Github](https://github.com/NLnetLabs/rtrtr/issues/new) or post
-a message on our [RPKI mailing
-list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki) or [Discord
+a message on our [forum](https://community.nlnetlabs.nl/) or [Discord
 server](https://discord.gg/8dvKB5Ykhy). 
 
 ## Getting Started
