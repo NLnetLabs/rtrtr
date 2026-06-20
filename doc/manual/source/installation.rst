@@ -102,6 +102,7 @@ to get started.
        To install an RTRTR package, you need the 64-bit version of one of
        these Ubuntu versions:
 
+         - Ubuntu Resolute 26.04 (LTS)
          - Ubuntu Noble 24.04 (LTS)
          - Ubuntu Jammy 22.04 (LTS)
 
