@@ -6,6 +6,8 @@ Breaking changes
 
 New
 
+* Support for Ubuntu Resolute Raccoon (26.04)
+
 Bug fixes
 
 Other changes
