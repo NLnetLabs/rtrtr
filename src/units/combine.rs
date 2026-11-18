@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crossbeam_utils::atomic::AtomicCell;
 use futures_util::future::{select, select_all, Either, FutureExt};
 use log::debug;
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 use crate::{metrics, payload};
 use crate::metrics::{Metric, MetricType, MetricUnit};
