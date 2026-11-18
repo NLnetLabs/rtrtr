@@ -1439,6 +1439,8 @@ pub(crate) mod testrig {
 
 #[cfg(test)]
 mod test {
+    use rand::RngExt;
+
     use super::*;
     use super::testrig::*;
 
