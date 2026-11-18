@@ -240,7 +240,7 @@ impl Merge {
                 }
             }
             gate.update(
-                UnitUpdate::Payload(payload::Update::new(output))
+                UnitUpdate::Payload(payload::Update::new_unduplicated(output))
             ).await;
         }
     }

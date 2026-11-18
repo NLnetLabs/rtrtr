@@ -128,7 +128,7 @@ impl ExceptionSet {
             
         }
 
-        payload::Update::new(set)
+        payload::Update::new_unduplicated(set)
     }
 
     async fn notified(&self) {
