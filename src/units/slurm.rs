@@ -273,6 +273,7 @@ impl From<SlurmFile> for Content {
 mod test {
     use super::*;
     use crate::payload::testrig;
+    use rand::RngExt;
     use rpki::slurm::PrefixFilter;
     use rpki::rtr::payload::Payload;
 
