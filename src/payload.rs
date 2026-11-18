@@ -683,7 +683,7 @@ impl From<Block> for Set {
     fn from(block: Block) -> Self {
         Set {
             len: block.len(),
-            blocks: vec!(block).into(),
+            blocks: vec![block].into(),
         }
     }
 }
