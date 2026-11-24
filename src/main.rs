@@ -7,6 +7,20 @@ use tokio::runtime;
 use rtrtr::config::Config;
 
 
+fn _rustls_provider() -> Result<(), ExitError> {
+    if
+        tokio_rustls::rustls::crypto::aws_lc_rs
+            ::default_provider().install_default().is_err()
+    {
+        eprintln!(
+            "Failed to set default TLS crypto provider.\n\
+                This is a bug and should be reported."
+        );
+        return Err(ExitError::default());
+    }
+    Ok(())
+}
+
 fn _main() -> Result<(), ExitError> {
     Logger::init_logging()?;
     let matches = Config::config_args(
@@ -17,6 +31,7 @@ fn _main() -> Result<(), ExitError> {
     ).get_matches();
     let (mut manager, mut config) = Config::from_arg_matches(&matches)?;
     Logger::from_config(&config.log)?.switch_logging(false)?;
+    _rustls_provider()?;
     let runtime = runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
