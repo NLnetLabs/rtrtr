@@ -36,7 +36,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: '.'
-          pattern: "!(tmp*)"
+          pattern: "!tmp*"
       - name: Create index for the artifacts
         uses: NLnetLabs/directory-listing@main
         with:
