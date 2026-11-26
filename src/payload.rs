@@ -54,8 +54,10 @@ use std::collections::HashSet;
 use std::iter::Peekable;
 use std::ops::{Deref, Range};
 use std::sync::Arc;
+use rpki::resources::Asn;
 use rpki::rtr::client::PayloadError;
-use rpki::rtr::payload::{Action, Payload, PayloadRef};
+use rpki::rtr::payload::{Action, Aspa, Payload, PayloadRef};
+use rpki::rtr::pdu::ProviderAsns;
 use rpki::rtr::server::{PayloadDiff, PayloadSet};
 
 
@@ -1310,6 +1312,57 @@ impl Update {
         set: Set
     ) -> Self {
         Update { set }
+    }
+
+    pub fn new_unduplicated(
+        set: Set
+    ) -> Self {
+        let mut new_set = Vec::new();
+        let mut new_aspas: Vec<Aspa> = Vec::new();
+        for item in set.iter() {
+            match item {
+                Payload::Aspa(aspa) => {
+                    // First, pop the first matching ASPA from the new stack
+                    // There will be at most one
+                    let previous_aspa = new_aspas
+                        .iter()
+                        .position(|x| x.customer == aspa.customer)
+                        .map(|index| new_aspas.remove(index));
+                    if let Some(previous_aspa) = previous_aspa {
+                        // If there is a previous ASPA, merge the providers
+                        let mut providers: Vec<Asn> = previous_aspa.providers
+                            .iter().chain(aspa.providers.iter()).collect();
+                        if providers.len() > 1 {
+                            // If there is more than one providers, remove all
+                            // the AS0 entries
+                            let asn0 = Asn::from_u32(0);
+                            providers.retain(|x| x != &asn0);
+                        }
+                        let providers = 
+                            ProviderAsns::try_from_iter(providers);
+                        // If there are now more that MAX_PROVIDERS, we do not
+                        // add it.
+                        if let Ok(providers) = providers {
+                            let new_aspa = Aspa::new(aspa.customer, providers);
+                            new_aspas.push(new_aspa);   
+                        }
+                    } else {
+                        new_aspas.push(aspa.clone());
+                    }
+                }
+                _ => new_set.push(item),
+            }
+        }
+        let mut pack = PackBuilder::empty();
+        for payload in new_set {
+            pack.insert_unchecked(payload.to_owned());
+        }
+        for aspa in new_aspas {
+            let payload: Payload = aspa.into();
+            pack.insert_unchecked(payload);
+        }
+        let pack = pack.finalize();
+        Update { set: pack.into() }
     }
 
     /// Returns the payload set of the update.
